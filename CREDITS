@@ -129,6 +129,12 @@ The following people have contributed to 'sysstat' in one way or another:
 	to sysstat. Among them, he added some more power management
 	statistics to sar.
 
+	Alain Chéreau <cheralain [at] googlemail.com> added support for
+	disk groups statistics to iostat.
+
+	Cédric Marie <cedric.marie [at] openmailbox.org> sent me
+	several patches to improve pidstat.
+
 I would also thank the following people for their hints or bug reports
 (in alphabetical order):
 
@@ -138,10 +144,12 @@ I would also thank the following people for their hints or bug reports
 	Michael Blakeley <mike@bla[...].com>
 	Pascal Bleser <pbleser@ato[...].com>
 	Lodewijk Bonebakker <jlbonebakker@gma[...].com>
+	Andrey Borzenkov <arvidjaar@gma[...].com>
 	Jesse Brandeburg <jesse.brandeburg@int[...].com>
 	Xavier Bru <xavier.bru@bul[...].net>
 	Jason Burnett <jason@jnj[...].org>
 	Fabricio Ceolin <ceolin@ule[...].com
+	Vitezslav Cizek <vcizek@sus[...].cz>
 	Mark J. Cox <mjc@red[...].com>
 	Jean Dagenais <jean.dagenais@int[...].com>
 	Nicolas Denis <denisn@wan[...].fr>
@@ -150,8 +158,11 @@ I would also thank the following people for their hints or bug reports
 	Tony Ernst <tee@sgi[...].com>
 	Chris Evans <chris@sca[...].org>
 	Damien Faure <damien-jn.faure@bul[...].net>
+	James Fraser <jameswfraser@gma[...].com>
 	Dr. David Alan Gilbert <dave@tre[...].org>
 	David Gesswein <djg@drs[...].com>
+	Frank Glinka <glinkaf@uni[...].de>
+	Gurinder Shergill <gurinder.shergill@hp[...].com>
 	Ladislav Hagara <ladislav.hagara@uno[...].cz>
 	Don Harrop <don@swb[...].com>
 	Jürgen Heinemann <heinemann.juergen@hjc[...].de>
@@ -164,8 +175,10 @@ I would also thank the following people for their hints or bug reports
 	Jonathan Kamens <jik@kam[...].us>
 	Ilya Katsnelson <ilya.katsnelson@mot[...].com>
 	Mike Kobler <mkobler@gma[...].com>
+	John Lau <johnlcf@gma[...].com>
 	Byeong-taek Lee <btlee@psy[...].kr>
 	Ivo Letzas <letzas@for[...].nu>	
+	Wayne Lin <wlin@mvi[...].com>
 	Neculai Macarie <macarie.neculai@nex[...].com>
 	Robert Macaulay <Robert_Macaulay@Del[...].com>
 	Pierre Machard <pmachard@deb[...].org>
@@ -178,10 +191,12 @@ I would also thank the following people for their hints or bug reports
 	Chris Morrow <cmorrow@ver[...].com>
 	David J. Morse <David_J_Morse@Del[...].com>
 	Hariprasad Nellitheertha <hari@in.[...].com>
+	Muneyuki Noguchi <nogu.dev@gma[...].com>
 	Giulio Orsero <giulioo@pob[...].com>
 	Edouard G. Parmelan <edouard.parmelan@qua[...].fr>
 	Oliver Paukstadt <oliver.paukstadt@mil[...].com>	
 	Plattner(?) <Plattner.external@inf[...].com>
+	Peter Portante <peter.a.portante@gma[...].com>
 	Gerardo Exequiel Pozzi <vmlinuz386@yah[...].ar>
 	ReDragon <redragon@vns[...].net>
 	Amir Rapson <amir.rapson@gma[...].com>
@@ -197,6 +212,7 @@ I would also thank the following people for their hints or bug reports
 	Tan Shao Yi <tansy@tan[...].org>
 	Yibin Shen <zituan@taobao.com>
 	Lee Schermerhorn <lee.schermerhorn@hp.[...].com>
+	Peter Schiffer <pschiffe@red[...].com>
 	Benno Schulenberg <bensberg@jus[...].net>
 	Michel Simoni <m_simoni@clu[...].fr>
 	Gabrielle Singleton <gelle@umi[...].edu>
@@ -206,6 +222,7 @@ I would also thank the following people for their hints or bug reports
 	Graham Swallow <gps@tri[...].uk>
 	Mike Sweger <mikesw@whi[...].net>
 	Don Totten <dontotten@ibm[...].net>
+	Alexander Troosh <trush@yan[...].ru>
 	Stephen Tweedie <sct@red[...].com>
 	Petr Uzel <petr.uzel@sus[...].cz>
 	Thomas Weber <TWEBER@de.[...].com>

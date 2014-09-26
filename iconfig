@@ -1,6 +1,6 @@
 #!/bin/sh
 #@(#) Configuration script for sysstat
-# (C) 2000-2010 Sebastien GODARD (sysstat <at> orange.fr)
+# (C) 2000-2014 Sebastien GODARD (sysstat <at> orange.fr)
 
 ASK="sh build/Ask.sh"
 
@@ -88,6 +88,12 @@ if [ "${COMPRESSAFTER}" != "" ]; then
 	COMPRESSAFTER="compressafter=${COMPRESSAFTER} "
 fi
 
+# Preallocation factor
+PREALLOC_ANSWER=`${ASK} 'Preallocation factor value:' "prealloc" "prealloc"`
+if [ "${PREALLOC_ANSWER}" != "" ]; then
+	PREALLOC_ANSWER="prealloc=${PREALLOC_ANSWER} "
+fi
+
 # Manual page group
 MAN=`${ASK} 'Group for manual pages:' "man_group" "man_group"`
 if [ "${MAN}" != "" ]; then
@@ -130,10 +136,32 @@ fi
 
 if [ "${CRON}" != "" ];
 then
+	COLL_ALL=`${ASK} 'Should sadc collect optional activities? (y/n)' "--enable-collect-all" "collect-all"`
+	if [ "${COLL_ALL}" = "y" ]; then
+		CRON="${CRON}--enable-collect-all "
+	else
+		echo "Parameter --enable-collect-all is NOT set"
+	fi
+fi
+
+if [ "${CRON}" != "" ];
+then
 	# rc directory
 	RCDIR=`${ASK} 'rc directory:' "rcdir" "rcdir"`
 	if [ "${RCDIR}" != "" ]; then
 	        RCDIR="rcdir=${RCDIR} "
+	fi
+fi
+
+if [ "${CRON}" != "" ];
+then
+	# Only copy files
+	COPY_ONLY=`${ASK} 'Only copy files when installing sysstat? (y/n)' "--enable-copy-only" "copy-only"`
+	if [ "${COPY_ONLY}" = "y" ]; then
+		COPY_ONLY="--enable-copy-only "
+	else
+		COPY_ONLY=""
+		echo "Parameter --enable-copy-only is NOT set"
 	fi
 fi
 
@@ -173,13 +201,22 @@ else
 	echo "Parameter --enable-install-isag is NOT set"
 fi
 
+# Strip object files
+STRIP=`${ASK} 'Do not strip object files? (y/n)' "--disable-stripping" "stripping"`
+if [ "${STRIP}" = "y" ]; then
+	STRIP="--disable-stripping "
+else
+	STRIP=""
+	echo "Parameter --disable-stripping is NOT set"
+fi
+
 echo
 echo "./configure ${PREFIX}${SA_LIB_DIR}${SA_DIR}${SYSCONFIG_DIR}${CLEAN_SA_DIR}${NLS} \
-${YESTERDAY}${HISTORY}${COMPRESSAFTER}${MAN}${IGNORE_MAN}${CRON}${RCDIR} \
-${COMPRESSMANPG}${INSTALL_DOC}${DEBUGINFO}${INSTALL_ISAG}${SENSORS}"
+${YESTERDAY}${HISTORY}${COMPRESSAFTER}${PREALLOC_ANSWER}${MAN}${IGNORE_MAN}${CRON}${RCDIR} \
+${COMPRESSMANPG}${INSTALL_DOC}${DEBUGINFO}${INSTALL_ISAG}${SENSORS}${STRIP}${COPY_ONLY}"
 echo
 
 ./configure ${PREFIX}${SA_LIB_DIR}${SA_DIR}${SYSCONFIG_DIR}${CLEAN_SA_DIR}${NLS} \
-${YESTERDAY}${HISTORY}${COMPRESSAFTER}${MAN}${IGNORE_MAN}${CRON}${RCDIR} \
-${COMPRESSMANPG}${INSTALL_DOC}${DEBUGINFO}${INSTALL_ISAG}${SENSORS}
+${YESTERDAY}${HISTORY}${COMPRESSAFTER}${PREALLOC_ANSWER}${MAN}${IGNORE_MAN}${CRON}${RCDIR} \
+${COMPRESSMANPG}${INSTALL_DOC}${DEBUGINFO}${INSTALL_ISAG}${SENSORS}${STRIP}${COPY_ONLY}
 

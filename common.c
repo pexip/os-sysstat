@@ -1,6 +1,6 @@
 /*
  * sar, sadc, sadf, mpstat and iostat common routines.
- * (C) 1999-2011 by Sebastien GODARD (sysstat <at> orange.fr)
+ * (C) 1999-2014 by Sebastien GODARD (sysstat <at> orange.fr)
  *
  ***************************************************************************
  * This program is free software; you can redistribute it and/or modify it *
@@ -28,6 +28,8 @@
 #include <sys/ioctl.h>
 #include <sys/types.h>
 #include <dirent.h>
+#include <ctype.h>
+#include <libgen.h>
 
 #include "version.h"
 #include "common.h"
@@ -47,6 +49,9 @@ unsigned int hz;
 /* Number of bit shifts to convert pages to kB */
 unsigned int kb_shift;
 
+/* Type of persistent device names used in sar and iostat */
+char persistent_name_type[MAX_FILE_LEN];
+
 /*
  ***************************************************************************
  * Print sysstat version number and exit.
@@ -63,6 +68,9 @@ void print_version(void)
  ***************************************************************************
  * Get local date and time.
  *
+ * IN:
+ * @d_off	Day offset (number of days to go back in the past).
+ *
  * OUT:
  * @rectime	Current local date and time.
  *
@@ -70,12 +78,13 @@ void print_version(void)
  * Value of time in seconds since the Epoch.
  ***************************************************************************
  */
-time_t get_localtime(struct tm *rectime)
+time_t get_localtime(struct tm *rectime, int d_off)
 {
 	time_t timer;
 	struct tm *ltm;
 
 	time(&timer);
+	timer -= SEC_PER_DAY * d_off;
 	ltm = localtime(&timer);
 
 	*rectime = *ltm;
@@ -86,6 +95,9 @@ time_t get_localtime(struct tm *rectime)
  ***************************************************************************
  * Get date and time expressed in UTC.
  *
+ * IN:
+ * @d_off	Day offset (number of days to go back in the past).
+ *
  * OUT:
  * @rectime	Current date and time expressed in UTC.
  *
@@ -93,12 +105,13 @@ time_t get_localtime(struct tm *rectime)
  * Value of time in seconds since the Epoch.
  ***************************************************************************
  */
-time_t get_gmtime(struct tm *rectime)
+time_t get_gmtime(struct tm *rectime, int d_off)
 {
 	time_t timer;
 	struct tm *ltm;
 
 	time(&timer);
+	timer -= SEC_PER_DAY * d_off;
 	ltm = gmtime(&timer);
 
 	*rectime = *ltm;
@@ -109,6 +122,9 @@ time_t get_gmtime(struct tm *rectime)
  ***************************************************************************
  * Get date and time and take into account <ENV_TIME_DEFTM> variable.
  *
+ * IN:
+ * @d_off	Day offset (number of days to go back in the past).
+ *
  * OUT:
  * @rectime	Current date and time.
  *
@@ -116,7 +132,7 @@ time_t get_gmtime(struct tm *rectime)
  * Value of time in seconds since the Epoch.
  ***************************************************************************
  */
-time_t get_time(struct tm *rectime)
+time_t get_time(struct tm *rectime, int d_off)
 {
 	static int utc = 0;
 	char *e;
@@ -128,11 +144,11 @@ time_t get_time(struct tm *rectime)
 		}
 		utc++;
 	}
-	
+
 	if (utc == 2)
-		return get_gmtime(rectime);
+		return get_gmtime(rectime, d_off);
 	else
-		return get_localtime(rectime);
+		return get_localtime(rectime, d_off);
 }
 
 /*
@@ -153,7 +169,7 @@ int count_csvalues(int arg_c, char **arg_v)
 	int opt = 1;
 	int nr = 0;
 	char *t;
-	
+
 	while (opt < arg_c) {
 		if (strchr(arg_v[opt], ',')) {
 			for (t = arg_v[opt]; t; t = strchr(t + 1, ',')) {
@@ -162,7 +178,7 @@ int count_csvalues(int arg_c, char **arg_v)
 		}
 		opt++;
 	}
-	
+
 	return nr;
 }
 
@@ -204,7 +220,7 @@ int get_dev_part_nr(char *dev_name)
 			part++;
 		}
 	}
-	
+
 	/* Close directory */
 	closedir(dir);
 
@@ -248,7 +264,7 @@ int get_sysfs_dev_nr(int display_partitions)
 		if (!access(line, R_OK)) {
 			/* Yep... */
 			dev++;
-	
+
 			if (display_partitions) {
 				/* We also want the number of partitions for this device */
 				dev += get_dev_part_nr(drd->d_name);
@@ -281,7 +297,7 @@ unsigned int get_devmap_major(void)
 	if ((fp = fopen(DEVICES, "r")) == NULL)
 		return dm_major;
 
-	while (fgets(line, 128, fp) != NULL) {
+	while (fgets(line, sizeof(line), fp) != NULL) {
 
 		if (strstr(line, "device-mapper")) {
 			/* Read device-mapper major number */
@@ -299,7 +315,7 @@ unsigned int get_devmap_major(void)
  * Print banner.
  *
  * IN:
- * @rectime	Date and time to display.
+ * @rectime	Date to display (don't use time fields).
  * @sysname	System name to display.
  * @release	System release number to display.
  * @nodename	Hostname to display.
@@ -379,10 +395,10 @@ int get_win_height(void)
 
 /*
  ***************************************************************************
- * Remove /dev from path name.
+ * Canonicalize and remove /dev from path name.
  *
  * IN:
- * @name	Device name (may begins with "/dev/")
+ * @name	Device name (may begin with "/dev/" or can be a symlink).
  *
  * RETURNS:
  * Device basename.
@@ -390,10 +406,27 @@ int get_win_height(void)
  */
 char *device_name(char *name)
 {
-	if (!strncmp(name, "/dev/", 5))
-		return name + 5;
+	static char out[MAX_FILE_LEN];
+	char *resolved_name;
+	int i = 0;
 
-	return name;
+	/* realpath() creates new string, so we need to free it later */
+	resolved_name = realpath(name, NULL);
+
+	/* If path doesn't exist, just return input */
+	if (!resolved_name) {
+		return name;
+	}
+
+	if (!strncmp(resolved_name, "/dev/", 5)) {
+		i = 5;
+	}
+	strncpy(out, resolved_name + i, MAX_FILE_LEN);
+	out[MAX_FILE_LEN - 1] = '\0';
+
+	free(resolved_name);
+
+	return out;
 }
 
 /*
@@ -403,13 +436,16 @@ char *device_name(char *name)
  * ioconf.c which should be used only with kernels that don't have sysfs.
  *
  * IN:
- * @name	Device or partition name.
+ * @name		Device or partition name.
+ * @allow_virtual	TRUE if virtual devices are also accepted.
+ *			The device is assumed to be virtual if no
+ *			/sys/block/<device>/device link exists.
  *
  * RETURNS:
- * TRUE if @name is a (whole) device.
+ * TRUE if @name is not a partition.
  ***************************************************************************
  */
-int is_device(char *name)
+int is_device(char *name, int allow_virtual)
 {
 	char syspath[PATH_MAX];
 	char *slash;
@@ -418,8 +454,9 @@ int is_device(char *name)
 	while ((slash = strchr(name, '/'))) {
 		*slash = '!';
 	}
-	snprintf(syspath, sizeof(syspath), "%s/%s", SYSFS_BLOCK, name);
-	
+	snprintf(syspath, sizeof(syspath), "%s/%s%s", SYSFS_BLOCK, name,
+		 allow_virtual ? "" : "/device");
+
 	return !(access(syspath, F_OK));
 }
 
@@ -466,36 +503,17 @@ void get_HZ(void)
 
 /*
  ***************************************************************************
- * Handle overflow conditions properly for counters which are read as
- * unsigned long long, but which can be unsigned long long or
- * unsigned long only depending on the kernel version used.
- * @value1 and @value2 being two values successively read for this
- * counter, if @value2 < @value1 and @value1 <= 0xffffffff, then we can
- * assume that the counter's type was unsigned long and has overflown, and
- * so the difference @value2 - @value1 must be casted to this type.
- * NOTE: These functions should no longer be necessary to handle a particular
- * stat counter when we can assume that everybody is using a recent kernel
- * (defining this counter as unsigned long long).
+ * Workaround for CPU counters read from /proc/stat: Dyn-tick kernels
+ * have a race issue that can make those counters go backward.
  ***************************************************************************
  */
 double ll_sp_value(unsigned long long value1, unsigned long long value2,
 		   unsigned long long itv)
 {
-	if ((value2 < value1) && (value1 <= 0xffffffff))
-		/* Counter's type was unsigned long and has overflown */
-		return ((double) ((value2 - value1) & 0xffffffff)) / itv * 100;
+	if (value2 < value1)
+		return (double) 0;
 	else
 		return SP_VALUE(value1, value2, itv);
-}
-
-double ll_s_value(unsigned long long value1, unsigned long long value2,
-		  unsigned long long itv)
-{
-	if ((value2 < value1) && (value1 <= 0xffffffff))
-		/* Counter's type was unsigned long and has overflown */
-		return ((double) ((value2 - value1) & 0xffffffff)) / itv * HZ;
-	else
-		return S_VALUE(value1, value2, itv);
 }
 
 /*
@@ -517,7 +535,7 @@ unsigned long long get_interval(unsigned long long prev_uptime,
 
 	/* prev_time=0 when displaying stats since system startup */
 	itv = curr_uptime - prev_uptime;
-	
+
 	if (!itv) {	/* Paranoia checking */
 		itv = 1;
 	}
@@ -544,7 +562,29 @@ unsigned long long get_interval(unsigned long long prev_uptime,
 unsigned long long get_per_cpu_interval(struct stats_cpu *scc,
 					struct stats_cpu *scp)
 {
-	/* Don't take cpu_guest into account because cpu_user already includes it */
+	unsigned long long ishift = 0LL;
+
+	if ((scc->cpu_user - scc->cpu_guest) < (scp->cpu_user - scp->cpu_guest)) {
+		/*
+		 * Sometimes the nr of jiffies spent in guest mode given by the guest
+		 * counter in /proc/stat is slightly higher than that included in
+		 * the user counter. Update the interval value accordingly.
+		 */
+		ishift += (scp->cpu_user - scp->cpu_guest) -
+		          (scc->cpu_user - scc->cpu_guest);
+	}
+	if ((scc->cpu_nice - scc->cpu_guest_nice) < (scp->cpu_nice - scp->cpu_guest_nice)) {
+		/*
+		 * Idem for nr of jiffies spent in guest_nice mode.
+		 */
+		ishift += (scp->cpu_nice - scp->cpu_guest_nice) -
+		          (scc->cpu_nice - scc->cpu_guest_nice);
+	}
+
+	/*
+	 * Don't take cpu_guest and cpu_guest_nice into account
+	 * because cpu_user and cpu_nice already include them.
+	 */
 	return ((scc->cpu_user    + scc->cpu_nice   +
 		 scc->cpu_sys     + scc->cpu_iowait +
 		 scc->cpu_idle    + scc->cpu_steal  +
@@ -552,7 +592,8 @@ unsigned long long get_per_cpu_interval(struct stats_cpu *scc,
 		(scp->cpu_user    + scp->cpu_nice   +
 		 scp->cpu_sys     + scp->cpu_iowait +
 		 scp->cpu_idle    + scp->cpu_steal  +
-		 scp->cpu_hardirq + scp->cpu_softirq));
+		 scp->cpu_hardirq + scp->cpu_softirq) +
+		 ishift);
 }
 
 /*
@@ -621,7 +662,7 @@ void compute_ext_disk_stats(struct stats_disk *sdc, struct stats_disk *sdp,
 {
 	double tput
 		= ((double) (sdc->nr_ios - sdp->nr_ios)) * HZ / itv;
-	
+
 	xds->util  = S_VALUE(sdp->tot_ticks, sdc->tot_ticks, itv);
 	xds->svctm = tput ? xds->util / tput : 0.0;
 	/*
@@ -634,4 +675,242 @@ void compute_ext_disk_stats(struct stats_disk *sdc, struct stats_disk *sdp,
 	xds->arqsz = (sdc->nr_ios - sdp->nr_ios) ?
 		((sdc->rd_sect - sdp->rd_sect) + (sdc->wr_sect - sdp->wr_sect)) /
 		((double) (sdc->nr_ios - sdp->nr_ios)) : 0.0;
+}
+
+/*
+ ***************************************************************************
+ * Convert in-place input string to lowercase.
+ *
+ * IN:
+ * @str		String to be converted.
+ *
+ * OUT:
+ * @str		String in lowercase.
+ *
+ * RETURNS:
+ * String in lowercase.
+ ***************************************************************************
+*/
+char *strtolower(char *str)
+{
+	char *cp = str;
+
+	while (*cp) {
+		*cp = tolower(*cp);
+		cp++;
+	}
+
+	return(str);
+}
+
+/*
+ ***************************************************************************
+ * Get persistent type name directory from type.
+ *
+ * IN:
+ * @type	Persistent type name (UUID, LABEL, etc.)
+ *
+ * RETURNS:
+ * Path to the persistent type name directory, or NULL if access is denied.
+ ***************************************************************************
+*/
+char *get_persistent_type_dir(char *type)
+{
+	static char dir[32];
+
+	snprintf(dir, 32, "%s-%s", DEV_DISK_BY, type);
+
+	if (access(dir, R_OK)) {
+		return (NULL);
+	}
+
+	return (dir);
+}
+
+/*
+ ***************************************************************************
+ * Get persistent name absolute path.
+ *
+ * IN:
+ * @name	Persistent name.
+ *
+ * RETURNS:
+ * Path to the persistent name, or NULL if file doesn't exist.
+ ***************************************************************************
+*/
+char *get_persistent_name_path(char *name)
+{
+	static char path[PATH_MAX];
+
+	snprintf(path, PATH_MAX, "%s/%s",
+		 get_persistent_type_dir(persistent_name_type), name);
+
+	if (access(path, F_OK)) {
+		return (NULL);
+	}
+
+	return (path);
+}
+
+/*
+ ***************************************************************************
+ * Get files from persistent type name directory.
+ *
+ * RETURNS:
+ * List of files in the persistent type name directory in alphabetical order.
+ ***************************************************************************
+*/
+char **get_persistent_names(void)
+{
+	int n, i, k = 0;
+	char *dir;
+	char **files = NULL;
+	struct dirent **namelist;
+
+	/* Get directory name for selected persistent type */
+	dir = get_persistent_type_dir(persistent_name_type);
+	if (!dir)
+		return (NULL);
+
+	n = scandir(dir, &namelist, NULL, alphasort);
+	if (n < 0)
+		return (NULL);
+
+	/* If directory is empty, it contains 2 entries: "." and ".." */
+	if (n <= 2)
+		/* Free list and return NULL */
+		goto free_list;
+
+	/* Ignore the "." and "..", but keep place for one last NULL. */
+	files = (char **) calloc(n - 1, sizeof(char *));
+	if (!files)
+		goto free_list;
+
+	/*
+	 * i is for traversing namelist, k is for files.
+	 * i != k because we are ignoring "." and ".." entries.
+	 */
+	for (i = 0; i < n; i++) {
+		/* Ignore "." and "..". */
+		if (!strcmp(".", namelist[i]->d_name) ||
+		    !strcmp("..", namelist[i]->d_name))
+			continue;
+
+		files[k] = (char *) calloc(strlen(namelist[i]->d_name) + 1, sizeof(char));
+		if (!files[k])
+			continue;
+
+		strcpy(files[k++], namelist[i]->d_name);
+	}
+	files[k] = NULL;
+
+free_list:
+
+	for (i = 0; i < n; i++) {
+		free(namelist[i]);
+	}
+	free(namelist);
+
+	return (files);
+}
+
+/*
+ ***************************************************************************
+ * Get persistent name from pretty name.
+ *
+ * IN:
+ * @pretty	Pretty name (e.g. sda, sda1, ..).
+ *
+ * RETURNS:
+ * Persistent name.
+ ***************************************************************************
+*/
+char *get_persistent_name_from_pretty(char *pretty)
+{
+	int i = -1;
+	ssize_t r;
+	char *link, *name;
+	char **persist_names;
+	char target[PATH_MAX];
+	static char persist_name[FILENAME_MAX];
+
+	persist_name[0] = '\0';
+
+	/* Get list of files from persistent type name directory */
+	persist_names = get_persistent_names();
+	if (!persist_names)
+		return (NULL);
+
+	while (persist_names[++i]) {
+		/* Get absolute path for current persistent name */
+		link = get_persistent_name_path(persist_names[i]);
+		if (!link)
+			continue;
+
+		/* Persistent name is usually a symlink: Read it... */
+		r = readlink(link, target, PATH_MAX);
+		if ((r <= 0) || (r >= PATH_MAX))
+			continue;
+
+		target[r] = '\0';
+
+		/* ... and get device pretty name it points at */
+		name = basename(target);
+		if (!name || (name[0] == '\0'))
+			continue;
+
+		if (!strncmp(name, pretty, FILENAME_MAX)) {
+			/* We have found pretty name for current persistent one */
+			strncpy(persist_name, persist_names[i], FILENAME_MAX);
+			persist_name[FILENAME_MAX - 1] = '\0';
+			break;
+		}
+	}
+
+	i = -1;
+	while (persist_names[++i]) {
+		free (persist_names[i]);
+	}
+	free (persist_names);
+
+	if (strlen(persist_name) <= 0)
+		return (NULL);
+
+	return persist_name;
+}
+
+/*
+ ***************************************************************************
+ * Get pretty name (sda, sda1...) from persistent name.
+ *
+ * IN:
+ * @persistent	Persistent name.
+ *
+ * RETURNS:
+ * Pretty name.
+ ***************************************************************************
+*/
+char *get_pretty_name_from_persistent(char *persistent)
+{
+	ssize_t r;
+	char *link, *pretty, target[PATH_MAX];
+
+	/* Get absolute path for persistent name */
+	link = get_persistent_name_path(persistent);
+	if (!link)
+		return (NULL);
+
+	/* Persistent name is usually a symlink: Read it... */
+	r = readlink(link, target, PATH_MAX);
+	if ((r <= 0) || (r >= PATH_MAX))
+		return (NULL);
+
+	target[r] = '\0';
+
+	/* ... and get device pretty name it points at */
+	pretty = basename(target);
+	if (!pretty || (pretty[0] == '\0'))
+		return (NULL);
+
+	return pretty;
 }

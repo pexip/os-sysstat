@@ -1,9 +1,7 @@
 This is sysstat's Frequently Asked Questions!
 Be sure to read this carefully before asking for help...
 If you don't find the solution to your problem here then send me an email
-(please remember to include sysstat's version number, a sample output
-showing the bug, and the contents of the /proc/stat file for your system.
-Also tell me what version your kernel is).
+(please remember to include the version numbers of sysstat and of your kernel).
 
 
 1. GENERAL QUESTIONS
@@ -32,8 +30,8 @@ Also tell me what version your kernel is).
 2.7. The "Average:" results from the sar command are just rubbish...
 2.8. My database (e.g. MySQL) doesn't appear to understand the time zone
      displayed by 'sadf -d'...
-2.9. I tried to use the -p option of the sadf command, together with the
-     options -s and -e. Unfortunately, I have nothing displayed at all.
+2.9. I tried to use options -s and -e with sadf. Unfortunately, I have
+     nothing displayed at all.
 2.10. I cannot see all my disks when I use the sar -d command...
 2.11. Do you know a tool which can graphically plot the data collected by sar?
 2.12. When I launch sadc, I get the error message:
@@ -53,6 +51,10 @@ Also tell me what version your kernel is).
 2.21. The sar command displays some weird output values...
 2.22. What happened to sar's options -h, -H, -x and -X?
 2.23. What is the exact meaning of the <count> parameter for sar and sadc?
+2.24. Why doesn't sar deal with sub-second sampling/monitoring?
+2.25. Is it possible to save only some specific activities in my daily
+      data files? It would help to make saXX files take less space on disk...
+
 
 3. QUESTIONS RELATING TO IOSTAT
 
@@ -72,6 +74,8 @@ Also tell me what version your kernel is).
 4.2. The pidstat command complains with the following message:
       "Requested activities not available".
 4.3. pidstat doesn't display statistics for process (task) xyz...
+4.4. I noticed that the total CPU utilization for threads running on
+     an individual CPU can exceed 100%...
 
 
 1. GENERAL QUESTIONS
@@ -183,6 +187,11 @@ The internal structure of the data file does not allow sar to append
 data to it. The data file may come from another machine, or the components
 of the current box, such as the number of processors, may have changed.
 Use another data file, or delete the current daily data file, and try again.
+With sysstat version 10.1.3 and later, it is now possible to append data
+to a data file even if the number of processors has changed. But first,
+you have to make the data file aware of this change by inserting a restart
+mark (this is typically done when sadc is called at system restart). You
+can then append data to the data file as usual. 
 
 ~~~
 
@@ -201,17 +210,17 @@ current directory!
 2.4. I get the following error message when I try to run sar:
 Cannot open /var/log/sa/sa30: No such file or directory
 
-Please read the sar(1) manual page! Daily data files are created in the
-/var/log/sa directory using the data collector (sadc) or using option
--o with sar. Once they are created, sar can display statistics saved
-in those files.
-But sar can also display statistics collected "on the fly": just enter
-the proper option on the command line to indicate which statistics are
-to be displayed, and also specify an <interval> and <count> number.
+Please read the sar(1) manual page! Daily data files are created by default
+in the /var/log/sa directory using the data collector (sadc) or using
+option -o with sar. Once they are created, sar can display statistics
+saved in those files.
+But sar can also display statistics collected "on the fly": Just enter
+the proper options on the command line to indicate which statistics are
+to be displayed, and also specify <interval> and <count> numbers.
 E.g.:
 
 # sar 2 5  --> will report CPU utilization every two seconds, five times.
-# sar -n DEV 3 0  --> will report network device utilization every
+# sar -n DEV 3  --> will report network device utilization every
 3 seconds, in an infinite loop.
 
 ~~~
@@ -252,6 +261,8 @@ if you use the Interactive Configuration script (iconfig).
 Indeed, we found that 2.2.x kernels (with x <= 15) have an SMP race
 condition, which the sar command may trigger when it reads the
 /proc/tty/driver/serial file.
+Note: Option "--enable-smp-race" was removed in sysstat version 9.1.4.
+Anyway you don't run a kernel 2.2.x any more, do you?
 
 ~~~
 
@@ -304,17 +315,15 @@ to strip the "UTC" characters from the data being loaded into the database.
 
 ~~~
 
-2.9. I tried to use the -p option of the sadf command, together with the
-options -s and -e. Unfortunately, I have nothing displayed at all.
+2.9. I tried to use options -s and -e with sadf. Unfortunately, I have
+nothing displayed at all.
 
 This is because no data belong to the specified time interval!
-With versions older than 7.0.1, the time specified by options -s or -e
-may be considered as given in UTC (Coordinated Universal Time) or local
-time depending on whether sadf displays its output in UTC or local time.
-Option -p makes sadf display its timestamp in UTC, as indicated in the
-manual page. The UTC value may be different from the value that sar
-(or sadf without option -p) displays. The same remark applies to the
-use of -d option.
+The time specified with options -s and -e is now always considered as
+being given in local time to be consistent with sar default output.
+Remember that timestamps are displayed by sadf in UTC (Coordinated
+Universal Time) by default. Use option -T to tell sadf to display them
+in local time.
 
 ~~~
 
@@ -378,10 +387,10 @@ data for midnight at the end of each daily data file:
 
 Another possible crontab would be:
 
-*/10 1-22 * * * /usr/lib/sa/sa1 -d 1 1
-0,10,20,30,40 23 * * * /usr/lib/sa/sa1 -d 1 1
-50 23 * * * /usr/lib/sa/sa1 -d 600 2
-10,20,30,40,50 0 * * * /usr/lib/sa/sa1 -d 1 1
+*/10 1-22 * * * /usr/lib/sa/sa1 1 1
+0,10,20,30,40 23 * * * /usr/lib/sa/sa1 1 1
+50 23 * * * /usr/lib/sa/sa1 600 2
+10,20,30,40,50 0 * * * /usr/lib/sa/sa1 1 1
 
 ~~~
 
@@ -461,15 +470,21 @@ another file or create a new one. See also question 2.14 above.
 2.19. How can I keep sar data for more than one month?
 
 By default sar saves its data in the standard system activity data file,
-the /var/log/sa/sa<DD> file, where <DD> is the current day in the month.
+the /var/log/sa/saDD file, where DD is the current day in the month.
 To prevent sar from overwriting any existing files, just set the variable
 HISTORY in /etc/sysconfig/sysstat to the number of days during which data
 must be kept. When this variable has a value greater than 28, sa1 script
 uses a month-by-month directory structure; datafiles are named YYYYMM/saDD
 and the script maintains links to these datafiles to mimic the standard
-sar datafile structure.
-However please note that pre-existing datafiles will be deleted as links
-will be created and replace them.
+sar datafile structure. However please note that pre-existing datafiles
+will be deleted as links will be created and replace them.
+Beginning with sysstat version 11.0.0, this tree of directories is no
+longer created. When HISTORY has a value greater than 28, sa1 now calls
+sadc with option -D set, telling it to use saYYYYMMDD instead of saDD
+as the name for the standard system activity daily data files, where
+YYYY stands for the current year, MM for the current month and DD for
+the current day. All these files are saved in the same directory
+(/var/log/sa by default).
 
 ~~~
 
@@ -531,6 +546,51 @@ for a file populated with the output of sadc 1 6 <file> will give the
 same output as sar -f <file> 1 5. Note that it all depends on the number
 of data samples pre-existing in the data file. If the file is empty
 when first running sadc then the above is true.
+
+~~
+
+2.24. Why doesn't sar deal with sub-second sampling/monitoring?
+
+There are two reasons for sar to not handle sub-second intervals:
+
+1) This is not sar's purpose. sar has been created to give the
+sys admin a global overview of its machine daily utilization so
+that when a problem happens, he has a benchmark and can compare
+the statistics gathered by sar with those saved before. For that
+reason an interval of 10 minutes (which is the default for sar) is
+quite appropriate.
+
+2) Because this is just a dumb idea to try to gather a huge amount
+of data on a sub-second interval basis (and sar really collects
+a lot of data). This can be resource-consuming and you are all the
+more prone to have an influence on the data you are retrieving as
+the interval of time is small.
+
+~~
+
+2.25. Is it possible to save only some specific activities in my
+daily data files? It would help to make saXX files take less space
+on disk...
+
+sadc's option -S followed by a keyword (DISK, SNMP...)  can already
+be used to specify which optional activities are to be collected.
+Without this option, sadc collects a default set of activities (CPU
+activity, memory activity, etc.)
+Yet it is actually possible to specify explicitly which activities
+should be collected by sadc! You have to use sadc's option -S
+followed by a numerical value corresponding to the activity you want
+to collect (the values are those displayed by sadf -H and preceding
+the activity name in the list of activities). The only limitation
+is CPU activity which is always collected for internal purpose.
+Example: To tell sadc to not collect any activities but CPU, enter:
+
+$ sadc -S 0
+
+followed by the other classic options (interval, count, filename...)
+To tell sadc to collect only CPU and network activities, replace
+"-S 0" with "-S 0 -S 12" (the value 12 corresponds to network activity).
+This way you can tell sadc to collect only the desired activities.
+
 
 3. QUESTIONS RELATING TO IOSTAT
 ###############################
@@ -657,6 +717,17 @@ will display only tasks with non-zero statistics. For example, "pidstat -u"
 will display only tasks that have actually used some CPU resources since
 system startup. You should enter "pidstat -u -p ALL" to make sure that all
 the processes are listed in the report.
+
+~~~
+
+4.4. I noticed that the total CPU utilization for threads running on
+     an individual CPU can exceed 100%...
+
+The CPU number displayed by pidstat is the CPU to which the task is attached
+when the statistics are actually displayed. This doesn't mean that the task
+has spent its whole interval of time attached to it. Hence the CPU ressource
+used by a thread on an interval of time as displayed by pidstat may have
+concerned several processors.
 
 --	
 Sebastien Godard (sysstat <at> orange.fr) is the author and the current

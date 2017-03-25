@@ -1,3 +1,136 @@
+sysstat (11.0.1-1pexip1) pexip; urgency=low
+
+  * Migrate to Jessie
+
+ -- John-Mark Bell <jmb@pexip.com>  Sat, 25 Mar 2017 00:04:11 +0000
+
+sysstat (11.0.1-1) unstable; urgency=medium
+
+  * New upstream (stable) version.
+  * Update debian/watch to prefer "xz" tarballs.
+  * Standards-Version: 3.9.6 (no changes).
+
+ -- Robert Luberda <robert@debian.org>  Fri, 26 Sep 2014 10:03:15 +0200
+
+sysstat (11.0.0-1) unstable; urgency=medium
+
+  * New upstream version:
+    + The standard daily data files may now be named saYYYYMMDD instead
+      of saDD, especially when HISTORY variable is greater than 28.
+  * Update patches for the new version.
+  * Add 12-isag-new-format-support.patch to handle the newly introduced
+    saYYYYMMDD log files format.
+
+ -- Robert Luberda <robert@debian.org>  Fri, 29 Aug 2014 08:33:19 +0200
+
+sysstat (10.3.1-1) unstable; urgency=medium
+
+  * New upstream version (development):
+    + Daily data files format has changed, and is *not* compatible with the
+      previous one.
+    + sar/sadc/sadf: Now take into account a change of CPU count in datafiles.
+      The number of CPU is displayed in the RESTART messages (closes: #670215).
+    + Rename nfsiostat to nfsiostat-sysstat and indicate it is now obsolete.
+      An nfsiostat command is already included in the nfs-common package.
+  * Remove 05-defaultfile_message.patch, merged upstream.
+  * Add 11-nfsiostat-whatis-entry.patch to fix `manpage-has-bad-whatis-entry'
+    lintian warning on nfsiostat-sysstat(1) man page.
+  * debian/control: Update information about the nfsiostat command.
+  * debian/rules: No longer pass --start option to dh_installinit to fix
+    the update-rc.d warnings appearing during installation time.
+  * Cleanup maintainer scripts: remove sysstat.preinst, and ancient parts
+    of sysstat.postinst.
+
+ -- Robert Luberda <robert@debian.org>  Tue, 29 Apr 2014 22:09:36 +0200
+
+sysstat (10.2.1-1) unstable; urgency=medium
+
+  * New upstream version.
+  * Add Keywords for isag.desktop (lintian).
+  * debian/rules:
+    + pass new --enable-copy-only config option;
+    + built binaries with LFS support (lintian);
+    + minor cleanup.
+  * Add build-dependency on pkg-config used by the configure script.
+
+ -- Robert Luberda <robert@debian.org>  Sun, 16 Mar 2014 23:29:52 +0100
+
+sysstat (10.2.0-1) unstable; urgency=low
+
+  * New upstream stable version.
+  * debian/control:
+    + replace `tk8.5' with `tk' in isag depends line (closes: #725696);
+    + move `Homepage' to source package fields (lintian);
+    + bump Standards-Version to 3.9.5.
+
+ -- Robert Luberda <robert@debian.org>  Sun, 10 Nov 2013 10:25:19 +0100
+
+sysstat (10.1.7-1) unstable; urgency=low
+
+  * New upstream version.
+  * Remove no longer needed 11-fix-concurrency-build-issue.patch.
+
+ -- Robert Luberda <robert@debian.org>  Sat, 21 Sep 2013 22:27:45 +0200
+
+sysstat (10.1.6-2) unstable; urgency=low
+
+  [ Louis Bouchard ]
+  * New 11-fix-concurrency-build-issue.patch: Extend explicit rules
+    to avoid build issues occurring during parallel build (closes: #714153).
+
+ -- Robert Luberda <robert@debian.org>  Thu, 01 Aug 2013 08:41:15 +0200
+
+sysstat (10.1.6-1) unstable; urgency=low
+
+  * New upstream version.
+
+ -- Robert Luberda <robert@debian.org>  Thu, 13 Jun 2013 22:27:39 +0200
+
+sysstat (10.1.5-2) unstable; urgency=low
+
+  * Upload to unstable.
+  * New 10-isag-menu-refresh.patch: Add Refresh button to file menu to make
+    it possible to re-read contents of /var/log/sysstat directory in case
+    isag is running over midnight, and new file is created (LP: #924197).
+    Please note that (depending on /etc/sysstat/sysstat settings) the new file
+    created just after midnight can be replaced with a symbolic link, so it
+    might be necessary to use the Refresh button again in such cases.
+  * Standards-Version: 3.9.4 (no changes).
+
+ -- Robert Luberda <robert@debian.org>  Fri, 10 May 2013 10:34:59 +0200
+
+sysstat (10.1.5-1) experimental; urgency=low
+
+  * New upstream version.
+
+ -- Robert Luberda <robert@debian.org>  Sun, 07 Apr 2013 12:36:24 +0200
+
+sysstat (10.1.4-1) experimental; urgency=low
+
+  * New upstream version.
+
+ -- Robert Luberda <robert@debian.org>  Sun, 24 Mar 2013 11:05:44 +0100
+
+sysstat (10.0.5-1) unstable; urgency=low
+
+  * New upstream (stable) version.
+  * debian/control: Document the cifsiostat and nfsiostat tools in sysstat
+    package description (closes: #667618).
+  * debian-sa1, sysstat.cron.daily, sysstat.postinst, 04-configs.patch,
+    sysstat.init.d: Remove Debian-specific SA1_OPTIONS and SA2_OPTIONS
+    variables, use upstream-provided SADC_OPTIONS instead. Provide a
+    sysstat.NEWS entry for the change.
+
+ -- Robert Luberda <robert@debian.org>  Sun, 20 May 2012 11:14:47 +0200
+
+sysstat (10.0.4-1) unstable; urgency=low
+
+  * New upstream (stable) version.
+  * Update build-dependencies on debhelper.
+  * Standards-Version: 3.9.3 (no changes).
+
+ -- Robert Luberda <robert@debian.org>  Tue, 13 Mar 2012 22:59:04 +0100
+
 sysstat (10.0.3-1pexip1) pexip; urgency=low
 
   * Prepare Pexip packaging
@@ -12,7 +145,6 @@ sysstat (10.0.3-1) unstable; urgency=low
   * debian/rules: remove .pc/.dpkg-source-unapply file in configure target
     to fix broken behaviour of dpkg-buildpackage (see Bug#649521).
 
-
  -- Robert Luberda <robert@debian.org>  Sat, 03 Dec 2011 17:38:42 +0100
 
 sysstat (10.0.2-2) unstable; urgency=low
@@ -25,7 +157,7 @@ sysstat (10.0.2-1) unstable; urgency=low
 
   * New upstream (stable) release.
   * debian/control: Set architecture to linux-any (closes: #619949).
-  * The debconf message has already been ixed in 8.1.8-2, (LP: #342655).
+  * The debconf message has already been fixed in 8.1.8-2, (LP: #342655).
 
  -- Robert Luberda <robert@debian.org>  Sun, 28 Aug 2011 19:50:36 +0200
 
@@ -202,7 +334,7 @@ sysstat (8.1.8-2) unstable; urgency=low
 sysstat (8.1.8-1) unstable; urgency=low
 
   * New upstream release.
-  * Add debian-sa1 script and ran it from cron.d job (closes: #499461).
+  * Add debian-sa1 script and run it from cron.d job (closes: #499461).
   * If sar cannot open a data file, print a message indicating that sysstat
     might not be enabled (closes: #511418).
   * Remove stop links from rc0 and rc6 run levels (cf. #495545).

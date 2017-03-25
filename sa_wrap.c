@@ -1,6 +1,6 @@
 /*
  * sysstat - sa_wrap.c: Functions used in activity.c
- * (C) 1999-2011 by Sebastien GODARD (sysstat <at> orange.fr)
+ * (C) 1999-2014 by Sebastien GODARD (sysstat <at> orange.fr)
  *
  ***************************************************************************
  * This program is free software; you can redistribute it and/or modify it *
@@ -21,6 +21,7 @@
 
 #include "sa.h"
 #include "rd_stats.h"
+#include "count.h"
 #include "rd_sensors.h"
 
 extern unsigned int flags;
@@ -41,10 +42,10 @@ __read_funct_t wrap_read_stat_cpu(struct activity *a)
 {
 	struct stats_cpu *st_cpu
 		= (struct stats_cpu *) a->_buf0;
-	
+
 	/* Read CPU statistics */
 	read_stat_cpu(st_cpu, a->nr, &record_hdr.uptime, &record_hdr.uptime0);
-	
+
 	return;
 }
 
@@ -66,7 +67,7 @@ __read_funct_t wrap_read_stat_pcsw(struct activity *a)
 
 	/* Read process and context switch stats */
 	read_stat_pcsw(st_pcsw);
-	
+
 	return;
 }
 
@@ -88,7 +89,7 @@ __read_funct_t wrap_read_stat_irq(struct activity *a)
 
 	/* Read interrupts stats */
 	read_stat_irq(st_irq, a->nr);
-	
+
 	return;
 }
 
@@ -110,7 +111,7 @@ __read_funct_t wrap_read_loadavg(struct activity *a)
 
 	/* Read queue and load stats */
 	read_loadavg(st_queue);
-	
+
 	return;
 }
 
@@ -132,7 +133,7 @@ __read_funct_t wrap_read_meminfo(struct activity *a)
 
 	/* Read memory stats */
 	read_meminfo(st_memory);
-	
+
 	return;
 }
 
@@ -154,7 +155,7 @@ __read_funct_t wrap_read_swap(struct activity *a)
 
 	/* Read stats from /proc/vmstat */
 	read_vmstat_swap(st_swap);
-	
+
 	return;
 }
 
@@ -176,7 +177,7 @@ __read_funct_t wrap_read_paging(struct activity *a)
 
 	/* Read stats from /proc/vmstat */
 	read_vmstat_paging(st_paging);
-	
+
 	return;
 }
 
@@ -242,7 +243,7 @@ __read_funct_t wrap_read_tty_driver_serial(struct activity *a)
 
 	/* Read serial lines stats */
 	read_tty_driver_serial(st_serial, a->nr);
-	
+
 	return;
 }
 
@@ -264,7 +265,7 @@ __read_funct_t wrap_read_kernel_tables(struct activity *a)
 
 	/* Read kernel tables stats */
 	read_kernel_tables(st_ktables);
-	
+
 	return;
 }
 
@@ -283,10 +284,17 @@ __read_funct_t wrap_read_net_dev(struct activity *a)
 {
 	struct stats_net_dev *st_net_dev
 		= (struct stats_net_dev *) a->_buf0;
+	int dev;
 
 	/* Read network interfaces stats */
-	read_net_dev(st_net_dev, a->nr);
-	
+	dev = read_net_dev(st_net_dev, a->nr);
+	if (!dev)
+		/* No data read. Exit */
+		return;
+
+	/* Read duplex and speed info for each interface */
+	read_if_info(st_net_dev, dev);
+
 	return;
 }
 
@@ -308,7 +316,7 @@ __read_funct_t wrap_read_net_edev(struct activity *a)
 
 	/* Read network interfaces errors stats */
 	read_net_edev(st_net_edev, a->nr);
-	
+
 	return;
 }
 
@@ -330,7 +338,7 @@ __read_funct_t wrap_read_net_nfs(struct activity *a)
 
 	/* Read NFS client stats */
 	read_net_nfs(st_net_nfs);
-	
+
 	return;
 }
 
@@ -352,7 +360,7 @@ __read_funct_t wrap_read_net_nfsd(struct activity *a)
 
 	/* Read NFS server stats */
 	read_net_nfsd(st_net_nfsd);
-	
+
 	return;
 }
 
@@ -374,7 +382,7 @@ __read_funct_t wrap_read_net_sock(struct activity *a)
 
 	/* Read network sockets stats */
 	read_net_sock(st_net_sock);
-	
+
 	return;
 }
 
@@ -396,7 +404,7 @@ __read_funct_t wrap_read_net_ip(struct activity *a)
 
 	/* Read IP stats */
 	read_net_ip(st_net_ip);
-	
+
 	return;
 }
 
@@ -418,7 +426,7 @@ __read_funct_t wrap_read_net_eip(struct activity *a)
 
 	/* Read IP error stats */
 	read_net_eip(st_net_eip);
-	
+
 	return;
 }
 
@@ -440,7 +448,7 @@ __read_funct_t wrap_read_net_icmp(struct activity *a)
 
 	/* Read ICMP stats */
 	read_net_icmp(st_net_icmp);
-	
+
 	return;
 }
 
@@ -462,7 +470,7 @@ __read_funct_t wrap_read_net_eicmp(struct activity *a)
 
 	/* Read ICMP error stats */
 	read_net_eicmp(st_net_eicmp);
-	
+
 	return;
 }
 
@@ -484,7 +492,7 @@ __read_funct_t wrap_read_net_tcp(struct activity *a)
 
 	/* Read TCP stats */
 	read_net_tcp(st_net_tcp);
-	
+
 	return;
 }
 
@@ -506,7 +514,7 @@ __read_funct_t wrap_read_net_etcp(struct activity *a)
 
 	/* Read TCP error stats */
 	read_net_etcp(st_net_etcp);
-	
+
 	return;
 }
 
@@ -528,7 +536,7 @@ __read_funct_t wrap_read_net_udp(struct activity *a)
 
 	/* Read UDP stats */
 	read_net_udp(st_net_udp);
-	
+
 	return;
 }
 
@@ -550,7 +558,7 @@ __read_funct_t wrap_read_net_sock6(struct activity *a)
 
 	/* Read IPv6 network sockets stats */
 	read_net_sock6(st_net_sock6);
-	
+
 	return;
 }
 
@@ -572,7 +580,7 @@ __read_funct_t wrap_read_net_ip6(struct activity *a)
 
 	/* Read IPv6 stats */
 	read_net_ip6(st_net_ip6);
-	
+
 	return;
 }
 
@@ -594,7 +602,7 @@ __read_funct_t wrap_read_net_eip6(struct activity *a)
 
 	/* Read IPv6 error stats */
 	read_net_eip6(st_net_eip6);
-	
+
 	return;
 }
 
@@ -616,7 +624,7 @@ __read_funct_t wrap_read_net_icmp6(struct activity *a)
 
 	/* Read ICMPv6 stats */
 	read_net_icmp6(st_net_icmp6);
-	
+
 	return;
 }
 
@@ -638,7 +646,7 @@ __read_funct_t wrap_read_net_eicmp6(struct activity *a)
 
 	/* Read ICMPv6 error stats */
 	read_net_eicmp6(st_net_eicmp6);
-	
+
 	return;
 }
 
@@ -660,7 +668,7 @@ __read_funct_t wrap_read_net_udp6(struct activity *a)
 
 	/* Read UDPv6 stats */
 	read_net_udp6(st_net_udp6);
-	
+
 	return;
 }
 
@@ -682,7 +690,7 @@ __read_funct_t wrap_read_cpuinfo(struct activity *a)
 
 	/* Read CPU frequency stats */
 	read_cpuinfo(st_pwr_cpufreq, a->nr);
-	
+
 	return;
 }
 
@@ -849,6 +857,28 @@ __read_funct_t wrap_read_bus_usb_dev(struct activity *a)
 
 /*
  ***************************************************************************
+ * Read filesystem statistics.
+ *
+ * IN:
+ * @a	Activity structure.
+ *
+ * OUT:
+ * @a	Activity structure with statistics.
+ ***************************************************************************
+ */
+__read_funct_t wrap_read_filesystem(struct activity *a)
+{
+	struct stats_filesystem *st_filesystem
+		= (struct stats_filesystem *) a->_buf0;
+
+	/* Read filesystems from /etc/mtab */
+	read_filesystem(st_filesystem, a->nr);
+
+	return;
+}
+
+/*
+ ***************************************************************************
  * Count number of interrupts that are in /proc/stat file.
  * Truncate the number of different individual interrupts to NR_IRQS.
  *
@@ -932,7 +962,7 @@ __nr_t wrap_get_iface_nr(struct activity *a)
  */
 __nr_t wrap_get_cpu_nr(struct activity *a)
 {
-	return (get_cpu_nr(a->bitmap->b_size) + 1);
+	return (get_cpu_nr(a->bitmap->b_size, FALSE) + 1);
 }
 
 /*
@@ -1045,7 +1075,29 @@ __nr_t wrap_get_usb_nr(struct activity *a)
 
 	if ((n = get_usb_nr()) >= 0)
 		/* Return a positive number even if no USB devices have been found */
-		return (n + NR_USB_PREALLOC);
-	
+		return n + NR_USB_PREALLOC;
+
+	return 0;
+}
+
+/*
+ ***************************************************************************
+ * Get number of mounted filesystems from /etc/mtab. Don't take into account
+ * pseudo-filesystems.
+ *
+ * IN:
+ * @a	Activity structure.
+ *
+ * RETURNS:
+ * Number of filesystems + a pre-allocation constant.
+ ***************************************************************************
+ */
+__nr_t wrap_get_filesystem_nr(struct activity *a)
+{
+	__nr_t n = 0;
+
+	if ((n = get_filesystem_nr()) > 0)
+		return n + NR_FILESYSTEM_PREALLOC;
+
 	return 0;
 }

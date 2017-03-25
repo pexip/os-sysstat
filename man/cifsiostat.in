@@ -1,9 +1,9 @@
-.TH CIFSIOSTAT 1 "JANUARY 2011" Linux "Linux User's Manual" -*- nroff -*-
+.TH CIFSIOSTAT 1 "JULY 2012" Linux "Linux User's Manual" -*- nroff -*-
 .SH NAME
 cifsiostat \- Report CIFS statistics.
 .SH SYNOPSIS
 .ie 'yes'@WITH_DEBUG@' \{
-.B cifsiostat [ --debuginfo ] [ -h ] [ -k | -m ] [ -t ] [ -V ] [
+.B cifsiostat [ -h ] [ -k | -m ] [ -t ] [ -V ] [ --debuginfo ] [
 .I interval
 .B [
 .I count
@@ -121,7 +121,7 @@ If this variable exists and its value is
 .BR ISO
 then the current locale will be ignored when printing the date in the report
 header. The
-.B nfsiostat
+.B cifsiostat
 command will use the ISO 8601 format (YYYY-MM-DD) instead.
 The timestamp displayed with option -t will also be compliant with ISO 8601
 format.

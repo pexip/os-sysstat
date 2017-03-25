@@ -1,6 +1,6 @@
 /*
  * rndr_stats.c: Funtions used by sadf to display statistics in selected format.
- * (C) 1999-2011 by Sebastien GODARD (sysstat <at> orange.fr)
+ * (C) 1999-2014 by Sebastien GODARD (sysstat <at> orange.fr)
  *
  ***************************************************************************
  * This program is free software; you can redistribute it and/or modify it *
@@ -133,7 +133,11 @@ static void render(int isdb, char *pre, int rflags, const char *pptxt,
 			}
 		}
 		else {
-			printf(txt[isdb]);	/* No args */
+			/*
+			 * Additional NULL parameter below works around
+			 * fatal error when compiled with -Werror=format-security.
+			 */
+			printf(txt[isdb], NULL);	/* No args */
 		}
 	}
 
@@ -142,6 +146,9 @@ static void render(int isdb, char *pre, int rflags, const char *pptxt,
 	}
 	else if (rflags & PT_USESTR) {
 		printf("%s%s", seps[isdb], sval);
+	}
+	else if (rflags & PT_USERND) {
+		printf("%s%.0f", seps[isdb], dval);
 	}
 	else {
 		printf("%s%.2f", seps[isdb], dval);
@@ -173,13 +180,13 @@ __print_funct_t render_cpu_stats(struct activity *a, int isdb, char *pre,
 		= (DISPLAY_HORIZONTALLY(flags) ? PT_NOFLAG : PT_NEWLIN);
 
 	for (i = 0; (i < a->nr) && (i < a->bitmap->b_size + 1); i++) {
-		
+
 		scc = (struct stats_cpu *) ((char *) a->buf[curr]  + i * a->msize);
 		scp = (struct stats_cpu *) ((char *) a->buf[!curr] + i * a->msize);
 
 		/* Should current CPU (including CPU "all") be displayed? */
 		if (a->bitmap->b_array[i >> 3] & (1 << (i & 0x07))) {
-			
+
 			if (!i) {
 				/* This is CPU "all" */
 				if (DISPLAY_CPU_DEF(a->opt_flags)) {
@@ -203,12 +210,25 @@ __print_funct_t render_cpu_stats(struct activity *a, int isdb, char *pre,
 							   g_itv),
 					       NULL);
 				}
-				
-				render(isdb, pre, PT_NOFLAG,
-				       "all\t%%nice", NULL, NULL,
-				       NOVAL,
-				       ll_sp_value(scp->cpu_nice, scc->cpu_nice, g_itv),
-				       NULL);
+
+				if (DISPLAY_CPU_DEF(a->opt_flags)) {
+					render(isdb, pre, PT_NOFLAG,
+					       "all\t%%nice", NULL, NULL,
+					       NOVAL,
+					       ll_sp_value(scp->cpu_nice, scc->cpu_nice, g_itv),
+					       NULL);
+				}
+				else if (DISPLAY_CPU_ALL(a->opt_flags)) {
+					render(isdb, pre, PT_NOFLAG,
+					       "all\t%%nice", NULL, NULL,
+					       NOVAL,
+					       (scc->cpu_nice - scc->cpu_guest_nice) < (scp->cpu_nice - scp->cpu_guest_nice) ?
+					       0.0 :
+					       ll_sp_value(scp->cpu_nice - scp->cpu_guest_nice,
+							   scc->cpu_nice - scc->cpu_guest_nice,
+							   g_itv),
+					       NULL);
+				}
 
 				if (DISPLAY_CPU_DEF(a->opt_flags)) {
 					render(isdb, pre, PT_NOFLAG,
@@ -226,7 +246,7 @@ __print_funct_t render_cpu_stats(struct activity *a, int isdb, char *pre,
 					       ll_sp_value(scp->cpu_sys, scc->cpu_sys, g_itv),
 					       NULL);
 				}
-				
+
 				render(isdb, pre, PT_NOFLAG,
 				       "all\t%%iowait", NULL, NULL,
 				       NOVAL,
@@ -257,6 +277,12 @@ __print_funct_t render_cpu_stats(struct activity *a, int isdb, char *pre,
 					       NOVAL,
 					       ll_sp_value(scp->cpu_guest, scc->cpu_guest, g_itv),
 					       NULL);
+
+					render(isdb, pre, PT_NOFLAG,
+					       "all\t%%gnice", NULL, NULL,
+					       NOVAL,
+					       ll_sp_value(scp->cpu_guest_nice, scc->cpu_guest_nice, g_itv),
+					       NULL);
 				}
 
 				render(isdb, pre, pt_newlin,
@@ -271,7 +297,8 @@ __print_funct_t render_cpu_stats(struct activity *a, int isdb, char *pre,
 				/*
 				 * If the CPU is offline then it is omited from /proc/stat:
 				 * All the fields couldn't have been read and the sum of them is zero.
-				 * (Remember that guest time is already included in user mode.)
+				 * (Remember that guest/guest_nice times are already included in
+				 * user/nice modes.)
 				 */
 				if ((scc->cpu_user    + scc->cpu_nice + scc->cpu_sys   +
 				     scc->cpu_iowait  + scc->cpu_idle + scc->cpu_steal +
@@ -282,7 +309,7 @@ __print_funct_t render_cpu_stats(struct activity *a, int isdb, char *pre,
 					 * jump from zero when the CPU comes back online.
 					 */
 					*scc = *scp;
-					
+
 					g_itv = 0;
 					cpu_offline = TRUE;
 				}
@@ -312,19 +339,32 @@ __print_funct_t render_cpu_stats(struct activity *a, int isdb, char *pre,
 					       NOVAL,
 					       (!g_itv ||
 					       ((scc->cpu_user - scc->cpu_guest) < (scp->cpu_user - scp->cpu_guest))) ?
-					       0.0 :			/* CPU is offline or tickless */
+					       0.0 :
 					       ll_sp_value(scp->cpu_user - scp->cpu_guest,
 							   scc->cpu_user - scc->cpu_guest, g_itv),
 					       NULL);
 				}
-				
-				render(isdb, pre, PT_NOFLAG,
-				       "cpu%d\t%%nice", NULL, cons(iv, i - 1, NOVAL),
-				       NOVAL,
-				       !g_itv ?
-				       0.0 :
-				       ll_sp_value(scp->cpu_nice, scc->cpu_nice, g_itv),
-				       NULL);
+
+				if (DISPLAY_CPU_DEF(a->opt_flags)) {
+					render(isdb, pre, PT_NOFLAG,
+					       "cpu%d\t%%nice", NULL, cons(iv, i - 1, NOVAL),
+					       NOVAL,
+					       !g_itv ?
+					       0.0 :
+					       ll_sp_value(scp->cpu_nice, scc->cpu_nice, g_itv),
+					       NULL);
+				}
+				else if (DISPLAY_CPU_ALL(a->opt_flags)) {
+					render(isdb, pre, PT_NOFLAG,
+					       "cpu%d\t%%nice", NULL, cons(iv, i - 1, NOVAL),
+					       NOVAL,
+					       (!g_itv ||
+					       ((scc->cpu_nice - scc->cpu_guest_nice) < (scp->cpu_nice - scp->cpu_guest_nice))) ?
+					       0.0 :
+					       ll_sp_value(scp->cpu_nice - scp->cpu_guest_nice,
+							   scc->cpu_nice - scc->cpu_guest_nice, g_itv),
+					       NULL);
+				}
 
 				if (DISPLAY_CPU_DEF(a->opt_flags)) {
 					render(isdb, pre, PT_NOFLAG,
@@ -346,7 +386,7 @@ __print_funct_t render_cpu_stats(struct activity *a, int isdb, char *pre,
 					       ll_sp_value(scp->cpu_sys, scc->cpu_sys, g_itv),
 					       NULL);
 				}
-				
+
 				render(isdb, pre, PT_NOFLAG,
 				       "cpu%d\t%%iowait", NULL, cons(iv, i - 1, NOVAL),
 				       NOVAL,
@@ -379,7 +419,7 @@ __print_funct_t render_cpu_stats(struct activity *a, int isdb, char *pre,
 					       0.0 :
 					       ll_sp_value(scp->cpu_softirq, scc->cpu_softirq, g_itv),
 					       NULL);
-					
+
 					render(isdb, pre, PT_NOFLAG,
 					       "cpu%d\t%%guest", NULL, cons(iv, i - 1, NOVAL),
 					       NOVAL,
@@ -387,8 +427,16 @@ __print_funct_t render_cpu_stats(struct activity *a, int isdb, char *pre,
 					       0.0 :
 					       ll_sp_value(scp->cpu_guest, scc->cpu_guest, g_itv),
 					       NULL);
+
+					render(isdb, pre, PT_NOFLAG,
+					       "cpu%d\t%%gnice", NULL, cons(iv, i - 1, NOVAL),
+					       NOVAL,
+					       !g_itv ?
+					       0.0 :
+					       ll_sp_value(scp->cpu_guest_nice, scc->cpu_guest_nice, g_itv),
+					       NULL);
 				}
-				
+
 				if (!g_itv) {
 					/* CPU is offline or tickless */
 					render(isdb, pre, pt_newlin,
@@ -432,7 +480,7 @@ __print_funct_t render_pcsw_stats(struct activity *a, int isdb, char *pre,
 		*spp = (struct stats_pcsw *) a->buf[!curr];
 	int pt_newlin
 		= (DISPLAY_HORIZONTALLY(flags) ? PT_NOFLAG : PT_NEWLIN);
-	
+
 	/* The first one as an example */
 	render(isdb,		/* db/ppc flag */
 	       pre,		/* the preformatted line leader */
@@ -448,7 +496,7 @@ __print_funct_t render_pcsw_stats(struct activity *a, int isdb, char *pre,
 	render(isdb, pre, pt_newlin,
 	       "-\tcswch/s", NULL, NULL,
 	       NOVAL,
-	       ll_s_value(spp->context_switch, spc->context_switch, itv),
+	       S_VALUE(spp->context_switch, spc->context_switch, itv),
 	       NULL);
 }
 
@@ -471,29 +519,29 @@ __print_funct_t render_irq_stats(struct activity *a, int isdb, char *pre,
 	struct stats_irq *sic, *sip;
 	int pt_newlin
 		= (DISPLAY_HORIZONTALLY(flags) ? PT_NOFLAG : PT_NEWLIN);
-	
+
 	for (i = 0; (i < a->nr) && (i < a->bitmap->b_size + 1); i++) {
 
 		sic = (struct stats_irq *) ((char *) a->buf[curr]  + i * a->msize);
 		sip = (struct stats_irq *) ((char *) a->buf[!curr] + i * a->msize);
-		
+
 		/* Should current interrupt (including int "sum") be displayed? */
 		if (a->bitmap->b_array[i >> 3] & (1 << (i & 0x07))) {
-			
+
 			/* Yes: Display it */
 			if (!i) {
 				/* This is interrupt "sum" */
 				render(isdb, pre, pt_newlin,
 				       "sum\tintr/s", "-1", NULL,
 				       NOVAL,
-				       ll_s_value(sip->irq_nr, sic->irq_nr, itv),
+				       S_VALUE(sip->irq_nr, sic->irq_nr, itv),
 				       NULL);
 			}
 			else {
 				render(isdb, pre, pt_newlin,
 				       "i%03d\tintr/s", "%d", cons(iv, i - 1, NOVAL),
 				       NOVAL,
-				       ll_s_value(sip->irq_nr, sic->irq_nr, itv),
+				       S_VALUE(sip->irq_nr, sic->irq_nr, itv),
 				       NULL);
 			}
 		}
@@ -520,7 +568,7 @@ __print_funct_t render_swap_stats(struct activity *a, int isdb, char *pre,
 		*ssp = (struct stats_swap *) a->buf[!curr];
 	int pt_newlin
 		= (DISPLAY_HORIZONTALLY(flags) ? PT_NOFLAG : PT_NEWLIN);
-	
+
 	render(isdb, pre, PT_NOFLAG,
 	       "-\tpswpin/s", NULL, NULL,
 	       NOVAL,
@@ -685,7 +733,7 @@ __print_funct_t render_memory_stats(struct activity *a, int isdb, char *pre,
 		*smp = (struct stats_memory *) a->buf[!curr];
 	int pt_newlin
 		= (DISPLAY_HORIZONTALLY(flags) ? PT_NOFLAG : PT_NEWLIN);
-		
+
 	if (DISPLAY_MEMORY(a->opt_flags)) {
 
 		render(isdb, pre, PT_NOFLAG,
@@ -748,11 +796,15 @@ __print_funct_t render_memory_stats(struct activity *a, int isdb, char *pre,
 		       "-\tkbactive", NULL, NULL,
 		       smc->activekb, DNOVAL, NULL);
 
-		render(isdb, pre, PT_USEINT | pt_newlin,
+		render(isdb, pre, PT_USEINT,
 		       "-\tkbinact", NULL, NULL,
 		       smc->inactkb, DNOVAL, NULL);
+
+		render(isdb, pre, PT_USEINT | pt_newlin,
+		       "-\tkbdirty", NULL, NULL,
+		       smc->dirtykb, DNOVAL, NULL);
 	}
-	
+
 	if (DISPLAY_SWAP(a->opt_flags)) {
 
 		render(isdb, pre, PT_USEINT,
@@ -800,7 +852,7 @@ __print_funct_t render_ktables_stats(struct activity *a, int isdb, char *pre,
 		*skc = (struct stats_ktables *) a->buf[curr];
 	int pt_newlin
 		= (DISPLAY_HORIZONTALLY(flags) ? PT_NOFLAG : PT_NEWLIN);
-	
+
 	render(isdb, pre, PT_USEINT,
 	       "-\tdentunusd", NULL, NULL,
 	       skc->dentry_stat, DNOVAL, NULL);
@@ -837,7 +889,7 @@ __print_funct_t render_queue_stats(struct activity *a, int isdb, char *pre,
 		*sqc = (struct stats_queue *) a->buf[curr];
 	int pt_newlin
 		= (DISPLAY_HORIZONTALLY(flags) ? PT_NOFLAG : PT_NEWLIN);
-	
+
 	render(isdb, pre, PT_USEINT,
 	       "-\trunq-sz", NULL, NULL,
 	       sqc->nr_running, DNOVAL, NULL);
@@ -863,7 +915,7 @@ __print_funct_t render_queue_stats(struct activity *a, int isdb, char *pre,
 	       NOVAL,
 	       (double) sqc->load_avg_15 / 100,
 	       NULL);
-	
+
 	render(isdb, pre, PT_USEINT | pt_newlin,
 	       "-\tblocked", NULL, NULL,
 	       sqc->procs_blocked, DNOVAL, NULL);
@@ -961,7 +1013,7 @@ __print_funct_t render_disk_stats(struct activity *a, int isdb, char *pre,
 	int i, j;
 	struct stats_disk *sdc,	*sdp;
 	struct ext_disk_stats xds;
-	char *dev_name;
+	char *dev_name, *persist_dev_name;
 	int pt_newlin
 		= (DISPLAY_HORIZONTALLY(flags) ? PT_NOFLAG : PT_NEWLIN);
 
@@ -974,19 +1026,29 @@ __print_funct_t render_disk_stats(struct activity *a, int isdb, char *pre,
 
 		j = check_disk_reg(a, curr, !curr, i);
 		sdp = (struct stats_disk *) ((char *) a->buf[!curr] + j * a->msize);
-		
+
 		/* Compute extended stats (service time, etc.) */
 		compute_ext_disk_stats(sdc, sdp, itv, &xds);
 
 		dev_name = NULL;
+		persist_dev_name = NULL;
 
-		if ((USE_PRETTY_OPTION(flags)) && (sdc->major == dm_major)) {
-			dev_name = transform_devmapname(sdc->major, sdc->minor);
+		if (DISPLAY_PERSIST_NAME_S(flags)) {
+			persist_dev_name = get_persistent_name_from_pretty(get_devname(sdc->major, sdc->minor, TRUE));
 		}
 
-		if (!dev_name) {
-			dev_name = get_devname(sdc->major, sdc->minor,
-					       USE_PRETTY_OPTION(flags));
+		if (persist_dev_name) {
+			dev_name = persist_dev_name;
+		}
+		else {
+			if ((USE_PRETTY_OPTION(flags)) && (sdc->major == dm_major)) {
+				dev_name = transform_devmapname(sdc->major, sdc->minor);
+			}
+
+			if (!dev_name) {
+				dev_name = get_devname(sdc->major, sdc->minor,
+						       USE_PRETTY_OPTION(flags));
+			}
 		}
 
 		render(isdb, pre, PT_NOFLAG,
@@ -1000,14 +1062,14 @@ __print_funct_t render_disk_stats(struct activity *a, int isdb, char *pre,
 		       "%s\trd_sec/s", NULL,
 		       cons(sv, dev_name, NULL),
 		       NOVAL,
-		       ll_s_value(sdp->rd_sect, sdc->rd_sect, itv),
+		       S_VALUE(sdp->rd_sect, sdc->rd_sect, itv),
 		       NULL);
 
 		render(isdb, pre, PT_NOFLAG,
 		       "%s\twr_sec/s", NULL,
 		       cons(sv, dev_name, NULL),
 		       NOVAL,
-		       ll_s_value(sdp->wr_sect, sdc->wr_sect, itv),
+		       S_VALUE(sdp->wr_sect, sdc->wr_sect, itv),
 		       NULL);
 
 		render(isdb, pre, PT_NOFLAG,
@@ -1064,6 +1126,7 @@ __print_funct_t render_net_dev_stats(struct activity *a, int isdb, char *pre,
 {
 	int i, j;
 	struct stats_net_dev *sndc, *sndp;
+	double rxkb, txkb, ifutil;
 	int pt_newlin
 		= (DISPLAY_HORIZONTALLY(flags) ? PT_NOFLAG : PT_NEWLIN);
 
@@ -1073,7 +1136,7 @@ __print_funct_t render_net_dev_stats(struct activity *a, int isdb, char *pre,
 
 		if (!strcmp(sndc->interface, ""))
 			continue;
-		
+
 		j = check_net_dev_reg(a, curr, !curr, i);
 		sndp = (struct stats_net_dev *) ((char *) a->buf[!curr] + j * a->msize);
 
@@ -1091,18 +1154,20 @@ __print_funct_t render_net_dev_stats(struct activity *a, int isdb, char *pre,
 		       S_VALUE(sndp->tx_packets, sndc->tx_packets, itv),
 		       NULL);
 
+		rxkb = S_VALUE(sndp->rx_bytes, sndc->rx_bytes, itv);
 		render(isdb, pre, PT_NOFLAG,
 		       "%s\trxkB/s", NULL,
 		       cons(sv, sndc->interface, NULL),
 		       NOVAL,
-		       S_VALUE(sndp->rx_bytes, sndc->rx_bytes, itv) / 1024,
+		       rxkb / 1024,
 		       NULL);
 
+		txkb = S_VALUE(sndp->tx_bytes, sndc->tx_bytes, itv);
 		render(isdb, pre, PT_NOFLAG,
 		       "%s\ttxkB/s", NULL,
 		       cons(sv, sndc->interface, NULL),
 		       NOVAL,
-		       S_VALUE(sndp->tx_bytes, sndc->tx_bytes, itv) / 1024,
+		       txkb / 1024,
 		       NULL);
 
 		render(isdb, pre, PT_NOFLAG,
@@ -1119,11 +1184,19 @@ __print_funct_t render_net_dev_stats(struct activity *a, int isdb, char *pre,
 		       S_VALUE(sndp->tx_compressed, sndc->tx_compressed, itv),
 		       NULL);
 
-		render(isdb, pre, pt_newlin,
+		render(isdb, pre, PT_NOFLAG,
 		       "%s\trxmcst/s", NULL,
 		       cons(sv, sndc->interface, NULL),
 		       NOVAL,
 		       S_VALUE(sndp->multicast, sndc->multicast, itv),
+		       NULL);
+
+		ifutil = compute_ifutil(sndc, rxkb, txkb);
+		render(isdb, pre, pt_newlin,
+		       "%s\t%%ifutil", NULL,
+		       cons(sv, sndc->interface, NULL),
+		       NOVAL,
+		       ifutil,
 		       NULL);
 	}
 }
@@ -1154,7 +1227,7 @@ __print_funct_t render_net_edev_stats(struct activity *a, int isdb, char *pre,
 
 		if (!strcmp(snedc->interface, ""))
 			continue;
-		
+
 		j = check_net_edev_reg(a, curr, !curr, i);
 		snedp = (struct stats_net_edev *) ((char *) a->buf[!curr] + j * a->msize);
 
@@ -1243,7 +1316,7 @@ __print_funct_t render_net_nfs_stats(struct activity *a, int isdb, char *pre,
 		*snnp = (struct stats_net_nfs *) a->buf[!curr];
 	int pt_newlin
 		= (DISPLAY_HORIZONTALLY(flags) ? PT_NOFLAG : PT_NEWLIN);
-	
+
 	render(isdb, pre, PT_NOFLAG,
 	       "-\tcall/s", NULL, NULL,
 	       NOVAL,
@@ -1434,7 +1507,7 @@ __print_funct_t render_net_ip_stats(struct activity *a, int isdb, char *pre,
 		*snip = (struct stats_net_ip *) a->buf[!curr];
 	int pt_newlin
 		= (DISPLAY_HORIZONTALLY(flags) ? PT_NOFLAG : PT_NEWLIN);
-	
+
 	render(isdb, pre, PT_NOFLAG,
 	       "-\tirec/s", NULL, NULL,
 	       NOVAL,
@@ -1470,7 +1543,7 @@ __print_funct_t render_net_ip_stats(struct activity *a, int isdb, char *pre,
 	       NOVAL,
 	       S_VALUE(snip->ReasmOKs, snic->ReasmOKs, itv),
 	       NULL);
-	
+
 	render(isdb, pre, PT_NOFLAG,
 	       "-\tfragok/s", NULL, NULL,
 	       NOVAL,
@@ -1504,7 +1577,7 @@ __print_funct_t render_net_eip_stats(struct activity *a, int isdb, char *pre,
 		*sneip = (struct stats_net_eip *) a->buf[!curr];
 	int pt_newlin
 		= (DISPLAY_HORIZONTALLY(flags) ? PT_NOFLAG : PT_NEWLIN);
-	
+
 	render(isdb, pre, PT_NOFLAG,
 	       "-\tihdrerr/s", NULL, NULL,
 	       NOVAL,
@@ -1540,7 +1613,7 @@ __print_funct_t render_net_eip_stats(struct activity *a, int isdb, char *pre,
 	       NOVAL,
 	       S_VALUE(sneip->OutNoRoutes, sneic->OutNoRoutes, itv),
 	       NULL);
-	
+
 	render(isdb, pre, PT_NOFLAG,
 	       "-\tasmf/s", NULL, NULL,
 	       NOVAL,
@@ -1574,7 +1647,7 @@ __print_funct_t render_net_icmp_stats(struct activity *a, int isdb, char *pre,
 		*snip = (struct stats_net_icmp *) a->buf[!curr];
 	int pt_newlin
 		= (DISPLAY_HORIZONTALLY(flags) ? PT_NOFLAG : PT_NEWLIN);
-	
+
 	render(isdb, pre, PT_NOFLAG,
 	       "-\timsg/s", NULL, NULL,
 	       NOVAL,
@@ -1586,7 +1659,7 @@ __print_funct_t render_net_icmp_stats(struct activity *a, int isdb, char *pre,
 	       NOVAL,
 	       S_VALUE(snip->OutMsgs, snic->OutMsgs, itv),
 	       NULL);
-	
+
 	render(isdb, pre, PT_NOFLAG,
 	       "-\tiech/s", NULL, NULL,
 	       NOVAL,
@@ -1616,7 +1689,7 @@ __print_funct_t render_net_icmp_stats(struct activity *a, int isdb, char *pre,
 	       NOVAL,
 	       S_VALUE(snip->InTimestamps, snic->InTimestamps, itv),
 	       NULL);
-	
+
 	render(isdb, pre, PT_NOFLAG,
 	       "-\titmr/s", NULL, NULL,
 	       NOVAL,
@@ -1628,7 +1701,7 @@ __print_funct_t render_net_icmp_stats(struct activity *a, int isdb, char *pre,
 	       NOVAL,
 	       S_VALUE(snip->OutTimestamps, snic->OutTimestamps, itv),
 	       NULL);
-	
+
 	render(isdb, pre, PT_NOFLAG,
 	       "-\totmr/s", NULL, NULL,
 	       NOVAL,
@@ -1640,19 +1713,19 @@ __print_funct_t render_net_icmp_stats(struct activity *a, int isdb, char *pre,
 	       NOVAL,
 	       S_VALUE(snip->InAddrMasks, snic->InAddrMasks, itv),
 	       NULL);
-	
+
 	render(isdb, pre, PT_NOFLAG,
 	       "-\tiadrmkr/s", NULL, NULL,
 	       NOVAL,
 	       S_VALUE(snip->InAddrMaskReps, snic->InAddrMaskReps, itv),
 	       NULL);
-	
+
 	render(isdb, pre, PT_NOFLAG,
 	       "-\toadrmk/s", NULL, NULL,
 	       NOVAL,
 	       S_VALUE(snip->OutAddrMasks, snic->OutAddrMasks, itv),
 	       NULL);
-	
+
 	render(isdb, pre, pt_newlin,
 	       "-\toadrmkr/s", NULL, NULL,
 	       NOVAL,
@@ -1680,7 +1753,7 @@ __print_funct_t render_net_eicmp_stats(struct activity *a, int isdb, char *pre,
 		*sneip = (struct stats_net_eicmp *) a->buf[!curr];
 	int pt_newlin
 		= (DISPLAY_HORIZONTALLY(flags) ? PT_NOFLAG : PT_NEWLIN);
-	
+
 	render(isdb, pre, PT_NOFLAG,
 	       "-\tierr/s", NULL, NULL,
 	       NOVAL,
@@ -1692,7 +1765,7 @@ __print_funct_t render_net_eicmp_stats(struct activity *a, int isdb, char *pre,
 	       NOVAL,
 	       S_VALUE(sneip->OutErrors, sneic->OutErrors, itv),
 	       NULL);
-	
+
 	render(isdb, pre, PT_NOFLAG,
 	       "-\tidstunr/s", NULL, NULL,
 	       NOVAL,
@@ -1722,7 +1795,7 @@ __print_funct_t render_net_eicmp_stats(struct activity *a, int isdb, char *pre,
 	       NOVAL,
 	       S_VALUE(sneip->InParmProbs, sneic->InParmProbs, itv),
 	       NULL);
-	
+
 	render(isdb, pre, PT_NOFLAG,
 	       "-\toparmpb/s", NULL, NULL,
 	       NOVAL,
@@ -1774,7 +1847,7 @@ __print_funct_t render_net_tcp_stats(struct activity *a, int isdb, char *pre,
 		*sntp = (struct stats_net_tcp *) a->buf[!curr];
 	int pt_newlin
 		= (DISPLAY_HORIZONTALLY(flags) ? PT_NOFLAG : PT_NEWLIN);
-	
+
 	render(isdb, pre, PT_NOFLAG,
 	       "-\tactive/s", NULL, NULL,
 	       NOVAL,
@@ -1820,19 +1893,19 @@ __print_funct_t render_net_etcp_stats(struct activity *a, int isdb, char *pre,
 		*snetp = (struct stats_net_etcp *) a->buf[!curr];
 	int pt_newlin
 		= (DISPLAY_HORIZONTALLY(flags) ? PT_NOFLAG : PT_NEWLIN);
-	
+
 	render(isdb, pre, PT_NOFLAG,
 	       "-\tatmptf/s", NULL, NULL,
 	       NOVAL,
 	       S_VALUE(snetp->AttemptFails, snetc->AttemptFails, itv),
 	       NULL);
-	
+
 	render(isdb, pre, PT_NOFLAG,
 	       "-\testres/s", NULL, NULL,
 	       NOVAL,
 	       S_VALUE(snetp->EstabResets, snetc->EstabResets, itv),
 	       NULL);
-	
+
 	render(isdb, pre, PT_NOFLAG,
 	       "-\tretrans/s", NULL, NULL,
 	       NOVAL,
@@ -1872,7 +1945,7 @@ __print_funct_t render_net_udp_stats(struct activity *a, int isdb, char *pre,
 		*snup = (struct stats_net_udp *) a->buf[!curr];
 	int pt_newlin
 		= (DISPLAY_HORIZONTALLY(flags) ? PT_NOFLAG : PT_NEWLIN);
-	
+
 	render(isdb, pre, PT_NOFLAG,
 	       "-\tidgm/s", NULL, NULL,
 	       NOVAL,
@@ -1955,7 +2028,7 @@ __print_funct_t render_net_ip6_stats(struct activity *a, int isdb, char *pre,
 		*snip = (struct stats_net_ip6 *) a->buf[!curr];
 	int pt_newlin
 		= (DISPLAY_HORIZONTALLY(flags) ? PT_NOFLAG : PT_NEWLIN);
-	
+
 	render(isdb, pre, PT_NOFLAG,
 	       "-\tirec6/s", NULL, NULL,
 	       NOVAL,
@@ -2003,7 +2076,7 @@ __print_funct_t render_net_ip6_stats(struct activity *a, int isdb, char *pre,
 	       NOVAL,
 	       S_VALUE(snip->OutMcastPkts6, snic->OutMcastPkts6, itv),
 	       NULL);
-	
+
 	render(isdb, pre, PT_NOFLAG,
 	       "-\tfragok6/s", NULL, NULL,
 	       NOVAL,
@@ -2037,7 +2110,7 @@ __print_funct_t render_net_eip6_stats(struct activity *a, int isdb, char *pre,
 		*sneip = (struct stats_net_eip6 *) a->buf[!curr];
 	int pt_newlin
 		= (DISPLAY_HORIZONTALLY(flags) ? PT_NOFLAG : PT_NEWLIN);
-	
+
 	render(isdb, pre, PT_NOFLAG,
 	       "-\tihdrer6/s", NULL, NULL,
 	       NOVAL,
@@ -2085,7 +2158,7 @@ __print_funct_t render_net_eip6_stats(struct activity *a, int isdb, char *pre,
 	       NOVAL,
 	       S_VALUE(sneip->OutNoRoutes6, sneic->OutNoRoutes6, itv),
 	       NULL);
-	
+
 	render(isdb, pre, PT_NOFLAG,
 	       "-\tasmf6/s", NULL, NULL,
 	       NOVAL,
@@ -2097,7 +2170,7 @@ __print_funct_t render_net_eip6_stats(struct activity *a, int isdb, char *pre,
 	       NOVAL,
 	       S_VALUE(sneip->FragFails6, sneic->FragFails6, itv),
 	       NULL);
-	
+
 	render(isdb, pre, pt_newlin,
 	       "-\titrpck6/s", NULL, NULL,
 	       NOVAL,
@@ -2125,7 +2198,7 @@ __print_funct_t render_net_icmp6_stats(struct activity *a, int isdb, char *pre,
 		*snip = (struct stats_net_icmp6 *) a->buf[!curr];
 	int pt_newlin
 		= (DISPLAY_HORIZONTALLY(flags) ? PT_NOFLAG : PT_NEWLIN);
-	
+
 	render(isdb, pre, PT_NOFLAG,
 	       "-\timsg6/s", NULL, NULL,
 	       NOVAL,
@@ -2137,7 +2210,7 @@ __print_funct_t render_net_icmp6_stats(struct activity *a, int isdb, char *pre,
 	       NOVAL,
 	       S_VALUE(snip->OutMsgs6, snic->OutMsgs6, itv),
 	       NULL);
-	
+
 	render(isdb, pre, PT_NOFLAG,
 	       "-\tiech6/s", NULL, NULL,
 	       NOVAL,
@@ -2197,7 +2270,7 @@ __print_funct_t render_net_icmp6_stats(struct activity *a, int isdb, char *pre,
 	       NOVAL,
 	       S_VALUE(snip->OutRouterSolicits6, snic->OutRouterSolicits6, itv),
 	       NULL);
-	
+
 	render(isdb, pre, PT_NOFLAG,
 	       "-\tirtad6/s", NULL, NULL,
 	       NOVAL,
@@ -2215,7 +2288,7 @@ __print_funct_t render_net_icmp6_stats(struct activity *a, int isdb, char *pre,
 	       NOVAL,
 	       S_VALUE(snip->OutNeighborSolicits6, snic->OutNeighborSolicits6, itv),
 	       NULL);
-	
+
 	render(isdb, pre, PT_NOFLAG,
 	       "-\tinbad6/s", NULL, NULL,
 	       NOVAL,
@@ -2249,7 +2322,7 @@ __print_funct_t render_net_eicmp6_stats(struct activity *a, int isdb, char *pre,
 		*sneip = (struct stats_net_eicmp6 *) a->buf[!curr];
 	int pt_newlin
 		= (DISPLAY_HORIZONTALLY(flags) ? PT_NOFLAG : PT_NEWLIN);
-	
+
 	render(isdb, pre, PT_NOFLAG,
 	       "-\tierr6/s", NULL, NULL,
 	       NOVAL,
@@ -2285,7 +2358,7 @@ __print_funct_t render_net_eicmp6_stats(struct activity *a, int isdb, char *pre,
 	       NOVAL,
 	       S_VALUE(sneip->InParmProblems6, sneic->InParmProblems6, itv),
 	       NULL);
-	
+
 	render(isdb, pre, PT_NOFLAG,
 	       "-\toprmpb6/s", NULL, NULL,
 	       NOVAL,
@@ -2337,7 +2410,7 @@ __print_funct_t render_net_udp6_stats(struct activity *a, int isdb, char *pre,
 		*snup = (struct stats_net_udp6 *) a->buf[!curr];
 	int pt_newlin
 		= (DISPLAY_HORIZONTALLY(flags) ? PT_NOFLAG : PT_NEWLIN);
-	
+
 	render(isdb, pre, PT_NOFLAG,
 	       "-\tidgm6/s", NULL, NULL,
 	       NOVAL,
@@ -2384,12 +2457,12 @@ __print_funct_t render_pwr_cpufreq_stats(struct activity *a, int isdb, char *pre
 		= (DISPLAY_HORIZONTALLY(flags) ? PT_NOFLAG : PT_NEWLIN);
 
 	for (i = 0; (i < a->nr) && (i < a->bitmap->b_size + 1); i++) {
-		
+
 		spc = (struct stats_pwr_cpufreq *) ((char *) a->buf[curr] + i * a->msize);
 
 		/* Should current CPU (including CPU "all") be displayed? */
 		if (a->bitmap->b_array[i >> 3] & (1 << (i & 0x07))) {
-			
+
 			if (!i) {
 				/* This is CPU "all" */
 				render(isdb, pre, pt_newlin,
@@ -2641,7 +2714,7 @@ __print_funct_t render_pwr_wghfreq_stats(struct activity *a, int isdb, char *pre
 				           (spc_k->time_in_state - spp_k->time_in_state);
 				tis     += (spc_k->time_in_state - spp_k->time_in_state);
 			}
-			
+
 			if (!i) {
 				/* This is CPU "all" */
 				render(isdb, pre, pt_newlin,
@@ -2731,5 +2804,92 @@ __print_funct_t render_pwr_usb_stats(struct activity *a, int isdb, char *pre,
 		       NOVAL,
 		       NOVAL,
 		       suc->product);
+	}
+}
+
+/*
+ ***************************************************************************
+ * Display filesystems statistics in selected format.
+ *
+ * IN:
+ * @a		Activity structure with statistics.
+ * @isdb	Flag, true if db printing, false if ppc printing.
+ * @pre		Prefix string for output entries
+ * @curr	Index in array for current sample statistics.
+ * @itv		Interval of time in jiffies.
+ ***************************************************************************
+ */
+__print_funct_t render_filesystem_stats(struct activity *a, int isdb, char *pre,
+					int curr, unsigned long long itv)
+{
+	int i;
+	struct stats_filesystem *sfc;
+
+	for (i = 0; i < a->nr; i++) {
+		sfc = (struct stats_filesystem *) ((char *) a->buf[curr] + i * a->msize);
+
+		if (!sfc->f_blocks)
+			/* Size of filesystem is null: We are at the end of the list */
+			break;
+
+		render(isdb, pre, PT_USERND,
+		       "%s\tMBfsfree",
+		       "%s",
+		       cons(sv, sfc->fs_name, NOVAL),
+		       NOVAL,
+		       (double) sfc->f_bfree / 1024 / 1024,
+		       NULL);
+
+		render(isdb, pre, PT_USERND,
+		       "%s\tMBfsused",
+		       NULL,
+		       cons(sv, sfc->fs_name, NOVAL),
+		       NOVAL,
+		       (double) (sfc->f_blocks - sfc->f_bfree) / 1024 / 1024,
+		       NULL);
+
+		render(isdb, pre, PT_NOFLAG,
+		       "%s\t%%fsused",
+		       NULL,
+		       cons(sv, sfc->fs_name, NOVAL),
+		       NOVAL,
+		       sfc->f_blocks ? SP_VALUE(sfc->f_bfree, sfc->f_blocks, sfc->f_blocks)
+				     : 0.0,
+		       NULL);
+
+		render(isdb, pre, PT_NOFLAG,
+		       "%s\t%%ufsused",
+		       NULL,
+		       cons(sv, sfc->fs_name, NOVAL),
+		       NOVAL,
+		       sfc->f_blocks ? SP_VALUE(sfc->f_bavail, sfc->f_blocks, sfc->f_blocks)
+				     : 0.0,
+		       NULL);
+
+		render(isdb, pre, PT_USEINT,
+		       "%s\tIfree",
+		       NULL,
+		       cons(sv, sfc->fs_name, NOVAL),
+		       sfc->f_ffree,
+		       NOVAL,
+		       NULL);
+
+		render(isdb, pre, PT_USEINT,
+		       "%s\tIused",
+		       NULL,
+		       cons(sv, sfc->fs_name, NOVAL),
+		       sfc->f_files - sfc->f_ffree,
+		       NOVAL,
+		       NULL);
+
+		render(isdb, pre,
+		       (DISPLAY_HORIZONTALLY(flags) ? PT_NOFLAG : PT_NEWLIN),
+		       "%s\t%%Iused",
+		       NULL,
+		       cons(sv, sfc->fs_name, NOVAL),
+		       NOVAL,
+		       sfc->f_files ? SP_VALUE(sfc->f_ffree, sfc->f_files, sfc->f_files)
+				    : 0.0,
+		       NULL);
 	}
 }

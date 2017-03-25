@@ -159,7 +159,7 @@ int ioc_init(void)
 		strncpy(ioconf_name, IOCONF, 64);
 	}
 	ioconf_name[63] = '\0';
-	
+
 	/* Init ioc_refnr array */
 	memset(ioc_refnr, 0, sizeof(ioc_refnr));
 
@@ -236,7 +236,7 @@ int ioc_init(void)
 			   desc);
 
 		if (i != 9) {
-			fprintf(stderr, "%s: Malformed %d field record: %s\n",
+			fprintf(stderr, "%s: Malformed %u field record: %s\n",
 				ioconf_name, i, buf);
 			continue;
 		}
@@ -338,12 +338,10 @@ int ioc_init(void)
 	/*
 	 * These will become leaks if we ever 'continue'
 	 * after IOC_ALLOC( blkp->desc ... ).
-	 * Right Now, we don't.
+	 * Right now, we don't.
 	 */
-	if (blkp != NULL)
-		free(blkp);
-	if (iocp != NULL)
-		free(iocp);
+	free(blkp);
+	free(iocp);
 
 	/* Indicate that ioconf file has been parsed */
 	ioc_parsed = 1;

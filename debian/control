@@ -3,30 +3,29 @@ Section: admin
 Priority: optional
 Maintainer: Robert Luberda <robert@debian.org>
 Build-Depends: debhelper (>= 9), gettext, libsensors4-dev, pkg-config
-Standards-Version: 3.9.6
+Standards-Version: 3.9.8
 Homepage: http://pagesperso-orange.fr/sebastien.godard/
-Vcs-Git: git://anonscm.debian.org/users/robert/sysstat.git
-Vcs-Browser: http://anonscm.debian.org/gitweb/?p=users/robert/sysstat.git
+Vcs-Git: https://anonscm.debian.org/git/users/robert/sysstat.git
+Vcs-Browser: https://anonscm.debian.org/cgit/users/robert/sysstat.git/
 
 Package: sysstat
 Architecture: linux-any
-Depends: bzip2,
-         lsb-base (>= 3.0-6),
+Depends: lsb-base (>= 3.0-6),
          ucf (>= 2.003),
+         xz-utils,
          ${misc:Depends},
          ${shlibs:Depends}
-Recommends: cron
+Recommends: cron | cron-daemon
 Suggests: isag
 Description: system performance tools for Linux
  The sysstat package contains the following system performance tools:
   - sar: collects and reports system activity information;
   - iostat: reports CPU utilization and disk I/O statistics;
+  - tapestat: reports statistics for tapes connected to the system;
   - mpstat: reports global and per-processor statistics;
   - pidstat: reports statistics for Linux tasks (processes);
   - sadf: displays data collected by sar in various formats;
-  - cifsiostat: reports I/O statistics for CIFS filesystems;
-  - nfsiostat-sysstat: (obsolete) reports I/O statistics
-    for network filesystems.
+  - cifsiostat: reports I/O statistics for CIFS filesystems.
  .
  The statistics reported by sar deal with I/O transfer rates,
  paging activity, process-related activities, interrupts,
@@ -38,7 +37,7 @@ Package: isag
 Architecture: all
 Depends: gnuplot-x11,
          sysstat (>= ${source:Version}),
-         tk|wish,
+         tk | wish,
          ${misc:Depends}
 Suggests: rcs
 Description: Interactive System Activity Grapher for sysstat

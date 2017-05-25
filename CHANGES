@@ -1,16 +1,310 @@
 Changes:
 
-2014/08/30: Version 11.0.1 - Sebastien Godard (sysstat <at> orange.fr)
-	* Added option -[0-9]+ to sadf to show data of that days ago.
-	* Use statvfs() system call instead of deprecated statfs() to
-	  get filesystems statistics with sar.
-	* sar: Stricter syntax check.
-        * Remove unneeded include file in sa_common.c.
-	* [Kosaki Motohiro]: Update workaround for 32bit CPU counters.
-	* Define unknown scheduling policies in pidstat.h.
-	* [Ivana Varekova]: Test return value for fgets/fscanf calls.
-	* Makefile updated: Follow symlinks when creating the tarballs.
+2017/01/11: Version 11.4.3 - Sebastien Godard (sysstat <at> orange.fr)
+	* sar: Better handle dynamically registered devices.
+	* Sort keywords definition in sar, sadc and mpstat manual pages.
+	* SVG: Change some colors to make graphs easier to distinguish.
+	* SVG: Init f_svg_print() function pointer to NULL.
+	* sar: Fix incorrect gcc warning in svg_stats.c.
+	* Small fix in iostat manual page.
+	* Cosmetic changes in source code.
+
+2016/11/04: Version 11.4.2 - Sebastien Godard (sysstat <at> orange.fr)
+	* [Michal Sekletar]: sar: make buffers that hold timestamps
+	  bigger.
+	* [Shantanu Goel]: sar: /proc/vmstat fix for Linux 4.8.
+	* [Breno Leitao]: sar: Improve cpuinfo read for POWER architecture.
+	* sadf: Use a decimal point instead of a coma in JSON output.
+	* pidstat: Use either the short or the full command line when
+	  looking for a pattern with options -C or -G.
+
+2016/09/23: Version 11.4.1 - Sebastien Godard (sysstat <at> orange.fr)
+	* sadf: Fix broken datafile conversion from old formats.
+	* sadf: Fix fields list displayed by sadf -d for filesystem
+	  activity.
+	* pidstat: Don't omit kernel threads when using -l option.
+
+2016/08/15: Version 11.4.0 - Sebastien Godard (sysstat <at> orange.fr)
+	* sar: Workaround for I/O and transfer rates statistics which may
+	  be wrongly calculated if a filesystem is unmounted [11.2.6].
+	* SVG: Fix how bar graphs are displayed for filesystems statistics
+	  in order to not loose the first sample.
+	* SVG: Change graphs order to be consistent with the output of sar.
+	* SVG: Change some graphs's title.
+	* Replace strcpy() with strncpy() to avoid buffer overflows [11.2.6].
+	* Fixed unsigned compared against 0 problem (CID#127473) [11.2.6].
+	* NLS updated.
+
+2016/06/24: Version 11.3.5 - Sebastien Godard (sysstat <at> orange.fr)
+	* SVG: Add SVG output for ICMP{v4,v6}, IPv6, UDPv6, voltage inputs,
+	  NFS client, NFS server, disks, filesystems and FC HBA statistics.
+	* SVG: Add SVG output for IPv4, ICMPv4, TCPv4, IPv6 and ICMP
+	  network errors statistics.
+	* SVG: Make sure graduations are properly aligned with grid.
+	* SVG: Add oneday option to control SVG output.
+	* SVG: Fix skipempty option.
+	* [Peter Schiffer]: Stricter check for file_magic->header_size [11.2.5].
+	* [Peter Schiffer]: tapestat: Various fixes [11.2.5].
+	* [Esteban Fallas]: Check for undefined UID variable in sysstat script
+	  [11.2.5].
+	* [Carsten Grohmann]: Unify description of the tps value in the sar
+	  manual page for -b and -d flags [11.2.5].
 	* sadf manual page updated.
+
+2016/05/14: Version 11.3.4 - Sebastien Godard (sysstat <at> orange.fr)
+	* SVG: Add SVG output for fan speed and temperature sensors
+	  statistics, I/O and transfer rate statistics, kernel tables
+	  statistics, hugepages utilization statistics, IPv4 and IPv6
+	  network sockets statistics, UDPv4, TCPv4 and IPv4 network statistics.
+	* SVG: Add skipempty and autoscale options to control SVG output.
+	* sadf and sar manual pages updated [11.2.4].
+	* NLS translation updated.
+	* Various cosmetic changes in code [11.2.4].
+
+2016/04/09: Version 11.3.3 - Sebastien Godard (sysstat <at> orange.fr)
+	* SVG: Add SVG output for CPU statistics, CPU frequency statistics,
+	  memory and swap statistics, and queue length and load average
+	  statistics.
+	* SVG: Make SVG code independent from the locale used to display
+	  numerical values.
+	* SVG: Fix possibly truncated SVG code.
+	* SVG: Make sure that a minimum interval value is used on X and Y
+	  axis.
+	* [Peter Portante]: Quick fix for cprintf_u64 non-uintv64_t [11.2.3].
+	* NLS translations updated.
+
+2016/03/13: Version 11.3.2 - Sebastien Godard (sysstat <at> orange.fr)
+	* sadf: Add SVG output for paging statistics, network interfaces
+	  and swap statistics.
+	* SVG: Specify charset encoding in SVG header.
+	* SVG: Fix invalid use of attribute vector-effect.
+	* sar: Fix possible confusion between network interfaces that
+	  could happen when a new interface was registered and appeared
+	  in the middle of the list in the /proc/net/dev file [11.2.2].
+	* sar: Fix possible compatibility issues between sysstat versions
+	  [11.2.2.].
+	* [Y. Namiki]: sar: Print time in the ISO format if
+	  S_TIME_FORMAT=ISO [11.2.2].
+	* mpstat/pidstat: Print time in the ISO format if S_TIME_FORMAT=ISO
+	  [11.2.2].
+	* [Steve Kay]: Disable NLS if any gettext components are
+	  unavailable [11.2.2].
+	* [Steve Kay]: sadf: Fix several typos in SVG output.
+	* [Steve Kay]: Fix tapestat manual page typos [11.2.2].
+	* [Peter Schiffer]: Add new SP_VALUE_100() macro which limits
+	  value to 100% for CPU statistics displayed by pidstat [11.2.2].
+	* sar, sadf, pidstat and mpstat manual pages updated.
+
+2016/02/21: Version 11.3.1 - Sebastien Godard (sysstat <at> orange.fr)
+	* sadf: Add new SVG (Scalable Vector Graphics) output format.
+	  This option enables the user to display fancy graphs in a
+	  web brower using the data collected by sar/sadc!
+	* sar/sadf: Major code refactoring.
+	* sadf: Don't display the JSON fchosts tag when no statistics
+	  data exist for Fibre Channel [11.2.1].
+	* README file converted to Markdown format [11.2.1].
+	* [Peter Schiffer]: Convert CREDITS file to utf-8 [11.2.1].
+	* [Peter Schiffer]: Update license text [11.2.1].
+	* sadf manual page updated.
+	* FAQ updated.
+	* Update README file and copyright messages [11.2.1].
+	* NLS updated [11.2.1].
+
+2015/12/27: Version 11.2.0 - Sebastien Godard (sysstat <at> orange.fr)
+	* mpstat: Code refactoring (better handle some special borderline
+	  cases for per-processor interrupts statistics).
+	* mpstat: Option -I now accepts a list of comma-separated
+	  arguments.
+	* sar: Fix color output for %temp and %in fields.
+	* sadf: Fix bug preventing sadf from converting a data file with
+	  an old format.
+	* sadc: Fix insecure data handling, really (CID #29720).
+	* [Peter Schiffer]: Increase NR_CPUS to match kernel upstream.
+	* sar: Check minimum size of sa data files header (CID #29719).
+	* sadc: Fix default number of frequencies for A_PWR_WGHFREQ
+	  activity.
+	* pidstat: Define new SCHED_DEADLINE scheduling policy.
+	* Remove obsolete nfsiostat-sysstat command.
+	* mpstat manual page updated.
+	* NLS updated.
+
+2015/10/23: Version 11.1.8 - Sebastien Godard (sysstat <at> orange.fr)
+	* Add support for color customization.
+	* Add color support for pidstat, tapestat and cifsiostat commands.
+	* Define values "always", "never" and "auto" for S_COLORS
+	  environment variable.
+	* sar: Remove extra line of statistics displayed when SIGINT is
+	  received.
+	* Add missing va_end() statements (CID #113539, #113540, #113541,
+	  #113542).
+	* Fix possible NULL pointer dereference in SREALLOC macro (CID
+	  #29706) [11.0.8].
+	* sadc: Fix untrusted value used as argument (CID #29720) [11.0.8].
+	* sadc: Fix another insecure data handling (CID #29720).
+	* sar/sadc: Set an upper limit for each kind of item that sar/sadc
+	  can handle.
+	* Manual pages updated for iostat, mpstat, sar, pidstat, tapestat
+	  and cifsiostat commands.
+	* Update librdsensors.a target in Makefile [11.0.8].
+
+2015/09/20: Version 11.1.7 - Sebastien Godard (sysstat <at> orange.fr)
+	* Add color support for mpstat, iostat and sar commands.
+	* [Peter Schiffer]: Fix problem with pidstat output values > 100%
+	  for %CPU [11.0.7].
+	* [Shane Seymour]: tapestat: Fix issue when st driver is unloaded
+	  then loaded again.
+	* [Christian Neukirchen]: Fix header files included in tapestat.
+	* Make sysstat build on musl (non-glibc) environment.
+	* tapestat: Check fscanf() return values.
+	* [Alexis Solanas]: Fix issue with iostat not showing the full
+	  device name [11.0.7].
+	* sa2: DATE couldn't be set when DATE_OPTS variable was empty.
+	  Fix this.
+	* Add sa2 option to avoid sarDD report generation.
+	* [Julian Taylor]: sargraph2: Fix MB/s units and help typo.
+	* sysstat(5), iostat, mpstat and sar manual pages updated.
+	* NLS: Sync'd with Translation Project.
+	* CREDITS file updated.
+
+2015/08/24: Version 11.1.6 - Sebastien Godard (sysstat <at> orange.fr)
+	* [Shane Seymour]: Added new "tapestat" command aimed at
+	  displaying statistics for tape drives.
+	* [Shane Seymour]: Added tapestat manual page.
+	* Check /proc/net/snmp format to collect ICMP statistics at
+	  their right positions [11.0.6].
+	* sadc: Fix untrusted value used as argument.
+	* sa_conv.c: Fix ressource leak.
+	* ioconf.c: Fix several ressource leaks [11.0.6].
+	* mpstat: Fix alignment output, really [11.0.6].
+	* [Sampsa Kiiskinen]: Fix bug in isag [11.0.6].
+	* iostat's option -T renamed to -H.
+	* iostat manual page updated.
+	* NLS updated.
+	* CREDITS file updated.
+
+2015/06/12: Version 11.1.5 - Sebastien Godard (sysstat <at> orange.fr)
+	* [Steve Kay]: sar: Added fibre channel HBA statistics.
+	* [Steve Kay]: Replace non printable characters in comments
+	  displayed by sar/sadf.
+	* [Peter Schiffer]: Fixed and simplified some math expressions
+	  in pr_stats.c [11.0.5].
+	* [Peter Schiffer]: ioconf.c: Check value of variable "major"
+	  read from file [11.0.5].
+	* [Peter Schiffer]: ioconf.c: Use strncpy instead of strcpy [11.0.5].
+	* sar: Fixed untrusted loop bound [11.0.5].
+	* sadc: Fixed time-of-check, time-of-use race condition.
+	* [Vitezslav Cizek]: Assume device-mapper is not running when
+	  it is not found in /proc/devices.
+	* sar: Added option --sadc. This option indicates which data
+	  collector will be called by sar.
+	* sadf: Fixed null pointer dereference which could happen with a
+	  malformed system activity datafile.
+	* cifsiostat: Fixed possible integer overflowed argument [11.0.5].
+	* sar manual page updated.
+	* FAQ updated.
+	* DTD and XSD documents updated.
+	* NLS updated.
+
+2015/04/07: Version 11.1.4 - Sebastien Godard (sysstat <at> orange.fr)
+	* Makefile: sysstat init script may sometimes be called rc.sysstat.
+	  So use that name when needed [11.0.4].
+	* pidstat: Don't stop if gtime and cgtime fields are unavailable
+	  [11.0.4].
+	* sar: Fix output with filesystems having more than MAX_FS_LEN
+	  characters in length.
+	* Updated DTD and XSD documents. XML document, as displayed by
+	  sadf -x, should now be properly validated against them.
+	* [Peter Schiffer]: Replace spaces with tabs in Makefile.in [11.0.4].
+	* [Peter Schiffer]: Create appropriate directories in DESTDIR if
+	  missing [11.0.4].
+	* [Peter Schiffer]: Fixed installation of systemd/cron files on
+	  systems w/o systemd [11.0.4].
+	* [Peter Schiffer]: Don't look in weird places for programs during
+	  configuration [11.0.4].
+	* [Steve Kay]: sar: Added option to display mountpoint names instead
+	  of filesystem names.
+	* [Steve Kay]: sar/sadf: Permit hh:mm:ss as well as hh:mm.
+	* [Steve Kay]: Fix mpstat SCPU alignment output [11.0.4].
+	* [Steve Kay]: Fix unproperly indented line in sar -h output.
+	* Makefile: Call chkconfig only if $(COPY_ONLY) is set to no [11.0.4].
+	* sysstat(5) manual page updated [11.0.4].
+	* [Dimitrios Apostolou]: Updated sargraph tool.
+	* [Dimitrios Apostolou]: Updated sa2 script to support more compression
+	  formats. Simplify logic with regexes.
+	* [Dimitrios Apostolou]: YESTERDAY variable can now be changed in sysstat
+	  config file (/etc/sysconfig/sysstat).
+	* [Dimitrios Apostolou]: By default sa2 now generates yesterday's summary.
+	* CREDITS file updated.
+
+2015/02/13: Version 11.1.3 - Sebastien Godard (sysstat <at> orange.fr)
+	* sar/sadc: Added new metrics from /proc/meminfo to memory
+	  statistics.
+	* sadf: Update output formats to take into account new memory
+	  metrics.
+	* [Peter Schiffer]: Fixes from static analysis.
+	* [Peter Schiffer]: Prefer xz compression program when compressing
+	  sa data files [11.0.3].
+	* [Peter Schiffer]: Portable way to detect 64 bit OS in configure
+	  script [11.0.4].
+	* [Vasant Hegde]: sadc: Fix possible race condition in signal
+	  handler code [11.0.3].
+	* Fix description of %util in iostat and sar manual pages [11.0.3].
+	* Fix wrong size used in upgrade_magic_section() function.
+	* Add new sadc_options variable to configure script.
+	* Rename --disable-man-group option to --disable-file-attr. This
+	  configure's option prevents the build process from setting
+	  attributes of files being installed.
+	* Make sure that no crontabs are activated when configure's option
+	  --enable-copy-only is used [11.0.3].
+	* FAQ updated.
+	* RPM spec file updated.
+	* sar manual page updated.
+	* sadc manual page updated [11.0.3].
+	* CREDITS file updated.
+	* Code cleaned [11.0.3].
+
+2014/10/19: Version 11.1.2 - Sebastien Godard (sysstat <at> orange.fr)
+	* [Robert Elliott]: Added irqtop command. irqtop monitors
+	  differences in /proc/interrupts and /proc/softirqs per CPU,
+	  along with CPU statistics. irqtop is currently in the contrib
+	  directory.
+	* [Lance Shelton]: Added irqstat command, a better way to watch
+	  /proc/interrupts, designed for NUMA systems with many
+	  processors.
+	* [Vasant Hegde]: sadc: Don't send SIGINT signal if parent
+	  process is already dead [11.0.2].
+	* sadc: Make sure that functions used to count items (CPU,
+	  network interfaces, etc.) are called only once.
+	* sar and sadf now tell the user when they cannot read a file
+	  because the endian format doesn't match.
+	* Fixed incomplete sar and sadf output when end time (specified
+	  with option -e) crosses 24 hour boundary [11.0.2].
+	* cifsiostat/nfsiostat: Fix output on single core CPU [11.0.2].
+	* pidstat didn't handle processes with spaces in their name
+	  properly. This is now fixed [11.0.2].
+	* NLS updated.
+	* CREDITS file updated.
+
+2014/08/30: Version 11.1.1 - Sebastien Godard (sysstat <at> orange.fr)
+	* Added option -c to sadf: This option enables the user to
+	  convert an sa datafile with an old format (at least 9.1.6)
+	  to the up-to-date format (11.1.1 as of today).
+	* Update sadf -H output to print datafile date and tell whether
+	  this file has been converted from an old datafile or not.
+	* Added option -[0-9]+ to sadf to show data of that days ago
+	  [11.0.1].
+	* Use statvfs() system call instead of deprecated statfs() to
+	  get filesystems statistics with sar [11.0.1].
+	* sar: Stricter syntax check [11.0.1].
+	* Remove unneeded include file in sa_common.c [11.0.1].
+	* [Kosaki Motohiro]: Update workaround for 32bit CPU counters
+	  [11.0.1].
+	* Define unknown scheduling policies in pidstat.h [11.0.1].
+	* [Ivana Varekova]: Test return value for fgets/fscanf calls
+	  [11.0.1].
+	* Makefile updated: Follow symlinks when creating the tarballs
+	  [11.0.1].
+	* sadf manual page updated [11.0.1].
 
 2014/06/17: Version 11.0.0 - Sebastien Godard (sysstat <at> orange.fr)
 	* [Cedric Marie]: pidstat now displays task scheduling priority

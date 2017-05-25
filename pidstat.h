@@ -1,6 +1,6 @@
 /*
  * pidstat: Display per-process statistics.
- * (C) 2007-2014 by Sebastien Godard (sysstat <at> orange.fr)
+ * (C) 2007-2016 by Sebastien Godard (sysstat <at> orange.fr)
  */
 
 #ifndef _PIDSTAT_H
@@ -13,7 +13,7 @@
 #define K_P_CHILD	"CHILD"
 #define K_P_ALL		"ALL"
 
-#define NR_PID_PREALLOC	10
+#define NR_PID_PREALLOC	100
 
 #define MAX_COMM_LEN	128
 #define MAX_CMDLINE_LEN	128
@@ -126,14 +126,18 @@
 #ifndef SCHED_IDLE
 #define SCHED_IDLE	5
 #endif
+#ifndef SCHED_DEADLINE
+#define SCHED_DEADLINE	6
+#endif
 
 #define GET_POLICY(p) \
-	(p == SCHED_NORMAL ? "NORMAL" : \
-	(p == SCHED_FIFO   ? "FIFO" : \
-	(p == SCHED_RR     ? "RR" : \
-	(p == SCHED_BATCH  ? "BATCH" : \
-	(p == SCHED_IDLE   ? "IDLE" : \
-	"?")))))
+	(p == SCHED_NORMAL   ? "NORMAL" : \
+	(p == SCHED_FIFO     ? "FIFO" : \
+	(p == SCHED_RR       ? "RR" : \
+	(p == SCHED_BATCH    ? "BATCH" : \
+	(p == SCHED_IDLE     ? "IDLE" : \
+	(p == SCHED_DEADLINE ? "DEADLN" : \
+	"?"))))))
 
 struct pid_stats {
 	unsigned long long read_bytes			__attribute__ ((aligned (16)));

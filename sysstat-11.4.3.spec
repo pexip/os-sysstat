@@ -1,6 +1,6 @@
-Summary: 	SAR, SADF, MPSTAT, IOSTAT, NFSIOSTAT-SYSSTAT, CIFSIOSTAT and PIDSTAT for Linux
+Summary: 	SAR, SADF, MPSTAT, IOSTAT, TAPESTAT, PIDSTAT and CIFSIOSTAT for Linux
 Name: 		sysstat
-Version: 	11.0.1
+Version: 	11.4.3
 Release: 	1
 License: 	GPL
 Group: 		Applications/System
@@ -11,8 +11,8 @@ BuildRoot:	%{_tmppath}/%{name}-%{version}-root-%(id -u -n)
 Requires:	gettext
 
 %description
-The sysstat package contains the sar, sadf, mpstat, iostat, pidstat,
-nfsiostat-sysstat, cifsiostat and sa tools for Linux.
+The sysstat package contains the sar, sadf, mpstat, iostat, tapestat,
+pidstat, cifsiostat and sa tools for Linux.
 The sar command collects and reports system activity information.
 The information collected by sar can be saved in a file in a binary
 format for future inspection. The statistics reported by sar concern
@@ -21,18 +21,20 @@ interrupts, network activity, memory and swap space utilization, CPU
 utilization, kernel activities and TTY statistics, among others. Both
 UP and SMP machines are fully supported.
 The sadf command may  be used to display data collected by sar in
-various formats (CSV, XML, etc.).
+various formats (CSV, XML, etc.) and to draw graphs (SVG).
 The iostat command reports CPU utilization and I/O statistics for disks.
+The tapestat command reports statistics for tapes connected to the system.
 The mpstat command reports global and per-processor statistics.
 The pidstat command reports statistics for Linux tasks (processes).
-The nfsiostat-sysstat command reports I/O statistics for network filesystems.
 The cifsiostat command reports I/O statistics for CIFS filesystems.
 
 %prep
 %setup
 
 %build
+# To include cron installation, add options --enable-install-cron and --enable-copy-only
 ./configure --prefix=%{_prefix} \
+	--disable-file-attr \
 	sa_lib_dir=%{_libdir}/sa \
 	--mandir=%{_mandir} \
 	DESTDIR=$RPM_BUILD_ROOT
@@ -72,8 +74,8 @@ rm -rf $RPM_BUILD_ROOT
 %attr(755,root,root) /etc/rc.d/init.d/sysstat
 %attr(644,root,root) /etc/sysconfig/sysstat
 %attr(644,root,root) /etc/sysconfig/sysstat.ioconf
-%attr(755,root,root) /etc/rc2.d/S01sysstat
-%attr(755,root,root) /etc/rc3.d/S01sysstat
-%attr(755,root,root) /etc/rc5.d/S01sysstat
+/etc/rc2.d/S01sysstat
+/etc/rc3.d/S01sysstat
+/etc/rc5.d/S01sysstat
 %config(noreplace) %attr(0644,root,root) /etc/cron.d/sysstat
 

@@ -1,6 +1,6 @@
 /*
  * sar and sadf common routines.
- * (C) 1999-2014 by Sebastien GODARD (sysstat <at> orange.fr)
+ * (C) 1999-2016 by Sebastien GODARD (sysstat <at> orange.fr)
  *
  ***************************************************************************
  * This program is free software; you can redistribute it and/or modify it *
@@ -15,7 +15,7 @@
  *                                                                         *
  * You should have received a copy of the GNU General Public License along *
  * with this program; if not, write to the Free Software Foundation, Inc., *
- * 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA                   *
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1335 USA              *
  ***************************************************************************
  */
 
@@ -30,7 +30,9 @@
 #include <libgen.h>
 #include <sys/types.h>
 #include <sys/stat.h>
+#include <ctype.h>
 
+#include "version.h"
 #include "sa.h"
 #include "common.h"
 #include "ioconf.h"
@@ -83,7 +85,8 @@ void allocate_structures(struct activity *act[])
 	for (i = 0; i < NR_ACT; i++) {
 		if (act[i]->nr > 0) {
 			for (j = 0; j < 3; j++) {
-				SREALLOC(act[i]->buf[j], void, act[i]->msize * act[i]->nr * act[i]->nr2);
+				SREALLOC(act[i]->buf[j], void,
+						(size_t) act[i]->msize * (size_t) act[i]->nr * (size_t) act[i]->nr2);
 			}
 		}
 	}
@@ -312,7 +315,7 @@ int datecmp(struct tm *rectime, struct tstamp *tse)
 
 /*
  ***************************************************************************
- * Parse a timestamp entered on the command line (hh:mm:ss) and decode it.
+ * Parse a timestamp entered on the command line (hh:mm[:ss]) and decode it.
  *
  * IN:
  * @argv		Arguments list.
@@ -331,12 +334,26 @@ int parse_timestamp(char *argv[], int *opt, struct tstamp *tse,
 {
 	char timestamp[9];
 
-	if ((argv[++(*opt)]) && (strlen(argv[*opt]) == 8)) {
-		strcpy(timestamp, argv[(*opt)++]);
+	if (argv[++(*opt)]) {
+		switch (strlen(argv[*opt])) {
+
+			case 5:
+				strncpy(timestamp, argv[(*opt)++], 5);
+				strcat(timestamp,":00");
+				break;
+
+			case 8:
+				strncpy(timestamp, argv[(*opt)++], 8);
+				break;
+
+			default:
+				strncpy(timestamp, def_timestamp, 8);
+				break;
+		}
+	} else {
+		strncpy(timestamp, def_timestamp, 8);
 	}
-	else {
-		strcpy(timestamp, def_timestamp);
-	}
+	timestamp[8] = '\0';
 
 	return decode_timestamp(timestamp, tse);
 }
@@ -415,7 +432,7 @@ void guess_sa_name(char *sa_dir, struct tm *rectime, int *sa_name)
 void set_default_file(char *datafile, int d_off, int sa_name)
 {
 	char sa_dir[MAX_FILE_LEN];
-	struct tm rectime;
+	struct tm rectime = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, NULL};
 
 	/* Set directory where daily data files will be saved */
 	if (datafile[0]) {
@@ -610,19 +627,25 @@ void print_report_hdr(unsigned int flags, struct tm *rectime,
  *
  * RETURNS:
  * Position of current network interface in array of sample statistics used
- * as reference.
+ * as reference, or -1 if it is a new interface (it was not present in array
+ * of stats used as reference).
+ *
+ * Note: A newly registered interface, if it is supernumerary, may make the
+ * last interface in the array going out of the list. Yet an interface going
+ * out of the list still exists in the /proc/net/dev file. Should it go back
+ * in the list (e.g. if some other interfaces have been unregistered) then
+ * its counters will jump as if starting from zero.
  ***************************************************************************
  */
-unsigned int check_net_dev_reg(struct activity *a, int curr, int ref,
-			       unsigned int pos)
+int check_net_dev_reg(struct activity *a, int curr, int ref, int pos)
 {
 	struct stats_net_dev *sndc, *sndp;
-	unsigned int index = 0;
+	int index = 0;
 
-	sndc = (struct stats_net_dev *) a->buf[curr] + pos;
+	sndc = (struct stats_net_dev *) ((char *) a->buf[curr] + pos * a->msize);
 
 	while (index < a->nr) {
-		sndp = (struct stats_net_dev *) a->buf[ref] + index;
+		sndp = (struct stats_net_dev *) ((char *) a->buf[ref] + index * a->msize);
 		if (!strcmp(sndc->interface, sndp->interface)) {
 			/*
 			 * Network interface found.
@@ -682,7 +705,7 @@ unsigned int check_net_dev_reg(struct activity *a, int curr, int ref,
 					 * actually unregistered.
 					 */
 					memset(sndp, 0, STATS_NET_DEV_SIZE);
-					strcpy(sndp->interface, sndc->interface);
+					strncpy(sndp->interface, sndc->interface, MAX_IFACE_LEN - 1);
 				}
 			}
 			return index;
@@ -690,26 +713,8 @@ unsigned int check_net_dev_reg(struct activity *a, int curr, int ref,
 		index++;
 	}
 
-	/* Network interface not found: Look for the first free structure */
-	for (index = 0; index < a->nr; index++) {
-		sndp = (struct stats_net_dev *) a->buf[ref] + index;
-		if (!strcmp(sndp->interface, "?")) {
-			memset(sndp, 0, STATS_NET_DEV_SIZE);
-			strcpy(sndp->interface, sndc->interface);
-			break;
-		}
-	}
-	if (index >= a->nr) {
-		/* No free structure: Default is structure of same rank */
-		index = pos;
-	}
-
-	sndp = (struct stats_net_dev *) a->buf[ref] + index;
-	/* Since the name is not the same, reset all the structure */
-	memset(sndp, 0, STATS_NET_DEV_SIZE);
-	strcpy(sndp->interface, sndc->interface);
-
-	return  index;
+	/* This is a newly registered interface */
+	return -1;
 }
 
 /*
@@ -725,19 +730,18 @@ unsigned int check_net_dev_reg(struct activity *a, int curr, int ref,
  *
  * RETURNS:
  * Position of current network interface in array of sample statistics used
- * as reference.
+ * as reference, or -1 if it is a newly registered interface.
  ***************************************************************************
  */
-unsigned int check_net_edev_reg(struct activity *a, int curr, int ref,
-				unsigned int pos)
+int check_net_edev_reg(struct activity *a, int curr, int ref, int pos)
 {
 	struct stats_net_edev *snedc, *snedp;
-	unsigned int index = 0;
+	int index = 0;
 
-	snedc = (struct stats_net_edev *) a->buf[curr] + pos;
+	snedc = (struct stats_net_edev *) ((char *) a->buf[curr] + pos * a->msize);
 
 	while (index < a->nr) {
-		snedp = (struct stats_net_edev *) a->buf[ref] + index;
+		snedp = (struct stats_net_edev *) ((char *) a->buf[ref] + index * a->msize);
 		if (!strcmp(snedc->interface, snedp->interface)) {
 			/*
 			 * Network interface found.
@@ -758,33 +762,15 @@ unsigned int check_net_edev_reg(struct activity *a, int curr, int ref,
 				 * actually unregistered.
 				 */
 				memset(snedp, 0, STATS_NET_EDEV_SIZE);
-				strcpy(snedp->interface, snedc->interface);
+				strncpy(snedp->interface, snedc->interface, MAX_IFACE_LEN - 1);
 			}
 			return index;
 		}
 		index++;
 	}
 
-	/* Network interface not found: Look for the first free structure */
-	for (index = 0; index < a->nr; index++) {
-		snedp = (struct stats_net_edev *) a->buf[ref] + index;
-		if (!strcmp(snedp->interface, "?")) {
-			memset(snedp, 0, STATS_NET_EDEV_SIZE);
-			strcpy(snedp->interface, snedc->interface);
-			break;
-		}
-	}
-	if (index >= a->nr) {
-		/* No free structure: Default is structure of same rank */
-		index = pos;
-	}
-
-	snedp = (struct stats_net_edev *) a->buf[ref] + index;
-	/* Since the name is not the same, reset all the structure */
-	memset(snedp, 0, STATS_NET_EDEV_SIZE);
-	strcpy(snedp->interface, snedc->interface);
-
-	return  index;
+	/* This is a newly registered interface */
+	return -1;
 }
 
 /*
@@ -799,7 +785,8 @@ unsigned int check_net_edev_reg(struct activity *a, int curr, int ref,
  * @pos		Index on current disk.
  *
  * RETURNS:
- * Position of current disk in array of sample statistics used as reference.
+ * Position of current disk in array of sample statistics used as reference
+ * or -1 if it is a newly registered device.
  ***************************************************************************
  */
 int check_disk_reg(struct activity *a, int curr, int ref, int pos)
@@ -807,10 +794,10 @@ int check_disk_reg(struct activity *a, int curr, int ref, int pos)
 	struct stats_disk *sdc, *sdp;
 	int index = 0;
 
-	sdc = (struct stats_disk *) a->buf[curr] + pos;
+	sdc = (struct stats_disk *) ((char *) a->buf[curr] + pos * a->msize);
 
 	while (index < a->nr) {
-		sdp = (struct stats_disk *) a->buf[ref] + index;
+		sdp = (struct stats_disk *) ((char *) a->buf[ref] + index * a->msize);
 		if ((sdc->major == sdp->major) &&
 		    (sdc->minor == sdp->minor)) {
 			/*
@@ -833,28 +820,8 @@ int check_disk_reg(struct activity *a, int curr, int ref, int pos)
 		index++;
 	}
 
-	/* Disk not found: Look for the first free structure */
-	for (index = 0; index < a->nr; index++) {
-		sdp = (struct stats_disk *) a->buf[ref] + index;
-		if (!(sdp->major + sdp->minor)) {
-			memset(sdp, 0, STATS_DISK_SIZE);
-			sdp->major = sdc->major;
-			sdp->minor = sdc->minor;
-			break;
-		}
-	}
-	if (index >= a->nr) {
-		/* No free structure found: Default is structure of same rank */
-		index = pos;
-	}
-
-	sdp = (struct stats_disk *) a->buf[ref] + index;
-	/* Since the device is not the same, reset all the structure */
-	memset(sdp, 0, STATS_DISK_SIZE);
-	sdp->major = sdc->major;
-	sdp->minor = sdc->minor;
-
-	return index;
+	/* This is a newly registered device */
+	return -1;
 }
 
 /*
@@ -910,6 +877,7 @@ void free_bitmaps(struct activity *act[])
  * IN:
  * @act		Array of activities.
  * @act_flag	Activity flag to look for.
+ * @stop	TRUE if sysstat should exit when activity is not found.
  *
  * RETURNS:
  * Position of activity in array, or -1 if not found (this may happen when
@@ -917,19 +885,20 @@ void free_bitmaps(struct activity *act[])
  * sysstat).
  ***************************************************************************
  */
-int get_activity_position(struct activity *act[], unsigned int act_flag)
+int get_activity_position(struct activity *act[], unsigned int act_flag, int stop)
 {
 	int i;
 
 	for (i = 0; i < NR_ACT; i++) {
 		if (act[i]->id == act_flag)
-			break;
+			return i;
 	}
 
-	if (i == NR_ACT)
-		return -1;
+	if (stop) {
+		PANIC((int) act_flag);
+	}
 
-	return i;
+	return -1;
 }
 
 /*
@@ -956,8 +925,8 @@ int get_activity_nr(struct activity *act[], unsigned int option, int count_outpu
 		if ((act[i]->options & option) == option) {
 
 			if (HAS_MULTIPLE_OUTPUTS(act[i]->options) && count_outputs) {
-				for (msk = 1; msk < 0x10; msk <<= 1) {
-					if (act[i]->opt_flags & msk) {
+				for (msk = 1; msk < 0x100; msk <<= 1) {
+					if ((act[i]->opt_flags & 0xff) & msk) {
 						n++;
 					}
 				}
@@ -1007,7 +976,7 @@ void select_default_activity(struct activity *act[])
 {
 	int p;
 
-	p = get_activity_position(act, A_CPU);
+	p = get_activity_position(act, A_CPU, EXIT_IF_NOT_FOUND);
 
 	/* Default is CPU activity... */
 	if (!get_activity_nr(act, AO_SELECTED, COUNT_ACTIVITIES)) {
@@ -1107,15 +1076,28 @@ void display_sa_file_version(FILE *st, struct file_magic *file_magic)
 void handle_invalid_sa_file(int *fd, struct file_magic *file_magic, char *file,
 			    int n)
 {
+	unsigned short sm;
+
 	fprintf(stderr, _("Invalid system activity file: %s\n"), file);
 
-	if ((n == FILE_MAGIC_SIZE) && (file_magic->sysstat_magic == SYSSTAT_MAGIC)) {
-		/* This is a sysstat file, but this file has an old format */
-		display_sa_file_version(stderr, file_magic);
+	if (n == FILE_MAGIC_SIZE) {
+		sm = (file_magic->sysstat_magic << 8) | (file_magic->sysstat_magic >> 8);
+		if ((file_magic->sysstat_magic == SYSSTAT_MAGIC) || (sm == SYSSTAT_MAGIC)) {
+			/*
+			 * This is a sysstat file, but this file has an old format
+			 * or its internal endian format doesn't match.
+			 */
+			display_sa_file_version(stderr, file_magic);
 
-		fprintf(stderr,
-			_("Current sysstat version can no longer read the format of this file (%#x)\n"),
-			file_magic->format_magic);
+			if (sm == SYSSTAT_MAGIC) {
+				fprintf(stderr, _("Endian format mismatch\n"));
+			}
+			else {
+				fprintf(stderr,
+					_("Current sysstat version cannot read the format of this file (%#x)\n"),
+					file_magic->format_magic);
+			}
+		}
 	}
 
 	close (*fd);
@@ -1146,12 +1128,13 @@ void copy_structures(struct activity *act[], unsigned int id_seq[],
 		if (!id_seq[i])
 			continue;
 
-		if (((p = get_activity_position(act, id_seq[i])) < 0) ||
-		    (act[p]->nr < 1) || (act[p]->nr2 < 1)) {
+		p = get_activity_position(act, id_seq[i], EXIT_IF_NOT_FOUND);
+		if ((act[p]->nr < 1) || (act[p]->nr2 < 1)) {
 			PANIC(1);
 		}
 
-		memcpy(act[p]->buf[dest], act[p]->buf[src], act[p]->msize * act[p]->nr * act[p]->nr2);
+		memcpy(act[p]->buf[dest], act[p]->buf[src],
+		       (size_t) act[p]->msize * (size_t) act[p]->nr * (size_t) act[p]->nr2);
 	}
 }
 
@@ -1172,16 +1155,18 @@ void read_file_stat_bunch(struct activity *act[], int curr, int ifd, int act_nr,
 {
 	int i, j, k, p;
 	struct file_activity *fal = file_actlst;
+	off_t offset;
 
 	for (i = 0; i < act_nr; i++, fal++) {
 
-		if (((p = get_activity_position(act, fal->id)) < 0) ||
+		if (((p = get_activity_position(act, fal->id, RESUME_IF_NOT_FOUND)) < 0) ||
 		    (act[p]->magic != fal->magic)) {
 			/*
 			 * Ignore current activity in file, which is unknown to
 			 * current sysstat version or has an unknown format.
 			 */
-			if (lseek(ifd, fal->size * fal->nr * fal->nr2, SEEK_CUR) < (fal->size * fal->nr * fal->nr2)) {
+			offset = (off_t) fal->size * (off_t) fal->nr * (off_t) fal->nr2;
+			if (lseek(ifd, offset, SEEK_CUR) < offset) {
 				close(ifd);
 				perror("lseek");
 				exit(2);
@@ -1202,44 +1187,37 @@ void read_file_stat_bunch(struct activity *act[], int curr, int ifd, int act_nr,
 			sa_fread(ifd, act[p]->buf[curr], act[p]->fsize * act[p]->nr * act[p]->nr2, HARD_SIZE);
 		}
 		else {
-			PANIC(act[p]->nr);
+			PANIC(p);
 		}
 	}
 }
 
 /*
  ***************************************************************************
- * Open a data file, and perform various checks before reading.
+ * Open a sysstat activity data file and read its magic structure.
  *
  * IN:
- * @dfile	Name of system activity data file
- * @act		Array of activities.
+ * @dfile	Name of system activity data file.
  * @ignore	Set to 1 if a true sysstat activity file but with a bad
  * 		format should not yield an error message. Useful with
- * 		sadf -H.
+ * 		sadf -H and sadf -c.
  *
  * OUT:
- * @ifd		System activity data file descriptor
+ * @fd		System activity data file descriptor.
  * @file_magic	file_magic structure containing data read from file magic
- *		header
- * @file_hdr	file_hdr structure containing data read from file standard
- * 		header
- * @file_actlst	Acvtivity list in file.
- * @id_seq	Activity sequence.
+ *		header.
+ *
+ * RETURNS:
+ * -1 if data file is a sysstat file with an old format, 0 otherwise.
  ***************************************************************************
  */
-void check_file_actlst(int *ifd, char *dfile, struct activity *act[],
-		       struct file_magic *file_magic, struct file_header *file_hdr,
-		       struct file_activity **file_actlst, unsigned int id_seq[],
+int sa_open_read_magic(int *fd, char *dfile, struct file_magic *file_magic,
 		       int ignore)
 {
-	int i, j, n, p;
-	unsigned int a_cpu = FALSE;
-	struct file_activity *fal;
-	void *buffer = NULL;
+	int n;
 
 	/* Open sa data file */
-	if ((*ifd = open(dfile, O_RDONLY)) < 0) {
+	if ((*fd = open(dfile, O_RDONLY)) < 0) {
 		int saved_errno = errno;
 
 		fprintf(stderr, _("Cannot open %s: %s\n"), dfile, strerror(errno));
@@ -1251,29 +1229,87 @@ void check_file_actlst(int *ifd, char *dfile, struct activity *act[],
 	}
 
 	/* Read file magic data */
-	n = read(*ifd, file_magic, FILE_MAGIC_SIZE);
+	n = read(*fd, file_magic, FILE_MAGIC_SIZE);
 
 	if ((n != FILE_MAGIC_SIZE) ||
 	    (file_magic->sysstat_magic != SYSSTAT_MAGIC) ||
-	    (file_magic->format_magic != FORMAT_MAGIC)) {
-
-		if (ignore &&
-		    (n == FILE_MAGIC_SIZE) &&
-		    (file_magic->sysstat_magic == SYSSTAT_MAGIC))
-			/* Don't display error message. This is for sadf -H */
-			return;
-		else {
+	    ((file_magic->format_magic != FORMAT_MAGIC) && !ignore)) {
+		/* Display error message and exit */
+		handle_invalid_sa_file(fd, file_magic, dfile, n);
+	}
+	if ((file_magic->sysstat_version > 10) ||
+	    ((file_magic->sysstat_version == 10) && (file_magic->sysstat_patchlevel >= 3))) {
+		/* header_size field exists only for sysstat versions 10.3.1 and later */
+		if ((file_magic->header_size <= MIN_FILE_HEADER_SIZE) ||
+		    (file_magic->header_size > MAX_FILE_HEADER_SIZE) ||
+		    ((file_magic->header_size < FILE_HEADER_SIZE) && !ignore)) {
 			/* Display error message and exit */
-			handle_invalid_sa_file(ifd, file_magic, dfile, n);
+			handle_invalid_sa_file(fd, file_magic, dfile, n);
 		}
 	}
+	if (file_magic->format_magic != FORMAT_MAGIC)
+		/* This is an old sa datafile format */
+		return -1;
+
+	return 0;
+}
+
+/*
+ ***************************************************************************
+ * Open a data file, and perform various checks before reading.
+ *
+ * IN:
+ * @dfile	Name of system activity data file.
+ * @act		Array of activities.
+ * @ignore	Set to 1 if a true sysstat activity file but with a bad
+ * 		format should not yield an error message. Useful with
+ * 		sadf -H and sadf -c.
+ *
+ * OUT:
+ * @ifd		System activity data file descriptor.
+ * @file_magic	file_magic structure containing data read from file magic
+ *		header.
+ * @file_hdr	file_hdr structure containing data read from file standard
+ * 		header.
+ * @file_actlst	Acvtivity list in file.
+ * @id_seq	Activity sequence.
+ ***************************************************************************
+ */
+void check_file_actlst(int *ifd, char *dfile, struct activity *act[],
+		       struct file_magic *file_magic, struct file_header *file_hdr,
+		       struct file_activity **file_actlst, unsigned int id_seq[],
+		       int ignore)
+{
+	int i, j, p;
+	unsigned int a_cpu = FALSE;
+	struct file_activity *fal;
+	void *buffer = NULL;
+
+	/* Open sa data file and read its magic structure */
+	if (sa_open_read_magic(ifd, dfile, file_magic, ignore) < 0)
+		return;
 
 	SREALLOC(buffer, char, file_magic->header_size);
 
 	/* Read sa data file standard header and allocate activity list */
 	sa_fread(*ifd, buffer, file_magic->header_size, HARD_SIZE);
-	memcpy(file_hdr, buffer, MINIMUM(file_magic->header_size, FILE_HEADER_SIZE));
+	/*
+	 * Data file header size may be greater than FILE_HEADER_SIZE, but
+	 * anyway only the first FILE_HEADER_SIZE bytes can be interpreted.
+	 */
+	memcpy(file_hdr, buffer, FILE_HEADER_SIZE);
 	free(buffer);
+
+	/*
+	 * Sanity check.
+	 * Compare against MAX_NR_ACT and not NR_ACT because
+	 * we are maybe reading a datafile from a future sysstat version
+	 * with more activities than known today.
+	 */
+	if (file_hdr->sa_act_nr > MAX_NR_ACT) {
+		/* Maybe a "false positive" sysstat datafile? */
+		handle_invalid_sa_file(ifd, file_magic, dfile, 0);
+	}
 
 	SREALLOC(*file_actlst, struct file_activity, FILE_ACTIVITY_SIZE * file_hdr->sa_act_nr);
 	fal = *file_actlst;
@@ -1284,15 +1320,23 @@ void check_file_actlst(int *ifd, char *dfile, struct activity *act[],
 
 		sa_fread(*ifd, fal, FILE_ACTIVITY_SIZE, HARD_SIZE);
 
-		if ((fal->nr < 1) || (fal->nr2 < 1)) {
-			/*
-			 * Every activity, known or unknown,
-			 * should have at least one item and sub-item.
-			 */
+		/*
+		 * Every activity, known or unknown, should have
+		 * at least one item and sub-item.
+		 * Also check that the number of items and sub-items
+		 * doesn't exceed a max value. This is necessary
+		 * because we will use @nr and @nr2 to
+		 * allocate memory to read the file contents. So we
+		 * must make sure the file is not corrupted.
+		 * NB: Another check will be made below for known
+		 * activities which have each a specific max value.
+		 */
+		if ((fal->nr < 1) || (fal->nr2 < 1) ||
+		    (fal->nr > NR_MAX) || (fal->nr2 > NR2_MAX)) {
 			handle_invalid_sa_file(ifd, file_magic, dfile, 0);
 		}
 
-		if ((p = get_activity_position(act, fal->id)) < 0)
+		if ((p = get_activity_position(act, fal->id, RESUME_IF_NOT_FOUND)) < 0)
 			/* Unknown activity */
 			continue;
 
@@ -1307,6 +1351,11 @@ void check_file_actlst(int *ifd, char *dfile, struct activity *act[],
 			}
 			else
 				continue;
+		}
+
+		/* Check max value for known activities */
+		if (fal->nr > act[p]->nr_max) {
+			handle_invalid_sa_file(ifd, file_magic, dfile, 0);
 		}
 
 		if (fal->id == A_CPU) {
@@ -1395,14 +1444,15 @@ int reallocate_vol_act_structures(struct activity *act[], unsigned int act_nr,
 {
 	int j, p;
 
-	if ((p = get_activity_position(act, act_id)) < 0)
+	if ((p = get_activity_position(act, act_id, RESUME_IF_NOT_FOUND)) < 0)
 		/* Ignore unknown activity */
 		return -1;
 
 	act[p]->nr = act_nr;
 
 	for (j = 0; j < 3; j++) {
-		SREALLOC(act[p]->buf[j], void, act[p]->msize * act[p]->nr * act[p]->nr2);
+		SREALLOC(act[p]->buf[j], void,
+			 (size_t) act[p]->msize * (size_t) act[p]->nr * (size_t) act[p]->nr2);
 	}
 
 	return 0;
@@ -1480,26 +1530,33 @@ int parse_sar_opt(char *argv[], int *opt, struct activity *act[],
 	int i, p;
 
 	for (i = 1; *(argv[*opt] + i); i++) {
+		/*
+		 * Note: argv[*opt] contains something like "-BruW"
+		 *     *(argv[*opt] + i) will contain 'B', 'r', etc.
+		 */
 
 		switch (*(argv[*opt] + i)) {
 
 		case 'A':
 			select_all_activities(act);
 
-			/* Force '-P ALL -I XALL' */
+			/* Force '-P ALL -I XALL -r ALL -u ALL' */
 
-			p = get_activity_position(act, A_MEMORY);
+			p = get_activity_position(act, A_MEMORY, EXIT_IF_NOT_FOUND);
 			act[p]->opt_flags |= AO_F_MEM_AMT + AO_F_MEM_DIA +
-					     AO_F_MEM_SWAP;
+					     AO_F_MEM_SWAP + AO_F_MEM_ALL;
 
-			p = get_activity_position(act, A_IRQ);
+			p = get_activity_position(act, A_IRQ, EXIT_IF_NOT_FOUND);
 			set_bitmap(act[p]->bitmap->b_array, ~0,
 				   BITMAP_SIZE(act[p]->bitmap->b_size));
 
-			p = get_activity_position(act, A_CPU);
+			p = get_activity_position(act, A_CPU, EXIT_IF_NOT_FOUND);
 			set_bitmap(act[p]->bitmap->b_array, ~0,
 				   BITMAP_SIZE(act[p]->bitmap->b_size));
 			act[p]->opt_flags = AO_F_CPU_ALL;
+
+			p = get_activity_position(act, A_FILESYSTEM, EXIT_IF_NOT_FOUND);
+			act[p]->opt_flags = AO_F_FILESYSTEM;
 			break;
 
 		case 'B':
@@ -1519,11 +1576,20 @@ int parse_sar_opt(char *argv[], int *opt, struct activity *act[],
 			break;
 
 		case 'F':
-			SELECT_ACTIVITY(A_FILESYSTEM);
+			p = get_activity_position(act, A_FILESYSTEM, EXIT_IF_NOT_FOUND);
+			act[p]->options |= AO_SELECTED;
+			if (!*(argv[*opt] + i + 1) && argv[*opt + 1] && !strcmp(argv[*opt + 1], K_MOUNT)) {
+				(*opt)++;
+				act[p]->opt_flags |= AO_F_MOUNT;
+				return 0;
+			}
+			else {
+				act[p]->opt_flags |= AO_F_FILESYSTEM;
+			}
 			break;
 
 		case 'H':
-			p = get_activity_position(act, A_HUGE);
+			p = get_activity_position(act, A_HUGE, EXIT_IF_NOT_FOUND);
 			act[p]->options   |= AO_SELECTED;
 			break;
 
@@ -1561,19 +1627,24 @@ int parse_sar_opt(char *argv[], int *opt, struct activity *act[],
 			break;
 
 		case 'r':
-			p = get_activity_position(act, A_MEMORY);
+			p = get_activity_position(act, A_MEMORY, EXIT_IF_NOT_FOUND);
 			act[p]->options   |= AO_SELECTED;
 			act[p]->opt_flags |= AO_F_MEM_AMT;
+			if (!*(argv[*opt] + i + 1) && argv[*opt + 1] && !strcmp(argv[*opt + 1], K_ALL)) {
+				(*opt)++;
+				act[p]->opt_flags |= AO_F_MEM_ALL;
+				return 0;
+			}
 			break;
 
 		case 'R':
-			p = get_activity_position(act, A_MEMORY);
+			p = get_activity_position(act, A_MEMORY, EXIT_IF_NOT_FOUND);
 			act[p]->options   |= AO_SELECTED;
 			act[p]->opt_flags |= AO_F_MEM_DIA;
 			break;
 
 		case 'S':
-			p = get_activity_position(act, A_MEMORY);
+			p = get_activity_position(act, A_MEMORY, EXIT_IF_NOT_FOUND);
 			act[p]->options   |= AO_SELECTED;
 			act[p]->opt_flags |= AO_F_MEM_SWAP;
 			break;
@@ -1593,7 +1664,7 @@ int parse_sar_opt(char *argv[], int *opt, struct activity *act[],
 			break;
 
 		case 'u':
-			p = get_activity_position(act, A_CPU);
+			p = get_activity_position(act, A_CPU, EXIT_IF_NOT_FOUND);
 			act[p]->options |= AO_SELECTED;
 			if (!*(argv[*opt] + i + 1) && argv[*opt + 1] && !strcmp(argv[*opt + 1], K_ALL)) {
 				(*opt)++;
@@ -1760,6 +1831,9 @@ int parse_sar_n_opt(char *argv[], int *opt, struct activity *act[])
 		else if (!strcmp(t, K_UDP6)) {
 			SELECT_ACTIVITY(A_NET_UDP6);
 		}
+		else if (!strcmp(t, K_FC)) {
+			SELECT_ACTIVITY(A_NET_FC);
+		}
 		else if (!strcmp(t, K_ALL)) {
 			SELECT_ACTIVITY(A_NET_DEV);
 			SELECT_ACTIVITY(A_NET_EDEV);
@@ -1779,6 +1853,7 @@ int parse_sar_n_opt(char *argv[], int *opt, struct activity *act[])
 			SELECT_ACTIVITY(A_NET_ICMP6);
 			SELECT_ACTIVITY(A_NET_EICMP6);
 			SELECT_ACTIVITY(A_NET_UDP6);
+			SELECT_ACTIVITY(A_NET_FC);
 		}
 		else
 			return 1;
@@ -1811,7 +1886,7 @@ int parse_sar_I_opt(char *argv[], int *opt, struct activity *act[])
 	char *t;
 
 	/* Select interrupt activity */
-	p = get_activity_position(act, A_IRQ);
+	p = get_activity_position(act, A_IRQ, EXIT_IF_NOT_FOUND);
 	act[p]->options |= AO_SELECTED;
 
 	for (t = strtok(argv[*opt], ","); t; t = strtok(NULL, ",")) {
@@ -1869,7 +1944,7 @@ int parse_sa_P_opt(char *argv[], int *opt, unsigned int *flags, struct activity 
 	int i, p;
 	char *t;
 
-	p = get_activity_position(act, A_CPU);
+	p = get_activity_position(act, A_CPU, EXIT_IF_NOT_FOUND);
 
 	if (argv[++(*opt)]) {
 
@@ -1920,7 +1995,7 @@ double compute_ifutil(struct stats_net_dev *st_net_dev, double rx, double tx)
 
 	if (st_net_dev->speed) {
 
-		speed = st_net_dev->speed * 1000000;
+		speed = (unsigned long long) st_net_dev->speed * 1000000;
 
 		if (st_net_dev->duplex == C_DUPLEX_FULL) {
 			/* Full duplex */
@@ -1940,3 +2015,293 @@ double compute_ifutil(struct stats_net_dev *st_net_dev, double rx, double tx)
 	return 0;
 }
 
+/*
+ ***************************************************************************
+ * Fill system activity file magic header.
+ *
+ * IN:
+ * @file_magic	System activity file magic header.
+ ***************************************************************************
+ */
+void enum_version_nr(struct file_magic *fm)
+{
+	char *v;
+	char version[16];
+
+	fm->sysstat_extraversion = 0;
+
+	strcpy(version, VERSION);
+
+	/* Get version number */
+	if ((v = strtok(version, ".")) == NULL)
+		return;
+	fm->sysstat_version = atoi(v) & 0xff;
+
+	/* Get patchlevel number */
+	if ((v = strtok(NULL, ".")) == NULL)
+		return;
+	fm->sysstat_patchlevel = atoi(v) & 0xff;
+
+	/* Get sublevel number */
+	if ((v = strtok(NULL, ".")) == NULL)
+		return;
+	fm->sysstat_sublevel = atoi(v) & 0xff;
+
+	/* Get extraversion number. Don't necessarily exist */
+	if ((v = strtok(NULL, ".")) == NULL)
+		return;
+	fm->sysstat_extraversion = atoi(v) & 0xff;
+}
+
+/*
+ ***************************************************************************
+ * Read and replace unprintable characters in comment with ".".
+ *
+ * IN:
+ * @ifd		Input file descriptor.
+ * @comment	Comment.
+ ***************************************************************************
+ */
+void replace_nonprintable_char(int ifd, char *comment)
+{
+	int i;
+
+	/* Read comment */
+	sa_fread(ifd, comment, MAX_COMMENT_LEN, HARD_SIZE);
+	comment[MAX_COMMENT_LEN - 1] = '\0';
+
+	/* Replace non printable chars */
+	for (i = 0; i < strlen(comment); i++) {
+		if (!isprint(comment[i]))
+			comment[i] = '.';
+	}
+}
+
+/*
+ ***************************************************************************
+ * Fill the rectime and loctime structures with current record's date and
+ * time, based on current record's "number of seconds since the epoch" saved
+ * in file.
+ * For loctime (if given): The timestamp is expressed in local time.
+ * For rectime: The timestamp is expressed in UTC, in local time, or in the
+ * time of the file's creator depending on options entered by the user on the
+ * command line.
+ *
+ * IN:
+ * @l_flags	Flags indicating the type of time expected by the user.
+ * 		S_F_LOCAL_TIME means time should be expressed in local time.
+ * 		S_F_TRUE_TIME means time should be expressed in time of
+ * 		file's creator.
+ * 		Default is time expressed in UTC (except for sar, where it
+ * 		is local time).
+ * @record_hdr	Record header containing the number of seconds since the
+ * 		epoch, and the HH:MM:SS of the file's creator.
+ *
+ * OUT:
+ * @rectime	Structure where timestamp for current record has been saved
+ * 		(in local time or in UTC depending on options used).
+ * @loctime	If given, structure where timestamp for current record has
+ * 		been saved (expressed in local time). This field will be used
+ * 		for time comparison if options -s and/or -e have been used.
+ *
+ * RETURNS:
+ * 1 if an error was detected, or 0 otherwise.
+ ***************************************************************************
+*/
+int sa_get_record_timestamp_struct(unsigned int l_flags, struct record_header *record_hdr,
+				   struct tm *rectime, struct tm *loctime)
+{
+	struct tm *ltm = NULL;
+	int rc = 0;
+
+	/* Fill localtime structure if given */
+	if (loctime) {
+		if ((ltm = localtime((const time_t *) &(record_hdr->ust_time))) != NULL) {
+			*loctime = *ltm;
+		}
+		else {
+			rc = 1;
+		}
+	}
+
+	/* Fill generic rectime structure */
+	if (PRINT_LOCAL_TIME(l_flags) && !ltm) {
+		/* Get local time if not already done */
+		ltm = localtime((const time_t *) &(record_hdr->ust_time));
+	}
+
+	if (!PRINT_LOCAL_TIME(l_flags) && !PRINT_TRUE_TIME(l_flags)) {
+		/*
+		 * Get time in UTC
+		 * (the user doesn't want local time nor time of file's creator).
+		 */
+		ltm = gmtime((const time_t *) &(record_hdr->ust_time));
+	}
+
+	if (ltm) {
+		/* Done even in true time mode so that we have some default values */
+		*rectime = *ltm;
+	}
+	else {
+		rc = 1;
+	}
+
+	if (PRINT_TRUE_TIME(l_flags)) {
+		/* Time of file's creator */
+		rectime->tm_hour = record_hdr->hour;
+		rectime->tm_min  = record_hdr->minute;
+		rectime->tm_sec  = record_hdr->second;
+	}
+
+	return rc;
+}
+
+/*
+ ***************************************************************************
+ * Set current record's timestamp strings (date and time) using the time
+ * data saved in @rectime structure. The string may be the number of seconds
+ * since the epoch if flag S_F_SEC_EPOCH has been set.
+ *
+ * IN:
+ * @l_flags	Flags indicating the type of time expected by the user.
+ * 		S_F_SEC_EPOCH means the time should be expressed in seconds
+ * 		since the epoch (01/01/1970).
+ * @record_hdr	Record header containing the number of seconds since the
+ * 		epoch.
+ * @cur_date	String where timestamp's date will be saved. May be NULL.
+ * @cur_time	String where timestamp's time will be saved.
+ * @len		Maximum length of timestamp strings.
+ * @rectime	Structure with current timestamp (expressed in local time or
+ *		in UTC depending on whether options -T or -t have been used
+ * 		or not) that should be broken down in date and time strings.
+ *
+ * OUT:
+ * @cur_date	Timestamp's date string (if expected).
+ * @cur_time	Timestamp's time string. May contain the number of seconds
+ *		since the epoch (01-01-1970) if corresponding option has
+ * 		been used.
+ ***************************************************************************
+*/
+void set_record_timestamp_string(unsigned int l_flags, struct record_header *record_hdr,
+				 char *cur_date, char *cur_time, int len, struct tm *rectime)
+{
+	/* Set cur_time date value */
+	if (PRINT_SEC_EPOCH(l_flags) && cur_date) {
+		sprintf(cur_time, "%ld", record_hdr->ust_time);
+		strcpy(cur_date, "");
+	}
+	else {
+		/*
+		 * If options -T or -t have been used then cur_time is
+		 * expressed in local time. Else it is expressed in UTC.
+		 */
+		if (cur_date) {
+			strftime(cur_date, len, "%Y-%m-%d", rectime);
+		}
+		if (USE_PREFD_TIME_OUTPUT(l_flags)) {
+			strftime(cur_time, len, "%X", rectime);
+		}
+		else {
+			strftime(cur_time, len, "%H:%M:%S", rectime);
+		}
+	}
+}
+
+/*
+ ***************************************************************************
+ * Print contents of a special (RESTART or COMMENT) record.
+ *
+ * IN:
+ * @record_hdr	Current record header.
+ * @l_flags	Flags for common options.
+ * @tm_start	Structure filled when option -s has been used.
+ * @tm_end	Structure filled when option -e has been used.
+ * @rtype	Record type (R_RESTART or R_COMMENT).
+ * @ifd		Input file descriptor.
+ * @rectime	Structure where timestamp (expressed in local time or in UTC
+ *		depending on whether options -T/-t have	been used or not) can
+ *		be saved for current record.
+ * @loctime	Structure where timestamp (expressed in local time) can be
+ *		saved for current record. May be NULL.
+ * @file	Name of file being read.
+ * @tab		Number of tabulations to print.
+ * @file_magic	file_magic structure filled with file magic header data.
+ * @file_hdr	System activity file standard header.
+ * @act		Array of activities.
+ * @ofmt		Pointer on report output format structure.
+ *
+ * OUT:
+ * @rectime		Structure where timestamp (expressed in local time
+ * 			or in UTC) has been saved.
+ * @loctime		Structure where timestamp (expressed in local time)
+ * 			has been saved (if requested).
+ *
+ * RETURNS:
+ * 1 if the record has been successfully displayed, and 0 otherwise.
+ ***************************************************************************
+ */
+int print_special_record(struct record_header *record_hdr, unsigned int l_flags,
+			 struct tstamp *tm_start, struct tstamp *tm_end, int rtype, int ifd,
+			 struct tm *rectime, struct tm *loctime, char *file, int tab,
+			 struct file_magic *file_magic, struct file_header *file_hdr,
+			 struct activity *act[], struct report_format *ofmt)
+{
+	char cur_date[TIMESTAMP_LEN], cur_time[TIMESTAMP_LEN];
+	int dp = 1;
+	unsigned int new_cpu_nr;
+
+	/* Fill timestamp structure (rectime) for current record */
+	if (sa_get_record_timestamp_struct(l_flags, record_hdr, rectime, loctime))
+		return 0;
+
+	/* If loctime is NULL, then use rectime for comparison */
+	if (!loctime) {
+		loctime = rectime;
+	}
+
+	/* The record must be in the interval specified by -s/-e options */
+	if ((tm_start->use && (datecmp(loctime, tm_start) < 0)) ||
+	    (tm_end->use && (datecmp(loctime, tm_end) > 0))) {
+		/* Will not display the special record */
+		dp = 0;
+	}
+	else {
+		/* Set date and time strings to be displayed for current record */
+		set_record_timestamp_string(l_flags, record_hdr,
+					    cur_date, cur_time, TIMESTAMP_LEN, rectime);
+	}
+
+	if (rtype == R_RESTART) {
+		/* Don't forget to read the volatile activities structures */
+		new_cpu_nr = read_vol_act_structures(ifd, act, file, file_magic,
+						     file_hdr->sa_vol_act_nr);
+
+		if (!dp)
+			return 0;
+
+		if (*ofmt->f_restart) {
+			(*ofmt->f_restart)(&tab, F_MAIN, cur_date, cur_time,
+					   !PRINT_LOCAL_TIME(l_flags) &&
+					   !PRINT_TRUE_TIME(l_flags), file_hdr,
+					   new_cpu_nr);
+		}
+	}
+	else if (rtype == R_COMMENT) {
+		char file_comment[MAX_COMMENT_LEN];
+
+		/* Read and replace non printable chars in comment */
+		replace_nonprintable_char(ifd, file_comment);
+
+		if (!dp || !DISPLAY_COMMENT(l_flags))
+			return 0;
+
+		if (*ofmt->f_comment) {
+			(*ofmt->f_comment)(&tab, F_MAIN, cur_date, cur_time,
+					   !PRINT_LOCAL_TIME(l_flags) &&
+					   !PRINT_TRUE_TIME(l_flags), file_comment,
+					   file_hdr);
+		}
+	}
+
+	return 1;
+}

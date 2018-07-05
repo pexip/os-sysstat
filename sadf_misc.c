@@ -1,6 +1,6 @@
 /*
  * sadf_misc.c: Funtions used by sadf to display special records
- * (C) 2011-2014 by Sebastien GODARD (sysstat <at> orange.fr)
+ * (C) 2011-2016 by Sebastien GODARD (sysstat <at> orange.fr)
  *
  ***************************************************************************
  * This program is free software; you can redistribute it and/or modify it *
@@ -15,7 +15,7 @@
  *                                                                         *
  * You should have received a copy of the GNU General Public License along *
  * with this program; if not, write to the Free Software Foundation, Inc., *
- * 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA                   *
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1335 USA              *
  ***************************************************************************
  */
 
@@ -34,6 +34,7 @@
 #endif
 
 extern unsigned int flags;
+extern char *seps[];
 
 /*
  ***************************************************************************
@@ -408,30 +409,147 @@ __printf_funct_t print_json_statistics(int *tab, int action)
 
 /*
  ***************************************************************************
- * Display the "timestamp" part of the report (XML format).
+ * Display the "timestamp" part of the report (db and ppc format).
  *
  * IN:
- * @tab		Number of tabulations.
- * @action	Action expected from current function.
- * @cur_date	Date string of current comment.
- * @cur_time	Time string of current comment.
+ * @fmt		Output format (F_DB_OUTPUT or F_PPC_OUTPUT).
+ * @file_hdr	System activity file standard header.
+ * @cur_date	Date string of current record.
+ * @cur_time	Time string of current record.
  * @utc		True if @cur_time is expressed in UTC.
  * @itv		Interval of time with preceding record.
  *
- * OUT:
- * @tab		Number of tabulations.
+ * RETURNS:
+ * Pointer on the "timestamp" string.
  ***************************************************************************
  */
-__printf_funct_t print_xml_timestamp(int *tab, int action, char *cur_date,
-				     char *cur_time, int utc, unsigned long long itv)
+char *print_dbppc_timestamp(int fmt, struct file_header *file_hdr, char *cur_date,
+			    char *cur_time, int utc, unsigned long long itv)
 {
+	int isdb = (fmt == F_DB_OUTPUT);
+	static char pre[80];
+	char temp[80];
+
+	/* This substring appears on every output line, preformat it here */
+	snprintf(pre, 80, "%s%s%lld%s",
+		 file_hdr->sa_nodename, seps[isdb], itv, seps[isdb]);
+	if (strlen(cur_date)) {
+		snprintf(temp, 80, "%s%s ", pre, cur_date);
+	}
+	else {
+		strcpy(temp, pre);
+	}
+	snprintf(pre, 80, "%s%s%s", temp, cur_time,
+		 strlen(cur_date) && utc ? " UTC" : "");
+	pre[79] = '\0';
+
+	if (DISPLAY_HORIZONTALLY(flags)) {
+		printf("%s", pre);
+	}
+
+	return pre;
+}
+
+/*
+ ***************************************************************************
+ * Display the "timestamp" part of the report (ppc format).
+ *
+ * IN:
+ * @parm	Pointer on specific parameters (unused here).
+ * @action	Action expected from current function.
+ * @cur_date	Date string of current record.
+ * @cur_time	Time string of current record.
+ * @itv		Interval of time with preceding record.
+ * @file_hdr	System activity file standard header.
+ * @flags	Flags for common options.
+ *
+ * RETURNS:
+ * Pointer on the "timestamp" string.
+ ***************************************************************************
+ */
+__tm_funct_t print_ppc_timestamp(void *parm, int action, char *cur_date,
+				 char *cur_time, unsigned long long itv,
+				 struct file_header *file_hdr, unsigned int flags)
+{
+	int utc = !PRINT_LOCAL_TIME(flags) && !PRINT_TRUE_TIME(flags);
+
 	if (action & F_BEGIN) {
-		xprintf(*tab, "<timestamp date=\"%s\" time=\"%s\" utc=\"%d\" interval=\"%llu\">",
+		return print_dbppc_timestamp(F_PPC_OUTPUT, file_hdr, cur_date, cur_time, utc, itv);
+	}
+	if (action & F_END) {
+		if (DISPLAY_HORIZONTALLY(flags)) {
+			printf("\n");
+		}
+	}
+
+	return NULL;
+}
+
+/*
+ ***************************************************************************
+ * Display the "timestamp" part of the report (db format).
+ *
+ * IN:
+ * @parm	Pointer on specific parameters (unused here).
+ * @action	Action expected from current function.
+ * @cur_date	Date string of current record.
+ * @cur_time	Time string of current record.
+ * @itv		Interval of time with preceding record.
+ * @file_hdr	System activity file standard header.
+ * @flags	Flags for common options.
+ *
+ * RETURNS:
+ * Pointer on the "timestamp" string.
+ ***************************************************************************
+ */
+__tm_funct_t print_db_timestamp(void *parm, int action, char *cur_date,
+				char *cur_time, unsigned long long itv,
+				struct file_header *file_hdr, unsigned int flags)
+{
+	int utc = !PRINT_LOCAL_TIME(flags) && !PRINT_TRUE_TIME(flags);
+
+	if (action & F_BEGIN) {
+		return print_dbppc_timestamp(F_DB_OUTPUT, file_hdr, cur_date, cur_time, utc, itv);
+	}
+	if (action & F_END) {
+		if (DISPLAY_HORIZONTALLY(flags)) {
+			printf("\n");
+		}
+	}
+
+	return NULL;
+}
+
+/*
+ ***************************************************************************
+ * Display the "timestamp" part of the report (XML format).
+ *
+ * IN:
+ * @parm	Specific parameter. Here: number of tabulations.
+ * @action	Action expected from current function.
+ * @cur_date	Date string of current comment.
+ * @cur_time	Time string of current comment.
+ * @itv		Interval of time with preceding record.
+ * @file_hdr	System activity file standard header (unused here).
+ * @flags	Flags for common options.
+ ***************************************************************************
+ */
+__tm_funct_t print_xml_timestamp(void *parm, int action, char *cur_date,
+				 char *cur_time, unsigned long long itv,
+				 struct file_header *file_hdr, unsigned int flags)
+{
+	int utc = !PRINT_LOCAL_TIME(flags) && !PRINT_TRUE_TIME(flags);
+	int *tab = (int *) parm;
+
+	if (action & F_BEGIN) {
+		xprintf((*tab)++, "<timestamp date=\"%s\" time=\"%s\" utc=\"%d\" interval=\"%llu\">",
 			cur_date, cur_time, utc ? 1 : 0, itv);
 	}
 	if (action & F_END) {
 		xprintf(--(*tab), "</timestamp>");
 	}
+
+	return NULL;
 }
 
 /*
@@ -439,20 +557,22 @@ __printf_funct_t print_xml_timestamp(int *tab, int action, char *cur_date,
  * Display the "timestamp" part of the report (JSON format).
  *
  * IN:
- * @tab		Number of tabulations.
+ * @parm	Specific parameter. Here: number of tabulations.
  * @action	Action expected from current function.
  * @cur_date	Date string of current comment.
  * @cur_time	Time string of current comment.
- * @utc		True if @cur_time is expressed in UTC.
  * @itv		Interval of time with preceding record.
- *
- * OUT:
- * @tab		Number of tabulations.
+ * @file_hdr	System activity file standard header (unused here).
+ * @flags	Flags for common options.
  ***************************************************************************
  */
-__printf_funct_t print_json_timestamp(int *tab, int action, char *cur_date,
-				      char *cur_time, int utc, unsigned long long itv)
+__tm_funct_t print_json_timestamp(void *parm, int action, char *cur_date,
+				  char *cur_time, unsigned long long itv,
+				  struct file_header *file_hdr, unsigned int flags)
 {
+	int utc = !PRINT_LOCAL_TIME(flags) && !PRINT_TRUE_TIME(flags);
+	int *tab = (int *) parm;
+
 	if (action & F_BEGIN) {
 		xprintf0(*tab,
 			 "\"timestamp\": {\"date\": \"%s\", \"time\": \"%s\", "
@@ -460,11 +580,13 @@ __printf_funct_t print_json_timestamp(int *tab, int action, char *cur_date,
 			 cur_date, cur_time, utc ? 1 : 0, itv);
 	}
 	if (action & F_MAIN) {
-		printf("\n");
+		printf(",\n");
 	}
 	if (action & F_END) {
 		printf("\n");
 	}
+
+	return NULL;
 }
 
 /*
@@ -472,7 +594,7 @@ __printf_funct_t print_json_timestamp(int *tab, int action, char *cur_date,
  * Display the header of the report (XML format).
  *
  * IN:
- * @tab		Number of tabulations.
+ * @parm	Specific parameter. Here: number of tabulations.
  * @action	Action expected from current function.
  * @dfile	Name of system activity data file.
  * @file_magic	System activity file magic header.
@@ -482,16 +604,17 @@ __printf_funct_t print_json_timestamp(int *tab, int action, char *cur_date,
  * @id_seq	Activity sequence (unused here).
  *
  * OUT:
- * @tab		Number of tabulations.
+ * @parm	Number of tabulations.
  ***************************************************************************
  */
-__printf_funct_t print_xml_header(int *tab, int action, char *dfile,
+__printf_funct_t print_xml_header(void *parm, int action, char *dfile,
 				  struct file_magic *file_magic,
 				  struct file_header *file_hdr, __nr_t cpu_nr,
 				  struct activity *act[], unsigned int id_seq[])
 {
 	struct tm rectime, *loc_t;
-	char cur_time[32];
+	char cur_time[TIMESTAMP_LEN];
+	int *tab = (int *) parm;
 
 	if (action & F_BEGIN) {
 		printf("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
@@ -500,7 +623,10 @@ __printf_funct_t print_xml_header(int *tab, int action, char *dfile,
 		printf("\"http://pagesperso-orange.fr/sebastien.godard/sysstat-%s.dtd\">\n",
 		       XML_DTD_VERSION);
 
-		xprintf(*tab, "<sysstat>");
+		xprintf(*tab, "<sysstat\n"
+			      "xmlns=\"http://pagesperso-orange.fr/sebastien.godard/sysstat\"\n"
+			      "xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\"\n"
+			      "xsi:schemaLocation=\"http://pagesperso-orange.fr/sebastien.godard sysstat.xsd\">");
 
 		xprintf(++(*tab), "<sysdata-version>%s</sysdata-version>",
 			XML_DTD_VERSION);
@@ -535,7 +661,7 @@ __printf_funct_t print_xml_header(int *tab, int action, char *dfile,
  * Display the header of the report (JSON format).
  *
  * IN:
- * @tab		Number of tabulations.
+ * @parm	Specific parameter. Here: number of tabulations.
  * @action	Action expected from current function.
  * @dfile	Name of system activity data file.
  * @file_magic	System activity file magic header.
@@ -545,16 +671,17 @@ __printf_funct_t print_xml_header(int *tab, int action, char *dfile,
  * @id_seq	Activity sequence (unused here).
  *
  * OUT:
- * @tab		Number of tabulations.
+ * @parm	Number of tabulations.
  ***************************************************************************
  */
-__printf_funct_t print_json_header(int *tab, int action, char *dfile,
+__printf_funct_t print_json_header(void *parm, int action, char *dfile,
 				   struct file_magic *file_magic,
 				   struct file_header *file_hdr, __nr_t cpu_nr,
 				   struct activity *act[], unsigned int id_seq[])
 {
 	struct tm rectime, *loc_t;
-	char cur_time[32];
+	char cur_time[TIMESTAMP_LEN];
+	int *tab = (int *) parm;
 
 	if (action & F_BEGIN) {
 		xprintf(*tab, "{\"sysstat\": {");
@@ -597,7 +724,7 @@ __printf_funct_t print_json_header(int *tab, int action, char *dfile,
  * Display data file header.
  *
  * IN:
- * @tab		Number of tabulations (unused here).
+ * @parm	Specific parameter (unused here).
  * @action	Action expected from current function.
  * @dfile	Name of system activity data file.
  * @file_magic	System activity file magic header.
@@ -607,14 +734,14 @@ __printf_funct_t print_json_header(int *tab, int action, char *dfile,
  * @id_seq	Activity sequence.
  ***************************************************************************
  */
-__printf_funct_t print_hdr_header(int *tab, int action, char *dfile,
+__printf_funct_t print_hdr_header(void *parm, int action, char *dfile,
 				  struct file_magic *file_magic,
 				  struct file_header *file_hdr, __nr_t cpu_nr,
 				  struct activity *act[], unsigned int id_seq[])
 {
 	int i, p;
-	struct tm *loc_t;
-	char cur_time[32];
+	struct tm rectime, *loc_t;
+	char cur_time[TIMESTAMP_LEN];
 
 	/* Actions F_MAIN and F_END ignored */
 	if (action & F_BEGIN) {
@@ -627,6 +754,10 @@ __printf_funct_t print_hdr_header(int *tab, int action, char *dfile,
 			return;
 		}
 
+		printf(_("Genuine sa datafile: %s (%x)\n"),
+		       file_magic->upgraded ? _("no") : _("yes"),
+		       file_magic->upgraded);
+
 		printf(_("Host: "));
 		print_gal_header(localtime((const time_t *) &(file_hdr->sa_ust_time)),
 				 file_hdr->sa_sysname, file_hdr->sa_release,
@@ -635,6 +766,11 @@ __printf_funct_t print_hdr_header(int *tab, int action, char *dfile,
 
 		printf(_("Number of CPU for last samples in file: %u\n"),
 		       file_hdr->sa_last_cpu_nr > 1 ? file_hdr->sa_last_cpu_nr - 1 : 1);
+
+		/* Fill file timestmap structure (rectime) */
+		get_file_timestamp_struct(flags, &rectime, file_hdr);
+		strftime(cur_time, sizeof(cur_time), "%Y-%m-%d", &rectime);
+		printf(_("File date: %s\n"), cur_time);
 
 		if ((loc_t = gmtime((const time_t *) &file_hdr->sa_ust_time)) != NULL) {
 			printf(_("File time: "));
@@ -653,9 +789,9 @@ __printf_funct_t print_hdr_header(int *tab, int action, char *dfile,
 		for (i = 0; i < NR_ACT; i++) {
 			if (!id_seq[i])
 				continue;
-			if ((p = get_activity_position(act, id_seq[i])) < 0) {
-				PANIC(id_seq[i]);
-			}
+
+			p = get_activity_position(act, id_seq[i], EXIT_IF_NOT_FOUND);
+
 			printf("%02d: %s\t(x%d)", act[p]->id, act[p]->name, act[p]->nr);
 			if (act[p]->f_count2 || (act[p]->nr2 > 1)) {
 				printf("\t(x%d)", act[p]->nr2);
@@ -665,5 +801,54 @@ __printf_funct_t print_hdr_header(int *tab, int action, char *dfile,
 			}
 			printf("\n");
 		}
+	}
+}
+
+/*
+ ***************************************************************************
+ * Display the header of the report (SVG format).
+ *
+ * IN:
+ * @parm	Specific parameter. Here: number of graphs to display.
+ * @action	Action expected from current function.
+ * @dfile	Name of system activity data file (unused here).
+ * @file_magic	System activity file magic header (unused here).
+ * @file_hdr	System activity file standard header.
+ * @cpu_nr	Number of processors for current daily data file.
+ * @act		Array of activities (unused here).
+ * @id_seq	Activity sequence (unused here).
+ ***************************************************************************
+ */
+__printf_funct_t print_svg_header(void *parm, int action, char *dfile,
+				  struct file_magic *file_magic,
+				  struct file_header *file_hdr, __nr_t cpu_nr,
+				  struct activity *act[], unsigned int id_seq[])
+{
+	int *graph_nr = (int *) parm;
+
+	if (action & F_BEGIN) {
+		printf("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n");
+		printf("<!DOCTYPE svg PUBLIC \"-//W3C//DTD SVG 1.1//EN\" ");
+		printf("\"http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd\">\n");
+		printf("<svg xmlns=\"http://www.w3.org/2000/svg\"");
+		if (action & F_END) {
+			printf(">\n");
+		}
+	}
+
+	if (action & F_MAIN) {
+		printf(" width=\"%d\" height=\"%d\""
+		       " fill=\"black\" stroke=\"gray\" stroke-width=\"1\">\n",
+		       SVG_V_XSIZE, SVG_H_YSIZE + SVG_T_YSIZE * (*graph_nr));
+		printf("<text x= \"0\" y=\"30\" text-anchor=\"start\" stroke=\"brown\">");
+		print_gal_header(localtime((const time_t *) &(file_hdr->sa_ust_time)),
+				 file_hdr->sa_sysname, file_hdr->sa_release,
+				 file_hdr->sa_nodename, file_hdr->sa_machine,
+				 cpu_nr > 1 ? cpu_nr - 1 : 1);
+		printf("</text>\n");
+	}
+
+	if (action & F_END) {
+		printf("</svg>\n");
 	}
 }

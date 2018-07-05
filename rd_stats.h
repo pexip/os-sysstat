@@ -1,12 +1,10 @@
 /*
  * rd_stats.h: Include file used to read system statistics
- * (C) 1999-2014 by Sebastien Godard (sysstat <at> orange.fr)
+ * (C) 1999-2016 by Sebastien Godard (sysstat <at> orange.fr)
  */
 
 #ifndef _RD_STATS_H
 #define _RD_STATS_H
-
-#include "common.h"
 
 
 /*
@@ -28,7 +26,9 @@
 /* Maximum length of USB product string */
 #define MAX_PROD_LEN	48
 /* Maximum length of filesystem name */
-#define MAX_FS_LEN	72
+#define MAX_FS_LEN	128
+/* Maximum length of FC host name */
+#define MAX_FCH_LEN	16
 
 #define CNT_PART	1
 #define CNT_ALL_DEV	0
@@ -66,13 +66,20 @@
 #define MTAB		"/etc/mtab"
 #define IF_DUPLEX	"/sys/class/net/%s/duplex"
 #define IF_SPEED	"/sys/class/net/%s/speed"
-
+#define FC_RX_FRAMES	"%s/%s/statistics/rx_frames"
+#define FC_TX_FRAMES	"%s/%s/statistics/tx_frames"
+#define FC_RX_WORDS	"%s/%s/statistics/rx_words"
+#define FC_TX_WORDS	"%s/%s/statistics/tx_words"
 
 /*
  ***************************************************************************
  * Definitions of structures for system statistics
  ***************************************************************************
  */
+
+#define ULL_ALIGNMENT_WIDTH 16
+#define UL_ALIGNMENT_WIDTH 8
+#define U_ALIGNMENT_WIDTH 4
 
 /*
  * Structure for CPU statistics.
@@ -166,6 +173,11 @@ struct stats_memory {
 	unsigned long activekb	__attribute__ ((aligned (8)));
 	unsigned long inactkb	__attribute__ ((aligned (8)));
 	unsigned long dirtykb	__attribute__ ((aligned (8)));
+	unsigned long anonpgkb	__attribute__ ((aligned (8)));
+	unsigned long slabkb	__attribute__ ((aligned (8)));
+	unsigned long kstackkb	__attribute__ ((aligned (8)));
+	unsigned long pgtblkb	__attribute__ ((aligned (8)));
+	unsigned long vmusedkb	__attribute__ ((aligned (8)));
 };
 
 #define STATS_MEMORY_SIZE	(sizeof(struct stats_memory))
@@ -540,9 +552,21 @@ struct stats_filesystem {
 	unsigned long long f_files		__attribute__ ((aligned (16)));
 	unsigned long long f_ffree		__attribute__ ((aligned (16)));
 	char 		   fs_name[MAX_FS_LEN]	__attribute__ ((aligned (16)));
+	char 		   mountp[MAX_FS_LEN];
 };
 
 #define STATS_FILESYSTEM_SIZE	(sizeof(struct stats_filesystem))
+
+/* Structure for Fibre Channel HBA statistics */
+struct stats_fchost {
+	unsigned long f_rxframes		__attribute__ ((aligned (8)));
+	unsigned long f_txframes		__attribute__ ((aligned (8)));
+	unsigned long f_rxwords			__attribute__ ((aligned (8)));
+	unsigned long f_txwords			__attribute__ ((aligned (8)));
+	char	      fchost_name[MAX_FCH_LEN]	__attribute__ ((aligned (8)));
+};
+
+#define STATS_FCHOST_SIZE	(sizeof(struct stats_fchost))
 
 /*
  ***************************************************************************
@@ -550,81 +574,81 @@ struct stats_filesystem {
  ***************************************************************************
  */
 
-extern void
-	read_stat_cpu(struct stats_cpu *, int,
-		      unsigned long long *, unsigned long long *);
-extern void
-	read_stat_irq(struct stats_irq *, int);
-extern void
-	read_meminfo(struct stats_memory *);
-extern void
-	read_uptime(unsigned long long *);
-
-extern void
-	oct2chr(char *);
-extern void
-	read_stat_pcsw(struct stats_pcsw *);
-extern void
-	read_loadavg(struct stats_queue *);
-extern void
-	read_vmstat_swap(struct stats_swap *);
-extern void
-	read_vmstat_paging(struct stats_paging *);
-extern void
-	read_diskstats_io(struct stats_io *);
-extern void
-	read_diskstats_disk(struct stats_disk *, int, int);
-extern void
-	read_tty_driver_serial(struct stats_serial *, int);
-extern void
-	read_kernel_tables(struct stats_ktables *);
-extern int
-	read_net_dev(struct stats_net_dev *, int);
-extern void
-	read_if_info(struct stats_net_dev *, int);
-extern void
-	read_net_edev(struct stats_net_edev *, int);
-extern void
-	read_net_nfs(struct stats_net_nfs *);
-extern void
-	read_net_nfsd(struct stats_net_nfsd *);
-extern void
-	read_net_sock(struct stats_net_sock *);
-extern void
-	read_net_ip(struct stats_net_ip *);
-extern void
-	read_net_eip(struct stats_net_eip *);
-extern void
-	read_net_icmp(struct stats_net_icmp *);
-extern void
-	read_net_eicmp(struct stats_net_eicmp *);
-extern void
-	read_net_tcp(struct stats_net_tcp *);
-extern void
-	read_net_etcp(struct stats_net_etcp *);
-extern void
-	read_net_udp(struct stats_net_udp *);
-extern void
-	read_net_sock6(struct stats_net_sock6 *);
-extern void
-	read_net_ip6(struct stats_net_ip6 *);
-extern void
-	read_net_eip6(struct stats_net_eip6 *);
-extern void
-	read_net_icmp6(struct stats_net_icmp6 *);
-extern void
-	read_net_eicmp6(struct stats_net_eicmp6 *);
-extern void
-	read_net_udp6(struct stats_net_udp6 *);
-extern void
-	read_cpuinfo(struct stats_pwr_cpufreq *, int);
-extern void
-	read_meminfo_huge(struct stats_huge *);
-extern void
-	read_time_in_state(struct stats_pwr_wghfreq *, int, int);
-extern void
-	read_bus_usb_dev(struct stats_pwr_usb *, int);
-extern void
-	read_filesystem(struct stats_filesystem *, int);
+void oct2chr
+	(char *);
+void read_stat_cpu
+	(struct stats_cpu *, int, unsigned long long *, unsigned long long *);
+void read_stat_irq
+	(struct stats_irq *, int);
+void read_meminfo
+	(struct stats_memory *);
+void read_uptime
+	(unsigned long long *);
+void read_stat_pcsw
+	(struct stats_pcsw *);
+void read_loadavg
+	(struct stats_queue *);
+void read_vmstat_swap
+	(struct stats_swap *);
+void read_vmstat_paging
+	(struct stats_paging *);
+void read_diskstats_io
+	(struct stats_io *);
+void read_diskstats_disk
+	(struct stats_disk *, int, int);
+void read_tty_driver_serial
+	(struct stats_serial *, int);
+void read_kernel_tables
+	(struct stats_ktables *);
+int read_net_dev
+	(struct stats_net_dev *, int);
+void read_if_info
+	(struct stats_net_dev *, int);
+void read_net_edev
+	(struct stats_net_edev *, int);
+void read_net_nfs
+	(struct stats_net_nfs *);
+void read_net_nfsd
+	(struct stats_net_nfsd *);
+void read_net_sock
+	(struct stats_net_sock *);
+void read_net_ip
+	(struct stats_net_ip *);
+void read_net_eip
+	(struct stats_net_eip *);
+void read_net_icmp
+	(struct stats_net_icmp *);
+void read_net_eicmp
+	(struct stats_net_eicmp *);
+void read_net_tcp
+	(struct stats_net_tcp *);
+void read_net_etcp
+	(struct stats_net_etcp *);
+void read_net_udp
+	(struct stats_net_udp *);
+void read_net_sock6
+	(struct stats_net_sock6 *);
+void read_net_ip6
+	(struct stats_net_ip6 *);
+void read_net_eip6
+	(struct stats_net_eip6 *);
+void read_net_icmp6
+	(struct stats_net_icmp6 *);
+void read_net_eicmp6
+	(struct stats_net_eicmp6 *);
+void read_net_udp6
+	(struct stats_net_udp6 *);
+void read_cpuinfo
+	(struct stats_pwr_cpufreq *, int);
+void read_meminfo_huge
+	(struct stats_huge *);
+void read_time_in_state
+	(struct stats_pwr_wghfreq *, int, int);
+void read_bus_usb_dev
+	(struct stats_pwr_usb *, int);
+void read_filesystem
+	(struct stats_filesystem *, int);
+void read_fchost
+	(struct stats_fchost *, int);
 
 #endif /* _RD_STATS_H */

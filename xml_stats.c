@@ -1,6 +1,6 @@
 /*
  * xml_stats.c: Funtions used by sadf to display statistics in XML.
- * (C) 1999-2014 by Sebastien GODARD (sysstat <at> orange.fr)
+ * (C) 1999-2016 by Sebastien GODARD (sysstat <at> orange.fr)
  *
  ***************************************************************************
  * This program is free software; you can redistribute it and/or modify it *
@@ -15,7 +15,7 @@
  *                                                                         *
  * You should have received a copy of the GNU General Public License along *
  * with this program; if not, write to the Free Software Foundation, Inc., *
- * 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA                   *
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1335 USA              *
  ***************************************************************************
  */
 
@@ -112,12 +112,7 @@ __print_funct_t xml_print_cpu_stats(struct activity *a, int curr, int tab,
 	struct stats_cpu *scc, *scp;
 	char cpuno[8];
 
-	if (DISPLAY_CPU_DEF(a->opt_flags)) {
-		xprintf(tab++, "<cpu-load>");
-	}
-	else if (DISPLAY_CPU_ALL(a->opt_flags)) {
-		xprintf(tab++, "<cpu-load-all>");
-	}
+	xprintf(tab++, "<cpu-load>");
 
 	for (i = 0; (i < a->nr) && (i < a->bitmap->b_size + 1); i++) {
 
@@ -125,138 +120,134 @@ __print_funct_t xml_print_cpu_stats(struct activity *a, int curr, int tab,
 		scp = (struct stats_cpu *) ((char *) a->buf[!curr] + i * a->msize);
 
 		/* Should current CPU (including CPU "all") be displayed? */
-		if (a->bitmap->b_array[i >> 3] & (1 << (i & 0x07))) {
+		if (!(a->bitmap->b_array[i >> 3] & (1 << (i & 0x07))))
+			/* No */
+			continue;
 
-			/* Yes: Display it */
-			if (!i) {
-				/* This is CPU "all" */
-				strcpy(cpuno, "all");
+		/* Yes: Display it */
+		if (!i) {
+			/* This is CPU "all" */
+			strcpy(cpuno, "all");
+		}
+		else {
+			sprintf(cpuno, "%d", i - 1);
+
+			/*
+			 * If the CPU is offline then it is omited from /proc/stat:
+			 * All the fields couldn't have been read and the sum of them is zero.
+			 * (Remember that guest/guest_nice times are already included in
+			 * user/nice modes.)
+			 */
+			if ((scc->cpu_user + scc->cpu_nice + scc->cpu_sys +
+			     scc->cpu_iowait + scc->cpu_idle + scc->cpu_steal +
+			     scc->cpu_hardirq + scc->cpu_softirq) == 0) {
+				/*
+				 * Set current struct fields (which have been set to zero)
+				 * to values from previous iteration. Hence their values won't
+				 * jump from zero when the CPU comes back online.
+				 */
+				*scc = *scp;
+
+				g_itv = 0;
+				cpu_offline = TRUE;
 			}
 			else {
-				sprintf(cpuno, "%d", i - 1);
-
 				/*
-				 * If the CPU is offline then it is omited from /proc/stat:
-				 * All the fields couldn't have been read and the sum of them is zero.
-				 * (Remember that guest/guest_nice times are already included in
-				 * user/nice modes.)
+				 * Recalculate interval for current proc.
+				 * If result is 0 then current CPU is a tickless one.
 				 */
-				if ((scc->cpu_user + scc->cpu_nice + scc->cpu_sys +
-				     scc->cpu_iowait + scc->cpu_idle + scc->cpu_steal +
-				     scc->cpu_hardirq + scc->cpu_softirq) == 0) {
-					/*
-					 * Set current struct fields (which have been set to zero)
-					 * to values from previous iteration. Hence their values won't
-					 * jump from zero when the CPU comes back online.
-					 */
-					*scc = *scp;
-
-					g_itv = 0;
-					cpu_offline = TRUE;
-				}
-				else {
-					/*
-					 * Recalculate interval for current proc.
-					 * If result is 0 then current CPU is a tickless one.
-					 */
-					g_itv = get_per_cpu_interval(scc, scp);
-					cpu_offline = FALSE;
-				}
-
-				if (!g_itv) {
-					/* Current CPU is offline or tickless */
-					if (DISPLAY_CPU_DEF(a->opt_flags)) {
-						xprintf(tab, "<cpu number=\"%d\" "
-							"user=\"%.2f\" "
-							"nice=\"%.2f\" "
-							"system=\"%.2f\" "
-							"iowait=\"%.2f\" "
-							"steal=\"%.2f\" "
-							"idle=\"%.2f\"/>",
-							i - 1, 0.0, 0.0, 0.0, 0.0, 0.0,
-							cpu_offline ? 0.0 : 100.0);
-					}
-					else if (DISPLAY_CPU_ALL(a->opt_flags)) {
-						xprintf(tab, "<cpu number=\"%d\" "
-							"usr=\"%.2f\" "
-							"nice=\"%.2f\" "
-							"sys=\"%.2f\" "
-							"iowait=\"%.2f\" "
-							"steal=\"%.2f\" "
-							"irq=\"%.2f\" "
-							"soft=\"%.2f\" "
-							"guest=\"%.2f\" "
-							"gnice=\"%.2f\" "
-							"idle=\"%.2f\"/>",
-							i - 1, 0.0, 0.0, 0.0, 0.0,
-							0.0, 0.0, 0.0, 0.0, 0.0,
-							cpu_offline ? 0.0 : 100.0);
-					}
-					continue;
-				}
+				g_itv = get_per_cpu_interval(scc, scp);
+				cpu_offline = FALSE;
 			}
 
-			if (DISPLAY_CPU_DEF(a->opt_flags)) {
-				xprintf(tab, "<cpu number=\"%s\" "
-					"user=\"%.2f\" "
-					"nice=\"%.2f\" "
-					"system=\"%.2f\" "
-					"iowait=\"%.2f\" "
-					"steal=\"%.2f\" "
-					"idle=\"%.2f\"/>",
-					cpuno,
-					ll_sp_value(scp->cpu_user,   scc->cpu_user,   g_itv),
-					ll_sp_value(scp->cpu_nice,   scc->cpu_nice,   g_itv),
-					ll_sp_value(scp->cpu_sys + scp->cpu_hardirq + scp->cpu_softirq,
-						    scc->cpu_sys + scc->cpu_hardirq + scc->cpu_softirq,
-						    g_itv),
-					ll_sp_value(scp->cpu_iowait, scc->cpu_iowait, g_itv),
-					ll_sp_value(scp->cpu_steal,  scc->cpu_steal,  g_itv),
-					scc->cpu_idle < scp->cpu_idle ?
-					0.0 :
-					ll_sp_value(scp->cpu_idle,   scc->cpu_idle,   g_itv));
+			if (!g_itv) {
+				/* Current CPU is offline or tickless */
+				if (DISPLAY_CPU_DEF(a->opt_flags)) {
+					xprintf(tab, "<cpu number=\"%d\" "
+						"user=\"%.2f\" "
+						"nice=\"%.2f\" "
+						"system=\"%.2f\" "
+						"iowait=\"%.2f\" "
+						"steal=\"%.2f\" "
+						"idle=\"%.2f\"/>",
+						i - 1, 0.0, 0.0, 0.0, 0.0, 0.0,
+						cpu_offline ? 0.0 : 100.0);
+				}
+				else if (DISPLAY_CPU_ALL(a->opt_flags)) {
+					xprintf(tab, "<cpu number=\"%d\" "
+						"usr=\"%.2f\" "
+						"nice=\"%.2f\" "
+						"sys=\"%.2f\" "
+						"iowait=\"%.2f\" "
+						"steal=\"%.2f\" "
+						"irq=\"%.2f\" "
+						"soft=\"%.2f\" "
+						"guest=\"%.2f\" "
+						"gnice=\"%.2f\" "
+						"idle=\"%.2f\"/>",
+						i - 1, 0.0, 0.0, 0.0, 0.0,
+						0.0, 0.0, 0.0, 0.0, 0.0,
+						cpu_offline ? 0.0 : 100.0);
+				}
+				continue;
 			}
-			else if (DISPLAY_CPU_ALL(a->opt_flags)) {
-				xprintf(tab, "<cpu number=\"%s\" "
-					"usr=\"%.2f\" "
-					"nice=\"%.2f\" "
-					"sys=\"%.2f\" "
-					"iowait=\"%.2f\" "
-					"steal=\"%.2f\" "
-					"irq=\"%.2f\" "
-					"soft=\"%.2f\" "
-					"guest=\"%.2f\" "
-					"gnice=\"%.2f\" "
-					"idle=\"%.2f\"/>",
-					cpuno,
-					(scc->cpu_user - scc->cpu_guest) < (scp->cpu_user - scp->cpu_guest) ?
-					0.0 :
-					ll_sp_value(scp->cpu_user - scp->cpu_guest,
-						    scc->cpu_user - scc->cpu_guest, g_itv),
-					(scc->cpu_nice - scc->cpu_guest_nice) < (scp->cpu_nice - scp->cpu_guest_nice) ?
-					0.0 :
-					ll_sp_value(scp->cpu_nice - scp->cpu_guest_nice,
-						    scc->cpu_nice - scc->cpu_guest_nice, g_itv),
-					ll_sp_value(scp->cpu_sys, scc->cpu_sys, g_itv),
-					ll_sp_value(scp->cpu_iowait, scc->cpu_iowait, g_itv),
-					ll_sp_value(scp->cpu_steal, scc->cpu_steal, g_itv),
-					ll_sp_value(scp->cpu_hardirq, scc->cpu_hardirq, g_itv),
-					ll_sp_value(scp->cpu_softirq, scc->cpu_softirq, g_itv),
-					ll_sp_value(scp->cpu_guest, scc->cpu_guest, g_itv),
-					ll_sp_value(scp->cpu_guest_nice, scc->cpu_guest_nice, g_itv),
-					scc->cpu_idle < scp->cpu_idle ?
-					0.0 :
-					ll_sp_value(scp->cpu_idle, scc->cpu_idle, g_itv));
-			}
+		}
+
+		if (DISPLAY_CPU_DEF(a->opt_flags)) {
+			xprintf(tab, "<cpu number=\"%s\" "
+				"user=\"%.2f\" "
+				"nice=\"%.2f\" "
+				"system=\"%.2f\" "
+				"iowait=\"%.2f\" "
+				"steal=\"%.2f\" "
+				"idle=\"%.2f\"/>",
+				cpuno,
+				ll_sp_value(scp->cpu_user,   scc->cpu_user,   g_itv),
+				ll_sp_value(scp->cpu_nice,   scc->cpu_nice,   g_itv),
+				ll_sp_value(scp->cpu_sys + scp->cpu_hardirq + scp->cpu_softirq,
+					    scc->cpu_sys + scc->cpu_hardirq + scc->cpu_softirq,
+					    g_itv),
+				ll_sp_value(scp->cpu_iowait, scc->cpu_iowait, g_itv),
+				ll_sp_value(scp->cpu_steal,  scc->cpu_steal,  g_itv),
+				scc->cpu_idle < scp->cpu_idle ?
+				0.0 :
+				ll_sp_value(scp->cpu_idle,   scc->cpu_idle,   g_itv));
+		}
+		else if (DISPLAY_CPU_ALL(a->opt_flags)) {
+			xprintf(tab, "<cpu number=\"%s\" "
+				"usr=\"%.2f\" "
+				"nice=\"%.2f\" "
+				"sys=\"%.2f\" "
+				"iowait=\"%.2f\" "
+				"steal=\"%.2f\" "
+				"irq=\"%.2f\" "
+				"soft=\"%.2f\" "
+				"guest=\"%.2f\" "
+				"gnice=\"%.2f\" "
+				"idle=\"%.2f\"/>",
+				cpuno,
+				(scc->cpu_user - scc->cpu_guest) < (scp->cpu_user - scp->cpu_guest) ?
+				0.0 :
+				ll_sp_value(scp->cpu_user - scp->cpu_guest,
+					    scc->cpu_user - scc->cpu_guest, g_itv),
+				(scc->cpu_nice - scc->cpu_guest_nice) < (scp->cpu_nice - scp->cpu_guest_nice) ?
+				0.0 :
+				ll_sp_value(scp->cpu_nice - scp->cpu_guest_nice,
+					    scc->cpu_nice - scc->cpu_guest_nice, g_itv),
+				ll_sp_value(scp->cpu_sys, scc->cpu_sys, g_itv),
+				ll_sp_value(scp->cpu_iowait, scc->cpu_iowait, g_itv),
+				ll_sp_value(scp->cpu_steal, scc->cpu_steal, g_itv),
+				ll_sp_value(scp->cpu_hardirq, scc->cpu_hardirq, g_itv),
+				ll_sp_value(scp->cpu_softirq, scc->cpu_softirq, g_itv),
+				ll_sp_value(scp->cpu_guest, scc->cpu_guest, g_itv),
+				ll_sp_value(scp->cpu_guest_nice, scc->cpu_guest_nice, g_itv),
+				scc->cpu_idle < scp->cpu_idle ?
+				0.0 :
+				ll_sp_value(scp->cpu_idle, scc->cpu_idle, g_itv));
 		}
 	}
 
-	if (DISPLAY_CPU_DEF(a->opt_flags)) {
-		xprintf(--tab, "</cpu-load>");
-	}
-	else if (DISPLAY_CPU_ALL(a->opt_flags)) {
-		xprintf(--tab, "</cpu-load-all>");
-	}
+	xprintf(--tab, "</cpu-load>");
 }
 
 /*
@@ -420,15 +411,26 @@ __print_funct_t xml_print_io_stats(struct activity *a, int curr, int tab,
 
 	xprintf(tab, "<io per=\"second\">");
 
+	/*
+	 * If we get negative values, this is probably because
+	 * one or more devices/filesystems have been unmounted.
+	 * We display 0.0 in this case though we should rather tell
+	 * the user that the value cannot be calculated here.
+	 */
 	xprintf(++tab, "<tps>%.2f</tps>",
+		sic->dk_drive < sip->dk_drive ? 0.0 :
 		S_VALUE(sip->dk_drive, sic->dk_drive, itv));
 
 	xprintf(tab, "<io-reads rtps=\"%.2f\" bread=\"%.2f\"/>",
-		S_VALUE(sip->dk_drive_rio,  sic->dk_drive_rio,  itv),
+		sic->dk_drive_rio < sip->dk_drive_rio ? 0.0 :
+		S_VALUE(sip->dk_drive_rio, sic->dk_drive_rio, itv),
+		sic->dk_drive_rblk < sip->dk_drive_rblk ? 0.0 :
 		S_VALUE(sip->dk_drive_rblk, sic->dk_drive_rblk, itv));
 
 	xprintf(tab, "<io-writes wtps=\"%.2f\" bwrtn=\"%.2f\"/>",
-		S_VALUE(sip->dk_drive_wio,  sic->dk_drive_wio,  itv),
+		sic->dk_drive_wio < sip->dk_drive_wio ? 0.0 :
+		S_VALUE(sip->dk_drive_wio, sic->dk_drive_wio, itv),
+		sic->dk_drive_wblk < sip->dk_drive_wblk ? 0.0 :
 		S_VALUE(sip->dk_drive_wblk, sic->dk_drive_wblk, itv));
 
 	xprintf(--tab, "</io>");
@@ -489,6 +491,23 @@ __print_funct_t xml_print_memory_stats(struct activity *a, int curr, int tab,
 
 		xprintf(tab--, "<dirty>%lu</dirty>",
 			smc->dirtykb);
+
+		if (DISPLAY_MEM_ALL(a->opt_flags)) {
+			xprintf(++tab, "<anonpg>%lu</anonpg>",
+				smc->anonpgkb);
+
+			xprintf(tab, "<slab>%lu</slab>",
+				smc->slabkb);
+
+			xprintf(tab, "<kstack>%lu</kstack>",
+				smc->kstackkb);
+
+			xprintf(tab, "<pgtbl>%lu</pgtbl>",
+				smc->pgtblkb);
+
+			xprintf(tab--, "<vmused>%lu</vmused>",
+				smc->vmusedkb);
+		}
 	}
 
 	if (DISPLAY_SWAP(a->opt_flags)) {
@@ -608,8 +627,7 @@ __print_funct_t xml_print_serial_stats(struct activity *a, int curr, int tab,
 	int i;
 	struct stats_serial *ssc, *ssp;
 
-	xprintf(tab, "<serial per=\"second\">");
-	tab++;
+	xprintf(tab++, "<serial per=\"second\">");
 
 	for (i = 0; i < a->nr; i++) {
 
@@ -656,12 +674,13 @@ __print_funct_t xml_print_disk_stats(struct activity *a, int curr, int tab,
 				     unsigned long long itv)
 {
 	int i, j;
-	struct stats_disk *sdc,	*sdp;
+	struct stats_disk *sdc,	*sdp, sdpzero;
 	struct ext_disk_stats xds;
 	char *dev_name, *persist_dev_name;
 
-	xprintf(tab, "<disk per=\"second\">");
-	tab++;
+	memset(&sdpzero, 0, STATS_DISK_SIZE);
+
+	xprintf(tab++, "<disk per=\"second\">");
 
 	for (i = 0; i < a->nr; i++) {
 
@@ -671,7 +690,13 @@ __print_funct_t xml_print_disk_stats(struct activity *a, int curr, int tab,
 			continue;
 
 		j = check_disk_reg(a, curr, !curr, i);
-		sdp = (struct stats_disk *) ((char *) a->buf[!curr] + j * a->msize);
+		if (j < 0) {
+			/* This is a newly registered interface. Previous stats are zero */
+			sdp = &sdpzero;
+		}
+		else {
+			sdp = (struct stats_disk *) ((char *) a->buf[!curr] + j * a->msize);
+		}
 
 		/* Compute extended statistics values */
 		compute_ext_disk_stats(sdc, sdp, itv, &xds);
@@ -737,11 +762,13 @@ __print_funct_t xml_print_net_dev_stats(struct activity *a, int curr, int tab,
 					unsigned long long itv)
 {
 	int i, j;
-	struct stats_net_dev *sndc, *sndp;
+	struct stats_net_dev *sndc, *sndp, sndzero;
 	double rxkb, txkb, ifutil;
 
 	if (!IS_SELECTED(a->options) || (a->nr <= 0))
 		goto close_xml_markup;
+
+	memset(&sndzero, 0, STATS_NET_DEV_SIZE);
 
 	xml_markup_network(tab, OPEN_XML_MARKUP);
 	tab++;
@@ -751,10 +778,16 @@ __print_funct_t xml_print_net_dev_stats(struct activity *a, int curr, int tab,
 		sndc = (struct stats_net_dev *) ((char *) a->buf[curr] + i * a->msize);
 
 		if (!strcmp(sndc->interface, ""))
-			continue;
+			break;
 
 		j = check_net_dev_reg(a, curr, !curr, i);
-		sndp = (struct stats_net_dev *) ((char *) a->buf[!curr] + j * a->msize);
+		if (j < 0) {
+			/* This is a newly registered interface. Previous stats are zero */
+			sndp = &sndzero;
+		}
+		else {
+			sndp = (struct stats_net_dev *) ((char *) a->buf[!curr] + j * a->msize);
+		}
 
 		rxkb = S_VALUE(sndp->rx_bytes, sndc->rx_bytes, itv);
 		txkb = S_VALUE(sndp->tx_bytes, sndc->tx_bytes, itv);
@@ -789,7 +822,7 @@ close_xml_markup:
 
 /*
  ***************************************************************************
- * Display network interfaces error statistics in XML.
+ * Display network interfaces errors statistics in XML.
  *
  * IN:
  * @a		Activity structure with statistics.
@@ -802,10 +835,12 @@ __print_funct_t xml_print_net_edev_stats(struct activity *a, int curr, int tab,
 					 unsigned long long itv)
 {
 	int i, j;
-	struct stats_net_edev *snedc, *snedp;
+	struct stats_net_edev *snedc, *snedp, snedzero;
 
 	if (!IS_SELECTED(a->options) || (a->nr <= 0))
 		goto close_xml_markup;
+
+	memset(&snedzero, 0, STATS_NET_EDEV_SIZE);
 
 	xml_markup_network(tab, OPEN_XML_MARKUP);
 	tab++;
@@ -815,10 +850,16 @@ __print_funct_t xml_print_net_edev_stats(struct activity *a, int curr, int tab,
 		snedc = (struct stats_net_edev *) ((char *) a->buf[curr] + i * a->msize);
 
 		if (!strcmp(snedc->interface, ""))
-			continue;
+			break;
 
 		j = check_net_edev_reg(a, curr, !curr, i);
-		snedp = (struct stats_net_edev *) ((char *) a->buf[!curr] + j * a->msize);
+		if (j < 0) {
+			/* This is a newly registered interface. Previous stats are zero */
+			snedp = &snedzero;
+		}
+		else {
+			snedp = (struct stats_net_edev *) ((char *) a->buf[!curr] + j * a->msize);
+		}
 
 		xprintf(tab, "<net-edev iface=\"%s\" "
 			"rxerr=\"%.2f\" "
@@ -1044,7 +1085,7 @@ close_xml_markup:
 
 /*
  ***************************************************************************
- * Display IP network error statistics in XML.
+ * Display IP network errors statistics in XML.
  *
  * IN:
  * @a		Activity structure with statistics.
@@ -1154,7 +1195,7 @@ close_xml_markup:
 
 /*
  ***************************************************************************
- * Display ICMP error message statistics in XML.
+ * Display ICMP error messages statistics in XML.
  *
  * IN:
  * @a		Activity structure with statistics.
@@ -1252,7 +1293,7 @@ close_xml_markup:
 
 /*
  ***************************************************************************
- * Display TCP network error statistics in XML.
+ * Display TCP network errors statistics in XML.
  *
  * IN:
  * @a		Activity structure with statistics.
@@ -1429,7 +1470,7 @@ close_xml_markup:
 
 /*
  ***************************************************************************
- * Display IPv6 network error statistics in XML.
+ * Display IPv6 network errors statistics in XML.
  *
  * IN:
  * @a		Activity structure with statistics.
@@ -1551,7 +1592,7 @@ close_xml_markup:
 
 /*
  ***************************************************************************
- * Display ICMPv6 error message statistics in XML.
+ * Display ICMPv6 error messages statistics in XML.
  *
  * IN:
  * @a		Activity structure with statistics.
@@ -2015,18 +2056,17 @@ __print_funct_t xml_print_filesystem_stats(struct activity *a, int curr, int tab
 	int i;
 	struct stats_filesystem *sfc;
 
-	xprintf(tab, "<filesystems>");
-	tab++;
+	xprintf(tab++, "<filesystems>");
 
 	for (i = 0; i < a->nr; i++) {
 
 		sfc = (struct stats_filesystem *) ((char *) a->buf[curr] + i * a->msize);
 
 		if (!sfc->f_blocks)
-			/* Size of filesystem is null: We are at the end of the list */
+			/* Size of filesystem is zero: We are at the end of the list */
 			break;
 
-		xprintf(tab, "<filesystem fsname=\"%s\" "
+		xprintf(tab, "<filesystem %s=\"%s\" "
 			"MBfsfree=\"%.0f\" "
 			"MBfsused=\"%.0f\" "
 			"fsused-percent=\"%.2f\" "
@@ -2034,10 +2074,11 @@ __print_funct_t xml_print_filesystem_stats(struct activity *a, int curr, int tab
 			"Ifree=\"%llu\" "
 			"Iused=\"%llu\" "
 			"Iused-percent=\"%.2f\"/>",
-			sfc->fs_name,
+			DISPLAY_MOUNT(a->opt_flags) ? "mountp" : "fsname",
+			DISPLAY_MOUNT(a->opt_flags) ? sfc->mountp : sfc->fs_name,
 			(double) sfc->f_bfree / 1024 / 1024,
 			(double) (sfc->f_blocks - sfc->f_bfree) / 1024 / 1024,
-			/* f_blocks is not null. But test it anyway ;-) */
+			/* f_blocks is not zero. But test it anyway ;-) */
 			sfc->f_blocks ? SP_VALUE(sfc->f_bfree, sfc->f_blocks, sfc->f_blocks)
 				      : 0.0,
 			sfc->f_blocks ? SP_VALUE(sfc->f_bavail, sfc->f_blocks, sfc->f_blocks)
@@ -2049,4 +2090,55 @@ __print_funct_t xml_print_filesystem_stats(struct activity *a, int curr, int tab
 	}
 
 	xprintf(--tab, "</filesystems>");
+}
+
+/*
+ ***************************************************************************
+ * Display Fibre Channel HBA statistics in XML.
+ *
+ * IN:
+ * @a		Activity structure with statistics.
+ * @curr	Index in array for current sample statistics.
+ * @tab		Indentation in XML output.
+ * @itv		Interval of time in jiffies.
+ ***************************************************************************
+ */
+__print_funct_t xml_print_fchost_stats(struct activity *a, int curr, int tab,
+				       unsigned long long itv)
+{
+	int i;
+	struct stats_fchost *sfcc, *sfcp;
+
+	if (!IS_SELECTED(a->options) || (a->nr <= 0))
+		goto close_xml_markup;
+
+	xml_markup_network(tab, OPEN_XML_MARKUP);
+	tab++;
+
+	for (i = 0; i < a->nr; i++) {
+
+		sfcc = (struct stats_fchost *) ((char *) a->buf[curr] + i * a->msize);
+		sfcp = (struct stats_fchost *) ((char *) a->buf[!curr] + i * a->msize);
+
+		if (!sfcc->fchost_name[0])
+			/* We are at the end of the list */
+			break;
+
+		xprintf(tab, "<fchost name=\"%s\" "
+			"fch_rxf=\"%.2f\" "
+			"fch_txf=\"%.2f\" "
+			"fch_rxw=\"%.2f\" "
+			"fch_txw=\"%.2f\"/>",
+			sfcc->fchost_name,
+			S_VALUE(sfcp->f_rxframes, sfcc->f_rxframes, itv),
+			S_VALUE(sfcp->f_txframes, sfcc->f_txframes, itv),
+			S_VALUE(sfcp->f_rxwords,  sfcc->f_rxwords,  itv),
+			S_VALUE(sfcp->f_txwords,  sfcc->f_rxwords,  itv));
+	}
+	tab--;
+
+close_xml_markup:
+	if (CLOSE_MARKUP(a->options)) {
+		xml_markup_network(tab, CLOSE_XML_MARKUP);
+	}
 }

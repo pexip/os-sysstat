@@ -1,6 +1,6 @@
 /*
  * rd_stats.c: Read system statistics
- * (C) 1999-2014 by Sebastien GODARD (sysstat <at> orange.fr)
+ * (C) 1999-2016 by Sebastien GODARD (sysstat <at> orange.fr)
  *
  ***************************************************************************
  * This program is free software; you can redistribute it and/or modify it *
@@ -15,7 +15,7 @@
  *                                                                         *
  * You should have received a copy of the GNU General Public License along *
  * with this program; if not, write to the Free Software Foundation, Inc., *
- * 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA                   *
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1335 USA              *
  ***************************************************************************
  */
 
@@ -268,6 +268,26 @@ void read_meminfo(struct stats_memory *st_memory)
 			/* Read the amount of commited memory in kB */
 			sscanf(line + 13, "%lu", &st_memory->comkb);
 		}
+		else if (!strncmp(line, "AnonPages:", 10)) {
+			/* Read the amount of pages mapped into userspace page tables in kB */
+			sscanf(line + 10, "%lu", &st_memory->anonpgkb);
+		}
+		else if (!strncmp(line, "Slab:", 5)) {
+			/* Read the amount of in-kernel data structures cache in kB */
+			sscanf(line + 5, "%lu", &st_memory->slabkb);
+		}
+		else if (!strncmp(line, "KernelStack:", 12)) {
+			/* Read the kernel stack utilization in kB */
+			sscanf(line + 12, "%lu", &st_memory->kstackkb);
+		}
+		else if (!strncmp(line, "PageTables:", 11)) {
+			/* Read the amount of memory dedicated to the lowest level of page tables in kB */
+			sscanf(line + 11, "%lu", &st_memory->pgtblkb);
+		}
+		else if (!strncmp(line, "VmallocUsed:", 12)) {
+			/* Read the amount of vmalloc area which is used in kB */
+			sscanf(line + 12, "%lu", &st_memory->vmusedkb);
+		}
 	}
 
 	fclose(fp);
@@ -400,7 +420,7 @@ void read_loadavg(struct stats_queue *st_queue)
 		return;
 
 	/* Read load averages and queue length */
-	rc = fscanf(fp, "%d.%d %d.%d %d.%d %ld/%d %*d\n",
+	rc = fscanf(fp, "%d.%u %d.%u %d.%u %lu/%u %*d\n",
 		    &load_tmp[0], &st_queue->load_avg_1,
 		    &load_tmp[1], &st_queue->load_avg_5,
 		    &load_tmp[2], &st_queue->load_avg_15,
@@ -521,12 +541,12 @@ void read_vmstat_paging(struct stats_paging *st_paging)
 			sscanf(strchr(line, ' '), "%lu", &pgtmp);
 			st_paging->pgsteal += pgtmp;
 		}
-		else if (!strncmp(line, "pgscan_kswapd_", 14)) {
+		else if (!strncmp(line, "pgscan_kswapd", 13)) {
 			/* Read number of pages scanned by the kswapd daemon */
 			sscanf(strchr(line, ' '), "%lu", &pgtmp);
 			st_paging->pgscan_kswapd += pgtmp;
 		}
-		else if (!strncmp(line, "pgscan_direct_", 14)) {
+		else if (!strncmp(line, "pgscan_direct", 13)) {
 			/* Read number of pages scanned directly */
 			sscanf(strchr(line, ' '), "%lu", &pgtmp);
 			st_paging->pgscan_direct += pgtmp;
@@ -667,7 +687,7 @@ void read_tty_driver_serial(struct stats_serial *st_serial, int nbr)
 			sscanf(line, "%u", &st_serial_i->line);
 			/*
 			 * A value of 0 means an unused structure.
-			 * So increment it to make sure it is not null.
+			 * So increment it to make sure it is not zero.
 			 */
 			(st_serial_i->line)++;
 			/*
@@ -1152,7 +1172,7 @@ void read_net_ip(struct stats_net_ip *st_net_ip)
 
 /*
  ***************************************************************************
- * Read IP network error statistics from /proc/net/snmp.
+ * Read IP network errors statistics from /proc/net/snmp.
  *
  * IN:
  * @st_net_eip	Structure where stats will be saved.
@@ -1211,6 +1231,7 @@ void read_net_icmp(struct stats_net_icmp *st_net_icmp)
 {
 	FILE *fp;
 	char line[1024];
+	static char format[256] = "";
 	int sw = FALSE;
 
 	if ((fp = fopen(NET_SNMP, "r")) == NULL)
@@ -1220,9 +1241,7 @@ void read_net_icmp(struct stats_net_icmp *st_net_icmp)
 
 		if (!strncmp(line, "Icmp:", 5)) {
 			if (sw) {
-				sscanf(line + 5, "%lu %*u %*u %*u %*u %*u %*u "
-				       "%lu %lu %lu %lu %lu %lu %lu %*u %*u %*u %*u "
-				       "%*u %*u %lu %lu %lu %lu %lu %lu",
+				sscanf(line + 5, format,
 				       &st_net_icmp->InMsgs,
 				       &st_net_icmp->InEchos,
 				       &st_net_icmp->InEchoReps,
@@ -1241,6 +1260,26 @@ void read_net_icmp(struct stats_net_icmp *st_net_icmp)
 				break;
 			}
 			else {
+				if (!strlen(format)) {
+					if (strstr(line, "InCsumErrors")) {
+						/*
+						 * New format: InCsumErrors field exists at position #3.
+						 * Capture: 1,9,10,11,12,13,14,15,22,23,24,25,26,27.
+						 */
+						strcpy(format, "%lu %*u %*u %*u %*u %*u %*u %*u "
+							       "%lu %lu %lu %lu %lu %lu %lu %*u %*u %*u %*u "
+							       "%*u %*u %lu %lu %lu %lu %lu %lu");
+					}
+					else {
+						/*
+						 * Old format: InCsumErrors field doesn't exist.
+						 * Capture: 1,8,9,10,11,12,13,14,21,22,23,24,25,26.
+						 */
+						strcpy(format, "%lu %*u %*u %*u %*u %*u %*u "
+							       "%lu %lu %lu %lu %lu %lu %lu %*u %*u %*u %*u "
+							       "%*u %*u %lu %lu %lu %lu %lu %lu");
+					}
+				}
 				sw = TRUE;
 			}
 		}
@@ -1251,7 +1290,7 @@ void read_net_icmp(struct stats_net_icmp *st_net_icmp)
 
 /*
  ***************************************************************************
- * Read ICMP network error statistics from /proc/net/snmp.
+ * Read ICMP network errors statistics from /proc/net/snmp.
  *
  * IN:
  * @st_net_eicmp	Structure where stats will be saved.
@@ -1343,7 +1382,7 @@ void read_net_tcp(struct stats_net_tcp *st_net_tcp)
 
 /*
  ***************************************************************************
- * Read TCP network error statistics from /proc/net/snmp.
+ * Read TCP network errors statistics from /proc/net/snmp.
  *
  * IN:
  * @st_net_etcp	Structure where stats will be saved.
@@ -1525,7 +1564,7 @@ void read_net_ip6(struct stats_net_ip6 *st_net_ip6)
 
 /*
  ***************************************************************************
- * Read IPv6 network error statistics from /proc/net/snmp6.
+ * Read IPv6 network errors statistics from /proc/net/snmp6.
  *
  * IN:
  * @st_net_eip6	Structure where stats will be saved.
@@ -1661,7 +1700,7 @@ void read_net_icmp6(struct stats_net_icmp6 *st_net_icmp6)
 
 /*
  ***************************************************************************
- * Read ICMPv6 network error statistics from /proc/net/snmp6.
+ * Read ICMPv6 network errors statistics from /proc/net/snmp6.
  *
  * IN:
  * @st_net_eicmp6	Structure where stats will be saved.
@@ -1787,7 +1826,9 @@ void read_cpuinfo(struct stats_pwr_cpufreq *st_pwr_cpufreq, int nbr)
 			sscanf(strchr(line, ':') + 1, "%u", &proc_nb);
 		}
 
-		else if (!strncmp(line, "cpu MHz\t", 8)) {
+		/* Entry in /proc/cpuinfo is different between Intel and Power architectures */
+		else if (!strncmp(line, "cpu MHz\t", 8) ||
+			 !strncmp(line, "clock\t", 6)) {
 			sscanf(strchr(line, ':') + 1, "%u.%u", &ifreq, &dfreq);
 
 			if (proc_nb < (nbr - 1)) {
@@ -2051,7 +2092,7 @@ void read_bus_usb_dev(struct stats_pwr_usb *st_pwr_usb, int nbr)
 void read_filesystem(struct stats_filesystem *st_filesystem, int nbr)
 {
 	FILE *fp;
-	char line[256], fs_name[MAX_FS_LEN], mountp[128];
+	char line[512], fs_name[128], mountp[256];
 	int fs = 0;
 	struct stats_filesystem *st_filesystem_i;
 	struct statvfs buf;
@@ -2062,12 +2103,26 @@ void read_filesystem(struct stats_filesystem *st_filesystem, int nbr)
 	while ((fgets(line, sizeof(line), fp) != NULL) && (fs < nbr)) {
 		if (line[0] == '/') {
 
-			/* Read current filesystem name and mount point */
-			sscanf(line, "%71s %127s", fs_name, mountp);
+			/* Read current filesystem name */
+			sscanf(line, "%127s", fs_name);
+			/*
+			 * And now read the corresponding mount point.
+			 * Read fs name and mount point in two distinct operations.
+			 * Indeed, if fs name length is greater than 127 chars,
+			 * previous scanf() will read only the first 127 chars, and
+			 * mount point name will be read using the remaining chars
+			 * from the fs name. This will result in a bogus name
+			 * and following statvfs() function will always fail.
+			 */
+			sscanf(strchr(line, ' ') + 1, "%255s", mountp);
 
 			/* Replace octal codes */
 			oct2chr(mountp);
 
+			/*
+			 * It's important to have read the whole mount point name
+			 * for statvfs() to work properly (see above).
+			 */
 			if ((statvfs(mountp, &buf) < 0) || (!buf.f_blocks))
 				continue;
 
@@ -2077,11 +2132,99 @@ void read_filesystem(struct stats_filesystem *st_filesystem, int nbr)
 			st_filesystem_i->f_bavail = buf.f_bavail * buf.f_frsize;
 			st_filesystem_i->f_files  = buf.f_files;
 			st_filesystem_i->f_ffree  = buf.f_ffree;
-			strcpy(st_filesystem_i->fs_name, fs_name);
+			strncpy(st_filesystem_i->fs_name, fs_name, MAX_FS_LEN);
+			st_filesystem_i->fs_name[MAX_FS_LEN - 1] = '\0';
+			strncpy(st_filesystem_i->mountp, mountp, MAX_FS_LEN);
+			st_filesystem_i->mountp[MAX_FS_LEN - 1] = '\0';
 		}
 	}
 
 	fclose(fp);
+}
+
+/*
+ ***************************************************************************
+ * Read Fibre Channel HBA statistics.
+ *
+ * IN:
+ * @st_fc	Structure where stats will be saved.
+ * @nbr		Total number of HBAs.
+ *
+ * OUT:
+ * @st_fc	Structure with statistics.
+ ***************************************************************************
+ */
+void read_fchost(struct stats_fchost *st_fc, int nbr)
+{
+	DIR *dir;
+	FILE *fp;
+	struct dirent *drd;
+	struct stats_fchost *st_fc_i;
+	int fch = 0;
+	char fcstat_filename[MAX_PF_NAME];
+	char line[256];
+	unsigned long rx_frames, tx_frames, rx_words, tx_words;
+
+	/* Each host, if present, will have its own hostX entry within SYSFS_FCHOST */
+	if ((dir = opendir(SYSFS_FCHOST)) == NULL)
+		return; /* No FC hosts */
+
+	/*
+	 * Read each of the counters via sysfs, where they are
+	 * returned as hex values (e.g. 0x72400).
+	 */
+	while (((drd = readdir(dir)) != NULL) && (fch < nbr)) {
+		rx_frames = tx_frames = rx_words = tx_words = 0;
+
+		if (!strncmp(drd->d_name, "host", 4)) {
+
+			snprintf(fcstat_filename, MAX_PF_NAME, FC_RX_FRAMES,
+				 SYSFS_FCHOST, drd->d_name);
+			if ((fp = fopen(fcstat_filename, "r"))) {
+				if (fgets(line, sizeof(line), fp)) {
+					sscanf(line, "%lx", &rx_frames);
+				}
+				fclose(fp);
+			}
+
+			snprintf(fcstat_filename, MAX_PF_NAME, FC_TX_FRAMES,
+				 SYSFS_FCHOST, drd->d_name);
+			if ((fp = fopen(fcstat_filename, "r"))) {
+				if (fgets(line, sizeof(line), fp)) {
+					sscanf(line, "%lx", &tx_frames);
+				}
+				fclose(fp);
+			}
+
+			snprintf(fcstat_filename, MAX_PF_NAME, FC_RX_WORDS,
+				 SYSFS_FCHOST, drd->d_name);
+			if ((fp = fopen(fcstat_filename, "r"))) {
+				if (fgets(line, sizeof(line), fp)) {
+					sscanf(line, "%lx", &rx_words);
+				}
+				fclose(fp);
+			}
+
+			snprintf(fcstat_filename, MAX_PF_NAME, FC_TX_WORDS,
+				 SYSFS_FCHOST, drd->d_name);
+			if ((fp = fopen(fcstat_filename, "r"))) {
+				if (fgets(line, sizeof(line), fp)) {
+					sscanf(line, "%lx", &tx_words);
+				}
+				fclose(fp);
+			}
+
+			st_fc_i = st_fc + fch++;
+			st_fc_i->f_rxframes = rx_frames;
+			st_fc_i->f_txframes = tx_frames;
+			st_fc_i->f_rxwords  = rx_words;
+			st_fc_i->f_txwords  = tx_words;
+			strncpy(st_fc_i->fchost_name, drd->d_name, MAX_FCH_LEN);
+			st_fc_i->fchost_name[MAX_FCH_LEN - 1] = '\0';
+		}
+
+	}
+	closedir(dir);
 }
 
 /*------------------ END: FUNCTIONS USED BY SADC ONLY ---------------------*/

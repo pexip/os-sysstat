@@ -1,3 +1,9 @@
+sysstat (11.4.3-2pexip1) pexip; urgency=medium
+
+  * Migrate to Stretch
+
+ -- John-Mark Bell <jmb@pexip.com>  Tue, 10 Jul 2018 11:51:47 +0000
+
 sysstat (11.4.3-2) unstable; urgency=medium
 
   * Add 16-buffer-overflow.patch from Bernhard Übelacker to fix crash

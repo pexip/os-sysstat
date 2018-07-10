@@ -1,6 +1,6 @@
 /*
  * sysstat - sa_wrap.c: Functions used in activity.c
- * (C) 1999-2014 by Sebastien GODARD (sysstat <at> orange.fr)
+ * (C) 1999-2016 by Sebastien GODARD (sysstat <at> orange.fr)
  *
  ***************************************************************************
  * This program is free software; you can redistribute it and/or modify it *
@@ -15,9 +15,12 @@
  *                                                                         *
  * You should have received a copy of the GNU General Public License along *
  * with this program; if not, write to the Free Software Foundation, Inc., *
- * 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA                   *
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1335 USA              *
  ***************************************************************************
  */
+
+#include <dirent.h>
+#include <string.h>
 
 #include "sa.h"
 #include "rd_stats.h"
@@ -879,6 +882,28 @@ __read_funct_t wrap_read_filesystem(struct activity *a)
 
 /*
  ***************************************************************************
+ * Read Fibre Channel HBA statistics.
+ *
+ * IN:
+ * @a	Activity structure.
+ *
+ * OUT:
+ * @a	Activity structure with statistics.
+ ***************************************************************************
+ */
+__read_funct_t wrap_read_fchost(struct activity *a)
+{
+	struct stats_fchost *st_fc
+		= (struct stats_fchost *) a->_buf0;
+
+	read_fchost(st_fc, a->nr);
+
+	return;
+}
+
+
+/*
+ ***************************************************************************
  * Count number of interrupts that are in /proc/stat file.
  * Truncate the number of different individual interrupts to NR_IRQS.
  *
@@ -911,15 +936,19 @@ __nr_t wrap_get_irq_nr(struct activity *a)
  *
  * RETURNS:
  * Number of serial lines supporting tx/rx accouting + a pre-allocation
- * constant.
+ * constant. Number cannot exceed MAX_NR_SERIAL_LINES.
  ***************************************************************************
  */
 __nr_t wrap_get_serial_nr(struct activity *a)
 {
 	__nr_t n = 0;
 
-	if ((n = get_serial_nr()) > 0)
-		return n + NR_SERIAL_PREALLOC;
+	if ((n = get_serial_nr()) > 0) {
+		if ((n + NR_SERIAL_PREALLOC) > MAX_NR_SERIAL_LINES)
+			return MAX_NR_SERIAL_LINES;
+		else
+			return n + NR_SERIAL_PREALLOC;
+	}
 
 	return 0;
 }
@@ -933,15 +962,20 @@ __nr_t wrap_get_serial_nr(struct activity *a)
  * @a	Activity structure.
  *
  * RETURNS:
- * Number of network interfaces + a pre-allocation constant.
+ * Number of network interfaces + a pre-allocation constant. Number cannot
+ * exceed MAX_NR_IFACES.
  ***************************************************************************
  */
 __nr_t wrap_get_iface_nr(struct activity *a)
 {
 	__nr_t n = 0;
 
-	if ((n = get_iface_nr()) > 0)
-		return n + NR_IFACE_PREALLOC;
+	if ((n = get_iface_nr()) > 0) {
+		if ((n + NR_IFACE_PREALLOC) > MAX_NR_IFACES)
+			return MAX_NR_IFACES;
+		else
+			return n + NR_IFACE_PREALLOC;
+	}
 
 	return 0;
 }
@@ -975,7 +1009,8 @@ __nr_t wrap_get_cpu_nr(struct activity *a)
  * @a	Activity structure.
  *
  * RETURNS:
- * Number of devices + a pre-allocation constant.
+ * Number of devices + a pre-allocation constant. Number cannot exceed
+ * MAX_NR_DISKS.
  ***************************************************************************
  */
 __nr_t wrap_get_disk_nr(struct activity *a)
@@ -983,58 +1018,77 @@ __nr_t wrap_get_disk_nr(struct activity *a)
 	__nr_t n = 0;
 	unsigned int f = COLLECT_PARTITIONS(a->opt_flags);
 
-	if ((n = get_disk_nr(f)) > 0)
-		return n + NR_DISK_PREALLOC;
+	if ((n = get_disk_nr(f)) > 0) {
+		if ((n + NR_DISK_PREALLOC) > MAX_NR_DISKS)
+			return MAX_NR_DISKS;
+		else
+			return n + NR_DISK_PREALLOC;
+	}
 
 	return 0;
 }
 
 /*
  ***************************************************************************
- * Get number of fan structures to allocate.
+ * Get number of fan sensors.
  *
  * IN:
  * @a  Activity structure.
  *
  * RETURNS:
- * Number of structures.
+ * Number of fan sensors. Number cannot exceed MAX_NR_FANS.
  ***************************************************************************
  */
 __nr_t wrap_get_fan_nr(struct activity *a)
 {
-	return (get_fan_nr());
+	__nr_t n;
+
+	if ((n = get_fan_nr()) > MAX_NR_FANS)
+		return MAX_NR_FANS;
+	else
+		return n;
 }
 
 /*
  ***************************************************************************
- * Get number of temp structures to allocate.
+ * Get number of temp sensors.
  *
  * IN:
  * @a  Activity structure.
  *
  * RETURNS:
- * Number of structures.
+ * Number of temp sensors. Number cannot exceed MAX_NR_TEMP_SENSORS.
  ***************************************************************************
  */
 __nr_t wrap_get_temp_nr(struct activity *a)
 {
-	return (get_temp_nr());
+	__nr_t n;
+
+	if ((n = get_temp_nr()) > MAX_NR_TEMP_SENSORS)
+		return MAX_NR_TEMP_SENSORS;
+	else
+		return n;
 }
 
 /*
  ***************************************************************************
- * Get number of voltage input structures to allocate.
+ * Get number of voltage input sensors.
  *
  * IN:
  * @a  Activity structure.
  *
  * RETURNS:
- * Number of structures.
+ * Number of voltage input sensors. Number cannot exceed MAX_NR_IN_SENSORS.
  ***************************************************************************
  */
 __nr_t wrap_get_in_nr(struct activity *a)
 {
-	return (get_in_nr());
+	__nr_t n;
+
+	if ((n = get_in_nr()) > MAX_NR_IN_SENSORS)
+		return MAX_NR_IN_SENSORS;
+	else
+		return n;
 }
 
 /*
@@ -1066,16 +1120,21 @@ __nr_t wrap_get_freq_nr(struct activity *a)
  * @a	Activity structure.
  *
  * RETURNS:
- * Number of USB devices + a pre-allocation constant.
+ * Number of USB devices + a pre-allocation constant. Number cannot exceed
+ * MAX_NR_USB.
  ***************************************************************************
  */
 __nr_t wrap_get_usb_nr(struct activity *a)
 {
 	__nr_t n = 0;
 
-	if ((n = get_usb_nr()) >= 0)
+	if ((n = get_usb_nr()) >= 0) {
 		/* Return a positive number even if no USB devices have been found */
-		return n + NR_USB_PREALLOC;
+		if ((n + NR_USB_PREALLOC) > MAX_NR_USB)
+			return MAX_NR_USB;
+		else
+			return n + NR_USB_PREALLOC;
+	}
 
 	return 0;
 }
@@ -1089,15 +1148,47 @@ __nr_t wrap_get_usb_nr(struct activity *a)
  * @a	Activity structure.
  *
  * RETURNS:
- * Number of filesystems + a pre-allocation constant.
+ * Number of filesystems + a pre-allocation constant. Number cannot exceed
+ * MAX_NR_FS.
  ***************************************************************************
  */
 __nr_t wrap_get_filesystem_nr(struct activity *a)
 {
 	__nr_t n = 0;
 
-	if ((n = get_filesystem_nr()) > 0)
-		return n + NR_FILESYSTEM_PREALLOC;
+	if ((n = get_filesystem_nr()) > 0) {
+		if ((n + NR_FILESYSTEM_PREALLOC) > MAX_NR_FS)
+			return MAX_NR_FS;
+		else
+			return n + NR_FILESYSTEM_PREALLOC;
+	}
+
+	return 0;
+}
+
+/*
+ ***************************************************************************
+ * Get number of FC hosts.
+ *
+ * IN:
+ * @a	Activity structure.
+ *
+ * RETURNS:
+ * Number of FC hosts + a pre-allocation constant. Number cannot exceed
+ * MAX_NR_FCHOSTS.
+ ***************************************************************************
+ */
+__nr_t wrap_get_fchost_nr(struct activity *a)
+{
+	__nr_t n = 0;
+
+	if ((n = get_fchost_nr()) >= 0) {
+		/* Return a positive number even if no FC hosts have been found */
+		if ((n + NR_FCHOST_PREALLOC) > MAX_NR_FCHOSTS)
+			return MAX_NR_FCHOSTS;
+		else
+			return n + NR_FCHOST_PREALLOC;
+	}
 
 	return 0;
 }

@@ -44,7 +44,6 @@
 #define SCCSID "@(#)sysstat-" VERSION ": " __FILE__ " compiled " __DATE__ " " __TIME__
 char *sccsid(void) { return (SCCSID); }
 
-unsigned long long uptime[2]  = {0, 0};
 unsigned long long uptime0[2] = {0, 0};
 struct cifs_stats *st_cifs[2];
 struct io_hdr_stats *st_hdr_cifs;
@@ -54,7 +53,7 @@ int cpu_nr = 0;		/* Nb of processors on the machine */
 int flags = 0;		/* Flag for common options and system state */
 
 long interval = 0;
-char timestamp[64];
+char timestamp[TIMESTAMP_LEN];
 
 struct sigaction alrm_act;
 
@@ -175,18 +174,28 @@ void io_sys_init(void)
 	if ((cifs_nr = get_cifs_nr()) > 0) {
 		cifs_nr += NR_CIFS_PREALLOC;
 	}
-	if ((st_hdr_cifs = (struct io_hdr_stats *) calloc(cifs_nr, IO_HDR_STATS_SIZE)) == NULL) {
-		perror("malloc");
-		exit(4);
-	}
 
-	/* Allocate structures for number of CIFS directories found */
-	for (i = 0; i < 2; i++) {
-		if ((st_cifs[i] =
-		    (struct cifs_stats *) calloc(cifs_nr, CIFS_STATS_SIZE)) == NULL) {
+	if (cifs_nr > 0) {
+		if ((st_hdr_cifs = (struct io_hdr_stats *) calloc(cifs_nr, IO_HDR_STATS_SIZE)) == NULL) {
 			perror("malloc");
 			exit(4);
 		}
+
+		/* Allocate structures for number of CIFS directories found */
+		for (i = 0; i < 2; i++) {
+			if ((st_cifs[i] =
+			(struct cifs_stats *) calloc(cifs_nr, CIFS_STATS_SIZE)) == NULL) {
+				perror("malloc");
+				exit(4);
+			}
+		}
+	}
+	else {
+		/*
+		 * cifs_nr value is probably zero, but it can also be negative
+		 * (possible overflow when adding NR_CIFS_PREALLOC above).
+		 */
+		cifs_nr = 0;
 	}
 }
 
@@ -242,7 +251,8 @@ void save_stats(char *name, int curr, struct cifs_stats *st_io)
 				/* Unused entry found... */
 				st_hdr_cifs_i->used = TRUE; /* Indicate it is now used */
 				st_hdr_cifs_i->active = TRUE;
-				strcpy(st_hdr_cifs_i->name, name);
+				strncpy(st_hdr_cifs_i->name, name, MAX_NAME_LEN - 1);
+				st_hdr_cifs_i->name[MAX_NAME_LEN - 1] = '\0';
 				st_cifs_i = st_cifs[curr] + i;
 				*st_cifs_i = *((struct cifs_stats *) st_io);
 				break;
@@ -284,7 +294,8 @@ void save_stats(char *name, int curr, struct cifs_stats *st_io)
 			st_hdr_cifs_i = st_hdr_cifs + i;
 			st_hdr_cifs_i->used = TRUE; /* Indicate it is now used */
 			st_hdr_cifs_i->active = TRUE;
-			strcpy(st_hdr_cifs_i->name, name);
+			strncpy(st_hdr_cifs_i->name, name, MAX_NAME_LEN - 1);
+			st_hdr_cifs_i->name[MAX_NAME_LEN - 1] = '\0';
 			st_cifs_i = st_cifs[curr] + i;
 			*st_cifs_i = *st_io;
 		}
@@ -319,7 +330,7 @@ void read_cifs_stat(int curr)
 	long long unsigned all_open = 0;
 	char cifs_name[MAX_NAME_LEN];
 	char name_tmp[MAX_NAME_LEN];
-	struct cifs_stats scifs;
+	struct cifs_stats scifs = {0, 0, 0, 0, 0, 0, 0};
 
 	/* Every CIFS entry is potentially unregistered */
 	set_entries_inactive();
@@ -342,7 +353,8 @@ void read_cifs_stat(int curr)
 			else {
 				start = 1;
 			}
-			strcpy(cifs_name, name_tmp);
+			strncpy(cifs_name, name_tmp, MAX_NAME_LEN);
+			cifs_name[MAX_NAME_LEN - 1] = '\0';
 		}
 		else {
 			if (!strncmp(line, "Reads:", 6)) {
@@ -418,21 +430,25 @@ void write_cifs_stat(int curr, unsigned long long itv, int fctr,
 		     struct cifs_stats *ionj)
 {
 	if (DISPLAY_HUMAN_READ(flags)) {
-		printf("%-22s\n%23s", shi->name, "");
+		cprintf_in(IS_STR, "%-22s\n", shi->name, 0);
+		printf("%22s", "");
 	}
 	else {
-		printf("%-22s ", shi->name);
+		cprintf_in(IS_STR, "%-22s", shi->name, 0);
 	}
 
 	/*       rB/s   wB/s   fo/s   fc/s   fd/s*/
-	printf("%12.2f %12.2f %9.2f %9.2f %12.2f %12.2f %12.2f \n",
-	       S_VALUE(ionj->rd_bytes, ioni->rd_bytes, itv) / fctr,
-	       S_VALUE(ionj->wr_bytes, ioni->wr_bytes, itv) / fctr,
-	       S_VALUE(ionj->rd_ops, ioni->rd_ops, itv),
-	       S_VALUE(ionj->wr_ops, ioni->wr_ops, itv),
-	       S_VALUE(ionj->fopens, ioni->fopens, itv),
-	       S_VALUE(ionj->fcloses, ioni->fcloses, itv),
-	       S_VALUE(ionj->fdeletes, ioni->fdeletes, itv));
+	cprintf_f(2, 12, 2,
+		  S_VALUE(ionj->rd_bytes, ioni->rd_bytes, itv) / fctr,
+		  S_VALUE(ionj->wr_bytes, ioni->wr_bytes, itv) / fctr);
+	cprintf_f(2, 9, 2,
+		  S_VALUE(ionj->rd_ops, ioni->rd_ops, itv),
+		  S_VALUE(ionj->wr_ops, ioni->wr_ops, itv));
+	cprintf_f(3, 12, 2,
+		  S_VALUE(ionj->fopens, ioni->fopens, itv),
+		  S_VALUE(ionj->fcloses, ioni->fcloses, itv),
+		  S_VALUE(ionj->fdeletes, ioni->fdeletes, itv));
+	printf("\n");
 }
 
 /*
@@ -470,13 +486,8 @@ void write_stats(int curr, struct tm *rectime)
 #endif
 	}
 
-	/* Interval is multiplied by the number of processors */
-	itv = get_interval(uptime[!curr], uptime[curr]);
-
-	if (cpu_nr > 1) {
-		/* On SMP machines, reduce itv to one processor (see note above) */
-		itv = get_interval(uptime0[!curr], uptime0[curr]);
-	}
+	/* Interval of time, reduced to one processor */
+	itv = get_interval(uptime0[!curr], uptime0[curr]);
 
 	shi = st_hdr_cifs;
 
@@ -523,15 +534,12 @@ void rw_io_stat_loop(long int count, struct tm *rectime)
 	setbuf(stdout, NULL);
 
 	do {
-		if (cpu_nr > 1) {
-			/*
-			 * Read system uptime (only for SMP machines).
-			 * Init uptime0. So if /proc/uptime cannot fill it,
-			 * this will be done by /proc/stat.
-			 */
-			uptime0[curr] = 0;
-			read_uptime(&(uptime0[curr]));
-		}
+		/* Read system uptime (reduced to one processor) */
+		uptime0[curr] = 0;
+		read_uptime(&(uptime0[curr]));
+		if (!uptime0[curr])
+			/* Cannot read system uptime (/proc/uptime doesn't exist) */
+			exit(2);
 
 		/* Read CIFS stats */
 		read_cifs_stat(curr);
@@ -572,6 +580,9 @@ int main(int argc, char **argv)
 	/* Init National Language Support */
 	init_nls();
 #endif
+
+	/* Init color strings */
+	init_colors();
 
 	/* Get HZ */
 	get_HZ();
@@ -668,7 +679,7 @@ int main(int argc, char **argv)
 
 	/* Set a handler for SIGALRM */
 	memset(&alrm_act, 0, sizeof(alrm_act));
-	alrm_act.sa_handler = (void *) alarm_handler;
+	alrm_act.sa_handler = alarm_handler;
 	sigaction(SIGALRM, &alrm_act, NULL);
 	alarm(interval);
 

@@ -4,7 +4,7 @@
 # description: Reset the system activity logs
 #
 # @INIT_DIR@/sysstat
-# (C) 2000-2014 Sebastien Godard (sysstat <at> orange.fr)
+# (C) 2000-2016 Sebastien Godard (sysstat <at> orange.fr)
 #
 ### BEGIN INIT INFO
 # Provides:		sysstat
@@ -24,6 +24,7 @@
 
 RETVAL=0
 PIDFILE=/var/run/sysstat.pid
+[ -z "$UID" ] && UID=`id -u`
 
 # See how we were called.
 case "$1" in

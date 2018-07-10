@@ -190,9 +190,14 @@ int ioc_init(void)
 				/* conventional usage for unsupported device */
 				continue;
 			}
-			if (indirect >= MAX_BLKDEV) {
+			if (indirect > MAX_BLKDEV) {
 				fprintf(stderr, "%s: Indirect major #%u out of range\n",
 					ioconf_name, indirect);
+				continue;
+			}
+			if (major > MAX_BLKDEV) {
+				fprintf(stderr, "%s: Major #%u out of range\n",
+					ioconf_name, major);
 				continue;
 			}
 			if (ioconf[indirect] == NULL) {
@@ -228,7 +233,7 @@ int ioc_init(void)
 
 		/* maybe it's a full record? */
 
-		i = sscanf(buf, "%u:%[^:]:%[^:]:%d:%[^:]:%u:%[^:]:%u:%s",
+		i = sscanf(buf, "%u:%[^:]:%[^:]:%u:%[^:]:%u:%[^:]:%u:%s",
 			   &major, blkp->name,
 			   cfmt, &iocp->ctrlno,
 			   dfmt, &blkp->dcount,
@@ -282,7 +287,8 @@ int ioc_init(void)
 			 * exception info
 			 */
 			xblkp->ext_minor = iocp->ctrlno;
-			strcpy(xblkp->ext_name, blkp->name);
+			strncpy(xblkp->ext_name, blkp->name, IOC_NAMELEN + 1);
+			xblkp->ext_name[IOC_NAMELEN] = '\0';
 			xblkp->ext = 1;
 			continue;
 		}
@@ -294,7 +300,8 @@ int ioc_init(void)
 
 		/* basename of device + provided string + controller # */
 		if (*cfmt == '*') {
-			strcpy(blkp->cfmt, blkp->name);
+			strncpy(blkp->cfmt, blkp->name, IOC_FMTLEN);
+			blkp->cfmt[IOC_FMTLEN] = '\0';
 		}
 		else {
 			sprintf(blkp->cfmt, "%s%s%%d", blkp->name, cfmt);
@@ -310,7 +317,8 @@ int ioc_init(void)
 			break;
 
 		case '%':
-			strcpy(blkp->dfmt, dfmt + 1);
+			strncpy(blkp->dfmt, dfmt + 1, IOC_FMTLEN);
+			/* fallthrough to next case */
 		case 'd':
 			blkp->cconv = ioc_ito10;
 			strcat(blkp->dfmt, "%s");
@@ -347,6 +355,18 @@ int ioc_init(void)
 	ioc_parsed = 1;
 
 	return (count);
+
+free_and_return:
+	/* Free pointers and return */
+	fclose(fp);
+	if (blkp) {
+		free(blkp);
+	}
+	if (iocp) {
+		free(iocp);
+	}
+
+	return 0;
 }
 
 /*
@@ -391,7 +411,8 @@ char *ioc_name(unsigned int major, unsigned int minor)
 
 	/* Is this an extension record? */
 	if (p->blkp->ext && (p->blkp->ext_minor == minor)) {
-		strcpy(name, p->blkp->ext_name);
+		strncpy(name, p->blkp->ext_name, IOC_DEVLEN + 1);
+		name[IOC_DEVLEN] = '\0';
 		return (name);
 	}
 

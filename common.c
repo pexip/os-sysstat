@@ -1,6 +1,6 @@
 /*
  * sar, sadc, sadf, mpstat and iostat common routines.
- * (C) 1999-2014 by Sebastien GODARD (sysstat <at> orange.fr)
+ * (C) 1999-2016 by Sebastien GODARD (sysstat <at> orange.fr)
  *
  ***************************************************************************
  * This program is free software; you can redistribute it and/or modify it *
@@ -15,13 +15,15 @@
  *                                                                         *
  * You should have received a copy of the GNU General Public License along *
  * with this program; if not, write to the Free Software Foundation, Inc., *
- * 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA                   *
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1335 USA              *
  ***************************************************************************
  */
 
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <stdarg.h>
+#include <inttypes.h>
 #include <time.h>
 #include <errno.h>
 #include <unistd.h>	/* For STDOUT_FILENO, among others */
@@ -48,6 +50,16 @@
 unsigned int hz;
 /* Number of bit shifts to convert pages to kB */
 unsigned int kb_shift;
+
+/* Colors strings */
+char sc_percent_high[MAX_SGR_LEN] = C_BOLD_RED;
+char sc_percent_low[MAX_SGR_LEN] = C_BOLD_BLUE;
+char sc_zero_int_stat[MAX_SGR_LEN] = C_LIGHT_YELLOW;
+char sc_int_stat[MAX_SGR_LEN] = C_BOLD_YELLOW;
+char sc_item_name[MAX_SGR_LEN] = C_LIGHT_GREEN;
+char sc_sa_restart[MAX_SGR_LEN] = C_LIGHT_RED;
+char sc_sa_comment[MAX_SGR_LEN] = C_LIGHT_CYAN;
+char sc_normal[MAX_SGR_LEN] = C_NORMAL;
 
 /* Type of persistent device names used in sar and iostat */
 char persistent_name_type[MAX_FILE_LEN];
@@ -87,7 +99,9 @@ time_t get_localtime(struct tm *rectime, int d_off)
 	timer -= SEC_PER_DAY * d_off;
 	ltm = localtime(&timer);
 
-	*rectime = *ltm;
+	if (ltm) {
+		*rectime = *ltm;
+	}
 	return timer;
 }
 
@@ -114,7 +128,9 @@ time_t get_gmtime(struct tm *rectime, int d_off)
 	timer -= SEC_PER_DAY * d_off;
 	ltm = gmtime(&timer);
 
-	*rectime = *ltm;
+	if (ltm) {
+		*rectime = *ltm;
+	}
 	return timer;
 }
 
@@ -281,8 +297,7 @@ int get_sysfs_dev_nr(int display_partitions)
 /*
  ***************************************************************************
  * Read /proc/devices file and get device-mapper major number.
- * If device-mapper entry is not found in file, use DEFAULT_DEMAP_MAJOR
- * number.
+ * If device-mapper entry is not found in file, assume it's not active.
  *
  * RETURNS:
  * Device-mapper major number.
@@ -292,7 +307,11 @@ unsigned int get_devmap_major(void)
 {
 	FILE *fp;
 	char line[128];
-	unsigned int dm_major = DEFAULT_DEVMAP_MAJOR;
+	/*
+	 * Linux uses 12 bits for the major number,
+	 * so this shouldn't match any real device.
+	 */
+	unsigned int dm_major = ~0U;
 
 	if ((fp = fopen(DEVICES, "r")) == NULL)
 		return dm_major;
@@ -308,6 +327,25 @@ unsigned int get_devmap_major(void)
 	fclose(fp);
 
 	return dm_major;
+}
+
+/*
+ ***************************************************************************
+ * Returns whether S_TIME_FORMAT is set to ISO.
+ *
+ * RETURNS:
+ * TRUE if S_TIME_FORMAT is set to ISO, or FALSE otherwise.
+ ***************************************************************************
+ */
+int is_iso_time_fmt(void)
+{
+	static int is_iso = -1;
+	char *e;
+
+	if (is_iso < 0) {
+		is_iso = (((e = getenv(ENV_TIME_FMT)) != NULL) && !strcmp(e, K_ISO));
+	}
+	return is_iso;
 }
 
 /*
@@ -329,14 +367,13 @@ unsigned int get_devmap_major(void)
 int print_gal_header(struct tm *rectime, char *sysname, char *release,
 		     char *nodename, char *machine, int cpu_nr)
 {
-	char cur_date[64];
-	char *e;
+	char cur_date[TIMESTAMP_LEN];
 	int rc = 0;
 
 	if (rectime == NULL) {
 		strcpy(cur_date, "?/?/?");
 	}
-	else if (((e = getenv(ENV_TIME_FMT)) != NULL) && !strcmp(e, K_ISO)) {
+	else if (is_iso_time_fmt()) {
 		strftime(cur_date, sizeof(cur_date), "%Y-%m-%d", rectime);
 		rc = 1;
 	}
@@ -598,21 +635,19 @@ unsigned long long get_per_cpu_interval(struct stats_cpu *scc,
 
 /*
  ***************************************************************************
- * Unhandled situation: Panic and exit.
+ * Unhandled situation: Panic and exit. Should never happen.
  *
  * IN:
  * @function	Function name where situation occured.
  * @error_code	Error code.
  ***************************************************************************
  */
-#ifdef DEBUG
 void sysstat_panic(const char *function, int error_code)
 {
-	fprintf(stderr, "sysstat: %s[%d]: Last chance handler...\n",
+	fprintf(stderr, "sysstat: %s[%d]: Internal error...\n",
 		function, error_code);
 	exit(1);
 }
-#endif
 
 /*
  ***************************************************************************
@@ -913,4 +948,259 @@ char *get_pretty_name_from_persistent(char *persistent)
 		return (NULL);
 
 	return pretty;
+}
+
+/*
+ ***************************************************************************
+ * Init color strings.
+ ***************************************************************************
+ */
+void init_colors(void)
+{
+	char *e, *p;
+	int len;
+
+	/* Read S_COLORS environment variable */
+	if (((e = getenv(ENV_COLORS)) == NULL) ||
+	    !strcmp(e, C_NEVER) ||
+	    (strcmp(e, C_ALWAYS) && !isatty(STDOUT_FILENO))) {
+		/*
+		 * Environment variable not set, or set to "never",
+		 * or set to "auto" and stdout is not a terminal:
+		 * Unset color strings.
+		 */
+		strcpy(sc_percent_high, "");
+		strcpy(sc_percent_low, "");
+		strcpy(sc_zero_int_stat, "");
+		strcpy(sc_int_stat, "");
+		strcpy(sc_item_name, "");
+		strcpy(sc_sa_comment, "");
+		strcpy(sc_sa_restart, "");
+		strcpy(sc_normal, "");
+
+		return;
+	}
+
+	/* Read S_COLORS_SGR environment variable */
+	if ((e = getenv(ENV_COLORS_SGR)) == NULL)
+		/* Environment variable not set */
+		return;
+
+	for (p = strtok(e, ":"); p; p =strtok(NULL, ":")) {
+
+		len = strlen(p);
+		if ((len > 7) || (len < 3) || (*(p + 1) != '=') ||
+		    (strspn(p + 2, ";0123456789") != (len - 2)))
+			/* Ignore malformed codes */
+			continue;
+
+		switch (*p) {
+			case 'H':
+				snprintf(sc_percent_high, MAX_SGR_LEN, "\e[%sm", p + 2);
+				break;
+			case 'M':
+				snprintf(sc_percent_low, MAX_SGR_LEN, "\e[%sm", p + 2);
+				break;
+			case 'Z':
+				snprintf(sc_zero_int_stat, MAX_SGR_LEN, "\e[%sm", p + 2);
+				break;
+			case 'N':
+				snprintf(sc_int_stat, MAX_SGR_LEN, "\e[%sm", p + 2);
+				break;
+			case 'I':
+				snprintf(sc_item_name, MAX_SGR_LEN, "\e[%sm", p + 2);
+				break;
+			case 'C':
+				snprintf(sc_sa_comment, MAX_SGR_LEN, "\e[%sm", p + 2);
+				break;
+			case 'R':
+				snprintf(sc_sa_restart, MAX_SGR_LEN, "\e[%sm", p + 2);
+				break;
+		}
+	}
+}
+
+/*
+ ***************************************************************************
+ * Print 64 bit unsigned values using colors.
+ *
+ * IN:
+ * @num		Number of values to print.
+ * @wi		Output width.
+ ***************************************************************************
+*/
+void cprintf_u64(int num, int wi, ...)
+{
+	int i;
+	uint64_t val;
+	va_list args;
+
+	va_start(args, wi);
+
+	for (i = 0; i < num; i++) {
+		val = va_arg(args, unsigned long long);
+		if (!val) {
+			printf("%s", sc_zero_int_stat);
+		}
+		else {
+			printf("%s", sc_int_stat);
+		}
+		printf(" %*"PRIu64, wi, val);
+		printf("%s", sc_normal);
+	}
+
+	va_end(args);
+}
+
+/*
+ ***************************************************************************
+ * Print hex values using colors.
+ *
+ * IN:
+ * @num		Number of values to print.
+ * @wi		Output width.
+ ***************************************************************************
+*/
+void cprintf_x(int num, int wi, ...)
+{
+	int i;
+	unsigned int val;
+	va_list args;
+
+	va_start(args, wi);
+
+	for (i = 0; i < num; i++) {
+		val = va_arg(args, unsigned int);
+		printf("%s", sc_int_stat);
+		printf(" %*x", wi, val);
+		printf("%s", sc_normal);
+	}
+
+	va_end(args);
+}
+
+/*
+ ***************************************************************************
+ * Print "double" statistics values using colors.
+ *
+ * IN:
+ * @num		Number of values to print.
+ * @wi		Output width.
+ * @wd		Number of decimal places.
+ ***************************************************************************
+*/
+void cprintf_f(int num, int wi, int wd, ...)
+{
+	int i;
+	double val;
+	va_list args;
+
+	va_start(args, wd);
+
+	for (i = 0; i < num; i++) {
+		val = va_arg(args, double);
+		if (((val < 0.005) && (val > -0.005)) ||
+		    ((wd == 0) && (val < 0.5))) {
+			printf("%s", sc_zero_int_stat);
+		}
+		else {
+			printf("%s", sc_int_stat);
+		}
+		printf(" %*.*f", wi, wd, val);
+		printf("%s", sc_normal);
+	}
+
+	va_end(args);
+}
+
+/*
+ ***************************************************************************
+ * Print "percent" statistics values using colors.
+ *
+ * IN:
+ * @num		Number of values to print.
+ * @wi		Output width.
+ * @wd		Number of decimal places.
+ ***************************************************************************
+*/
+void cprintf_pc(int num, int wi, int wd, ...)
+{
+	int i;
+	double val;
+	va_list args;
+
+	va_start(args, wd);
+
+	for (i = 0; i < num; i++) {
+		val = va_arg(args, double);
+		if (val >= PERCENT_LIMIT_HIGH) {
+			printf("%s", sc_percent_high);
+		}
+		else if (val >= PERCENT_LIMIT_LOW) {
+			printf("%s", sc_percent_low);
+		}
+		else if (val < 0.005) {
+			printf("%s", sc_zero_int_stat);
+		}
+		else {
+			printf("%s", sc_int_stat);
+		}
+		printf(" %*.*f", wi, wd, val);
+		printf("%s", sc_normal);
+	}
+
+	va_end(args);
+}
+
+/*
+ ***************************************************************************
+ * Print item name using selected color.
+ * Only one name can be displayed. Name can be an integer or a string.
+ *
+ * IN:
+ * @type	0 if name is an int, 1 if name is a string
+ * @format	Output format.
+ * @item_string	Item name (given as a string of characters).
+ * @item_int	Item name (given as an integer value).
+ ***************************************************************************
+*/
+void cprintf_in(int type, char *format, char *item_string, int item_int)
+{
+	printf("%s", sc_item_name);
+	if (type) {
+		printf(format, item_string);
+	}
+	else {
+		printf(format, item_int);
+	}
+	printf("%s", sc_normal);
+}
+
+/*
+ ***************************************************************************
+ * Print a string using selected color.
+ *
+ * IN:
+ * @type	Type of string to display.
+ * @format	Output format.
+ * @string	String to display.
+ ***************************************************************************
+*/
+void cprintf_s(int type, char *format, char *string)
+{
+	if (type == IS_STR) {
+		printf("%s", sc_int_stat);
+	}
+	else if (type == IS_ZERO) {
+		printf("%s", sc_zero_int_stat);
+	}
+	else if (type == IS_RESTART) {
+		printf("%s", sc_sa_restart);
+	}
+	else {
+		/* IS_COMMENT */
+		printf("%s", sc_sa_comment);
+	}
+	printf(format, string);
+	printf("%s", sc_normal);
 }

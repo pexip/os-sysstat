@@ -1,6 +1,6 @@
 /*
  * iostat: report CPU and I/O statistics
- * (C) 1998-2014 by Sebastien GODARD (sysstat <at> orange.fr)
+ * (C) 1998-2016 by Sebastien GODARD (sysstat <at> orange.fr)
  *
  ***************************************************************************
  * This program is free software; you can redistribute it and/or modify it *
@@ -15,7 +15,7 @@
  *                                                                         *
  * You should have received a copy of the GNU General Public License along *
  * with this program; if not, write to the Free Software Foundation, Inc., *
- * 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA                   *
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1335 USA              *
  ***************************************************************************
  */
 
@@ -69,7 +69,7 @@ int flags = 0;		/* Flag for common options and system state */
 unsigned int dm_major;	/* Device-mapper major number */
 
 long interval = 0;
-char timestamp[64];
+char timestamp[TIMESTAMP_LEN];
 
 struct sigaction alrm_act;
 
@@ -89,13 +89,13 @@ void usage(char *progname)
 	fprintf(stderr, _("Options are:\n"
 			  "[ -c ] [ -d ] [ -h ] [ -k | -m ] [ -N ] [ -t ] [ -V ] [ -x ] [ -y ] [ -z ]\n"
 			  "[ -j { ID | LABEL | PATH | UUID | ... } ]\n"
-			  "[ [ -T ] -g <group_name> ] [ -p [ <device> [,...] | ALL ] ]\n"
+			  "[ [ -H ] -g <group_name> ] [ -p [ <device> [,...] | ALL ] ]\n"
 			  "[ <device> [...] | ALL ] [ --debuginfo ]\n"));
 #else
 	fprintf(stderr, _("Options are:\n"
 			  "[ -c ] [ -d ] [ -h ] [ -k | -m ] [ -N ] [ -t ] [ -V ] [ -x ] [ -y ] [ -z ]\n"
 			  "[ -j { ID | LABEL | PATH | UUID | ... } ]\n"
-			  "[ [ -T ] -g <group_name> ] [ -p [ <device> [,...] | ALL ] ]\n"
+			  "[ [ -H ] -g <group_name> ] [ -p [ <device> [,...] | ALL ] ]\n"
 			  "[ <device> [...] | ALL ]\n"));
 #endif
 	exit(1);
@@ -110,13 +110,11 @@ void usage(char *progname)
  */
 void set_disk_output_unit(void)
 {
-	char *e;
-
 	if (DISPLAY_KILOBYTES(flags) || DISPLAY_MEGABYTES(flags))
 		return;
 
 	/* Check POSIXLY_CORRECT environment variable */
-	if ((e = getenv(ENV_POSIXLY_CORRECT)) == NULL) {
+	if (getenv(ENV_POSIXLY_CORRECT) == NULL) {
 		/* Variable not set: Unit is kB/s and not blocks/s */
 		flags |= I_D_KILOBYTES;
 	}
@@ -365,7 +363,8 @@ void presave_device_list(void)
 
 		/* Now save devices and group names in the io_hdr_stats structures */
 		for (i = 0; (i < dlist_idx) && (i < iodev_nr); i++, shi++, sdli++) {
-			strcpy(shi->name, sdli->dev_name);
+			strncpy(shi->name, sdli->dev_name, MAX_NAME_LEN);
+			shi->name[MAX_NAME_LEN - 1] = '\0';
 			shi->used = TRUE;
 			if (shi->name[0] == ' ') {
 				/* Current device name is in fact the name of a group */
@@ -384,7 +383,8 @@ void presave_device_list(void)
 		 * included in that group.
 		 */
 		shi += iodev_nr - 1;
-		strcpy(shi->name, group_name);
+		strncpy(shi->name, group_name, MAX_NAME_LEN);
+		shi->name[MAX_NAME_LEN - 1] = '\0';
 		shi->used = TRUE;
 		shi->status = DISK_GROUP;
 	}
@@ -450,7 +450,8 @@ void save_stats(char *name, int curr, void *st_io, int iodev_nr,
 			if (!st_hdr_iodev_i->used) {
 				/* Unused entry found... */
 				st_hdr_iodev_i->used = TRUE; /* Indicate it is now used */
-				strcpy(st_hdr_iodev_i->name, name);
+				strncpy(st_hdr_iodev_i->name, name, MAX_NAME_LEN - 1);
+				st_hdr_iodev_i->name[MAX_NAME_LEN - 1] = '\0';
 				st_iodev_i = st_iodev[!curr] + i;
 				memset(st_iodev_i, 0, IO_STATS_SIZE);
 				break;
@@ -740,7 +741,8 @@ void read_diskstats_stat(int curr)
 				 * (if different from "nodev") works around known issues
 				 * with EMC PowerPath.
 				 */
-				strncpy(dev_name, ioc_dname, MAX_NAME_LEN);
+				strncpy(dev_name, ioc_dname, MAX_NAME_LEN - 1);
+				dev_name[MAX_NAME_LEN - 1] = '\0';
 			}
 		}
 
@@ -751,7 +753,8 @@ void read_diskstats_stat(int curr)
 			 */
 			dm_name = transform_devmapname(major, minor);
 			if (dm_name) {
-				strncpy(dev_name, dm_name, MAX_NAME_LEN);
+				strncpy(dev_name, dm_name, MAX_NAME_LEN - 1);
+				dev_name[MAX_NAME_LEN - 1] = '\0';
 			}
 		}
 
@@ -825,22 +828,25 @@ void write_cpu_stat(int curr, unsigned long long itv)
 {
 	printf("avg-cpu:  %%user   %%nice %%system %%iowait  %%steal   %%idle\n");
 
-	printf("         %6.2f  %6.2f  %6.2f  %6.2f  %6.2f  %6.2f\n\n",
-	       ll_sp_value(st_cpu[!curr]->cpu_user,   st_cpu[curr]->cpu_user,   itv),
-	       ll_sp_value(st_cpu[!curr]->cpu_nice,   st_cpu[curr]->cpu_nice,   itv),
-		/*
-		 * Time spent in system mode also includes time spent servicing
-		 * hard and soft interrupts.
-		 */
-	       ll_sp_value(st_cpu[!curr]->cpu_sys + st_cpu[!curr]->cpu_softirq +
-			   st_cpu[!curr]->cpu_hardirq,
-			   st_cpu[curr]->cpu_sys + st_cpu[curr]->cpu_softirq +
-			   st_cpu[curr]->cpu_hardirq, itv),
-	       ll_sp_value(st_cpu[!curr]->cpu_iowait, st_cpu[curr]->cpu_iowait, itv),
-	       ll_sp_value(st_cpu[!curr]->cpu_steal,  st_cpu[curr]->cpu_steal,  itv),
-	       (st_cpu[curr]->cpu_idle < st_cpu[!curr]->cpu_idle) ?
-	       0.0 :
-	       ll_sp_value(st_cpu[!curr]->cpu_idle,   st_cpu[curr]->cpu_idle,   itv));
+	printf("       ");
+	cprintf_pc(6, 7, 2,
+		   ll_sp_value(st_cpu[!curr]->cpu_user,   st_cpu[curr]->cpu_user,   itv),
+		   ll_sp_value(st_cpu[!curr]->cpu_nice,   st_cpu[curr]->cpu_nice,   itv),
+		   /*
+		    * Time spent in system mode also includes time spent servicing
+		    * hard and soft interrupts.
+		    */
+		   ll_sp_value(st_cpu[!curr]->cpu_sys + st_cpu[!curr]->cpu_softirq +
+			       st_cpu[!curr]->cpu_hardirq,
+			       st_cpu[curr]->cpu_sys + st_cpu[curr]->cpu_softirq +
+			       st_cpu[curr]->cpu_hardirq, itv),
+		   ll_sp_value(st_cpu[!curr]->cpu_iowait, st_cpu[curr]->cpu_iowait, itv),
+		   ll_sp_value(st_cpu[!curr]->cpu_steal,  st_cpu[curr]->cpu_steal,  itv),
+		   (st_cpu[curr]->cpu_idle < st_cpu[!curr]->cpu_idle) ?
+		   0.0 :
+		   ll_sp_value(st_cpu[!curr]->cpu_idle,   st_cpu[curr]->cpu_idle,   itv));
+
+	printf("\n\n");
 }
 
 /*
@@ -950,34 +956,37 @@ void write_ext_stat(int curr, unsigned long long itv, int fctr,
 		devname = shi->name;
 	}
 	if (DISPLAY_HUMAN_READ(flags)) {
-		printf("%s\n%13s", devname, "");
+		cprintf_in(IS_STR, "%s\n", devname, 0);
+		printf("%13s", "");
 	}
 	else {
-		printf("%-13s", devname);
+		cprintf_in(IS_STR, "%-13s", devname, 0);
 	}
 
 	/*       rrq/s wrq/s   r/s   w/s  rsec  wsec  rqsz  qusz await r_await w_await svctm %util */
-	printf(" %8.2f %8.2f %7.2f %7.2f %8.2f %8.2f %8.2f %8.2f %7.2f %7.2f %7.2f %6.2f %6.2f\n",
-	       S_VALUE(ioj->rd_merges, ioi->rd_merges, itv),
-	       S_VALUE(ioj->wr_merges, ioi->wr_merges, itv),
-	       S_VALUE(ioj->rd_ios, ioi->rd_ios, itv),
-	       S_VALUE(ioj->wr_ios, ioi->wr_ios, itv),
-	       S_VALUE(ioj->rd_sectors, ioi->rd_sectors, itv) / fctr,
-	       S_VALUE(ioj->wr_sectors, ioi->wr_sectors, itv) / fctr,
-	       xds.arqsz,
-	       S_VALUE(ioj->rq_ticks, ioi->rq_ticks, itv) / 1000.0,
-	       xds.await,
-	       r_await,
-	       w_await,
-	       /* The ticks output is biased to output 1000 ticks per second */
-	       xds.svctm,
-	       /*
-	        * Again: Ticks in milliseconds.
-		* In the case of a device group (option -g), shi->used is the number of
-		* devices in the group. Else shi->used equals 1.
-		*/
-	       shi->used ? xds.util / 10.0 / (double) shi->used
-	                 : xds.util / 10.0);	/* shi->used should never be null here */
+	cprintf_f(2, 8, 2,
+		  S_VALUE(ioj->rd_merges, ioi->rd_merges, itv),
+		  S_VALUE(ioj->wr_merges, ioi->wr_merges, itv));
+	cprintf_f(2, 7, 2,
+		  S_VALUE(ioj->rd_ios, ioi->rd_ios, itv),
+		  S_VALUE(ioj->wr_ios, ioi->wr_ios, itv));
+	cprintf_f(4, 8, 2,
+		  S_VALUE(ioj->rd_sectors, ioi->rd_sectors, itv) / fctr,
+		  S_VALUE(ioj->wr_sectors, ioi->wr_sectors, itv) / fctr,
+		  xds.arqsz,
+		  S_VALUE(ioj->rq_ticks, ioi->rq_ticks, itv) / 1000.0);
+	cprintf_f(3, 7, 2, xds.await, r_await, w_await);
+	/* The ticks output is biased to output 1000 ticks per second */
+	cprintf_f(1, 6, 2, xds.svctm);
+	/*
+	 * Again: Ticks in milliseconds.
+	 * In the case of a device group (option -g), shi->used is the number of
+	 * devices in the group. Else shi->used equals 1.
+	 */
+	cprintf_pc(1, 6, 2,
+		   shi->used ? xds.util / 10.0 / (double) shi->used
+		             : xds.util / 10.0);	/* shi->used should never be zero here */
+	printf("\n");
 }
 
 /*
@@ -1008,10 +1017,11 @@ void write_basic_stat(int curr, unsigned long long itv, int fctr,
 		devname = shi->name;
 	}
 	if (DISPLAY_HUMAN_READ(flags)) {
-		printf("%s\n%13s", devname, "");
+		cprintf_in(IS_STR, "%s\n", devname, 0);
+		printf("%13s", "");
 	}
 	else {
-		printf("%-13s", devname);
+		cprintf_in(IS_STR, "%-13s", devname, 0);
 	}
 
 	/* Print stats coming from /sys or /proc/diskstats */
@@ -1024,12 +1034,15 @@ void write_basic_stat(int curr, unsigned long long itv, int fctr,
 		wr_sec &= 0xffffffff;
 	}
 
-	printf(" %8.2f %12.2f %12.2f %10llu %10llu\n",
-	       S_VALUE(ioj->rd_ios + ioj->wr_ios, ioi->rd_ios + ioi->wr_ios, itv),
-	       S_VALUE(ioj->rd_sectors, ioi->rd_sectors, itv) / fctr,
-	       S_VALUE(ioj->wr_sectors, ioi->wr_sectors, itv) / fctr,
-	       (unsigned long long) rd_sec / fctr,
-	       (unsigned long long) wr_sec / fctr);
+	cprintf_f(1, 8, 2,
+		  S_VALUE(ioj->rd_ios + ioj->wr_ios, ioi->rd_ios + ioi->wr_ios, itv));
+	cprintf_f(2, 12, 2,
+		  S_VALUE(ioj->rd_sectors, ioi->rd_sectors, itv) / fctr,
+		  S_VALUE(ioj->wr_sectors, ioi->wr_sectors, itv) / fctr);
+	cprintf_u64(2, 10,
+		    (unsigned long long) rd_sec / fctr,
+		    (unsigned long long) wr_sec / fctr);
+	printf("\n");
 }
 
 /*
@@ -1190,7 +1203,7 @@ void write_stats(int curr, struct tm *rectime)
  * Main loop: Read I/O stats from the relevant sources and display them.
  *
  * IN:
- * @count	Number of lines of stats to print.
+ * @count	Number of reports to print.
  * @rectime	Current date and time.
  ***************************************************************************
  */
@@ -1301,6 +1314,9 @@ int main(int argc, char **argv)
 	init_nls();
 #endif
 
+	/* Init color strings */
+	init_colors();
+
 	/* Get HZ */
 	get_HZ();
 
@@ -1364,7 +1380,7 @@ int main(int argc, char **argv)
 				 * MAX_NAME_LEN - 2: one char for the heading space,
 				 * and one for the trailing '\0'.
 				 */
-				sprintf(group_name, " %-.*s", MAX_NAME_LEN - 2, argv[opt++]);
+				snprintf(group_name, MAX_NAME_LEN, " %-.*s", MAX_NAME_LEN - 2, argv[opt++]);
 			}
 			else {
 				usage(argv[0]);
@@ -1421,6 +1437,11 @@ int main(int argc, char **argv)
 					report_set = TRUE;
 					break;
 
+                                case 'H':
+					/* Display stats only for the groups */
+					flags |= I_D_GROUP_TOTAL_ONLY;
+					break;
+
 				case 'h':
 					/*
 					 * Display device utilization report
@@ -1453,11 +1474,6 @@ int main(int argc, char **argv)
 				case 'p':
 					/* If option -p is grouped then it cannot take an arg */
 					flags |= I_D_PARTITIONS + I_D_PART_ALL;
-					break;
-
-				case 'T':
-					/* Display stats only for the groups */
-					flags |= I_D_GROUP_TOTAL_ONLY;
 					break;
 
 				case 't':
@@ -1495,7 +1511,7 @@ int main(int argc, char **argv)
 		else if (!isdigit(argv[opt][0])) {
 			/*
 			 * By default iostat doesn't display unused devices.
-			 * If some devices are explictly entered on the command line
+			 * If some devices are explicitly entered on the command line
 			 * then don't apply this rule any more.
 			 */
 			flags |= I_D_UNFILTERED;
@@ -1593,7 +1609,7 @@ int main(int argc, char **argv)
 
 	/* Set a handler for SIGALRM */
 	memset(&alrm_act, 0, sizeof(alrm_act));
-	alrm_act.sa_handler = (void *) alarm_handler;
+	alrm_act.sa_handler = alarm_handler;
 	sigaction(SIGALRM, &alrm_act, NULL);
 	alarm(interval);
 

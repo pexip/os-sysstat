@@ -1,6 +1,6 @@
 /*
  * count.c: Count items for which statistics will be collected.
- * (C) 1999-2014 by Sebastien GODARD (sysstat <at> orange.fr)
+ * (C) 1999-2016 by Sebastien GODARD (sysstat <at> orange.fr)
  *
  ***************************************************************************
  * This program is free software; you can redistribute it and/or modify it *
@@ -15,7 +15,7 @@
  *                                                                         *
  * You should have received a copy of the GNU General Public License along *
  * with this program; if not, write to the Free Software Foundation, Inc., *
- * 59 Temple Place, Suite 330, Boston, MA 02111-1307 USA                   *
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1335 USA              *
  ***************************************************************************
  */
 
@@ -131,7 +131,8 @@ int get_proc_cpu_nr(void)
 
 	fclose(fp);
 
-	return (proc_nr + 1);
+	proc_nr++;
+	return proc_nr;
 }
 
 /*
@@ -184,7 +185,7 @@ int get_cpu_nr(unsigned int max_nr_cpus, int highest)
  * @cpu_nr		Number of processors.
  *
  * RETURNS:
- * Number of interrupts per processor + a pre-allocation constant.
+ * Number of interrupts per processor.
  ***************************************************************************
  */
 int get_irqcpu_nr(char *file, int max_nr_irqcpu, int cpu_nr)
@@ -461,7 +462,7 @@ int get_usb_nr(void)
 int get_filesystem_nr(void)
 {
 	FILE *fp;
-	char line[256], fs_name[MAX_FS_LEN], mountp[128];
+	char line[512], fs_name[MAX_FS_LEN], mountp[256];
 	int fs = 0;
 	struct statvfs buf;
 
@@ -474,12 +475,13 @@ int get_filesystem_nr(void)
 		if (line[0] == '/') {
 
 			/* Read filesystem name and mount point */
-			sscanf(line, "%71s %127s", fs_name, mountp);
+			sscanf(line, "%127s", fs_name);
+			sscanf(strchr(line, ' ') + 1, "%255s", mountp);
 
 			/* Replace octal codes */
 			oct2chr(mountp);
 
-			/* Check that total size is not null */
+			/* Check that total size is not zero */
 			if (statvfs(mountp, &buf) < 0)
 				continue;
 
@@ -492,6 +494,39 @@ int get_filesystem_nr(void)
 	fclose(fp);
 
 	return fs;
+}
+
+/*
+ ***************************************************************************
+ * Find number of fibre channel hosts in /sys/class/fc_host/.
+ *
+ * RETURNS:
+ * Number of FC hosts.
+ * Return -1 if directory doesn't exist in sysfs.
+ ***************************************************************************
+ */
+int get_fchost_nr(void)
+{
+	DIR *dir;
+	struct dirent *drd;
+	int fc = 0;
+
+	if ((dir = opendir(SYSFS_FCHOST)) == NULL) {
+		/* Directory non-existent */
+		return -1;
+	}
+
+	while ((drd = readdir(dir)) != NULL) {
+
+		if (!strncmp(drd->d_name, "host", 4)) {
+			fc++;
+		}
+	}
+
+	/* Close directory */
+	closedir(dir);
+
+	return fc;
 }
 
 /*------------------ END: FUNCTIONS USED BY SADC ONLY ---------------------*/

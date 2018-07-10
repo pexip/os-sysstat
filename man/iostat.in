@@ -1,4 +1,4 @@
-.TH IOSTAT 1 "JULY 2013" Linux "Linux User's Manual" -*- nroff -*-
+.TH IOSTAT 1 "NOVEMBER 2016" Linux "Linux User's Manual" -*- nroff -*-
 .SH NAME
 iostat \- Report Central Processing Unit (CPU) statistics and input/output
 statistics for devices and partitions.
@@ -6,7 +6,7 @@ statistics for devices and partitions.
 .ie 'yes'@WITH_DEBUG@' \{
 .B iostat [ -c ] [ -d ] [ -h ] [ -k | -m ] [ -N ] [ -t ] [ -V ] [ -x ] [ -y ] [ -z ]
 .B [ -j { ID | LABEL | PATH | UUID | ... } ]
-.B [ [ -T ] -g
+.B [ [ -H ] -g
 .I group_name
 .B ] [ -p [
 .I device
@@ -21,7 +21,7 @@ statistics for devices and partitions.
 .el \{
 .B iostat [ -c ] [ -d ] [ -h ] [ -k | -m ] [ -N ] [ -t ] [ -V ] [ -x ] [ -y ] [ -z ]
 .B [ -j { ID | LABEL | PATH | UUID | ... } ]
-.B [ [ -T ] -g
+.B [ [ -H ] -g
 .I group_name
 .B ] [ -p [
 .I device
@@ -64,12 +64,7 @@ followed by a line of statistics for each device that is configured.
 The
 .I interval
 parameter specifies the amount of time in seconds between
-each report. The first report contains statistics for the time since
-system startup (boot), unless the
-.B -y
-option is used (in this case, this report is omitted).
-Each subsequent report contains statistics
-collected during the interval since the previous report. The
+each report. The
 .I count
 parameter can be specified in conjunction with the
 .I interval
@@ -266,7 +261,7 @@ This field will be removed in a future sysstat version.
 .RE
 .B %util
 .RS
-Percentage of CPU time during which I/O requests were issued to the device
+Percentage of elapsed time during which I/O requests were issued to the device
 (bandwidth utilization for the device). Device saturation occurs when this
 value is close to 100% for devices serving requests serially.
 But for devices serving requests in parallel, such as RAID arrays and
@@ -293,6 +288,10 @@ and made up of all the devices in the list. The
 .B ALL
 keyword means that all the block devices defined by the system shall be
 included in the group.
+.IP -H
+This option must be used with option -g and indicates that only global
+statistics for the group are to be displayed, and not statistics for
+individual devices in the group.
 .IP -h
 Make the Device Utilization Report easier to read by a human.
 .IP "-j { ID | LABEL | PATH | UUID | ... } [ device [...] | ALL ]"
@@ -304,8 +303,6 @@ only prerequisite is that directory with required persistent names is present in
 .IR /dev/disk .
 Optionally, multiple devices can be specified in the chosen persistent name type.
 Because persistent device names are usually long, option
-.B -h
-is enabled implicitly with this option.
 .IP -k
 Display statistics in kilobytes per second.
 .IP -m
@@ -325,10 +322,6 @@ never been used. If option
 .B -j
 is defined before this option, devices entered on the command line can be
 specified with the chosen persistent name type.
-.IP -T
-This option must be used with option -g and indicates that only global
-statistics for the group are to be displayed, and not statistics for
-individual devices in the group.
 .IP -t
 Print the time for each report displayed. The timestamp format may depend
 on the value of the S_TIME_FORMAT environment variable (see below).
@@ -350,6 +343,51 @@ The
 .B iostat
 command takes into account the following environment variables:
 
+.IP POSIXLY_CORRECT
+When this variable is set, transfer rates are shown in 512-byte blocks instead
+of the default 1K blocks.
+
+.IP S_COLORS
+When this variable is set, display statistics in color on the terminal.
+Possible values for this variable are
+.IR never ,
+.IR always
+or
+.IR auto
+(the latter is the default).
+
+Please note that the color (being red, yellow, or some other color) used to display a value
+is not indicative of any kind of issue simply because of the color. It only indicates different
+ranges of values.
+
+.IP S_COLORS_SGR
+Specify the colors and other attributes used to display statistics on the terminal.
+Its value is a colon-separated list of capabilities that defaults to
+.BR H=31;1:I=32;22:M=34;1:N=33;1:Z=33;22 .
+Supported capabilities are:
+
+.RS
+.TP
+.B H=
+SGR (Select Graphic Rendition) substring for percentage values greater than or equal to 75%.
+
+.TP
+.B I=
+SGR substring for device names.
+
+.TP
+.B M=
+SGR substring for percentage values in the range from 50% to 75%.
+
+.TP
+.B N=
+SGR substring for non-zero statistics values.
+
+.TP
+.B Z=
+SGR substring for zero values.
+.RE
+
 .IP S_TIME_FORMAT
 If this variable exists and its value is
 .BR ISO
@@ -359,10 +397,6 @@ header. The
 command will use the ISO 8601 format (YYYY-MM-DD) instead.
 The timestamp displayed with option -t will also be compliant with ISO 8601
 format.
-
-.IP POSIXLY_CORRECT
-When this variable is set, transfer rates are shown in 512-byte blocks instead
-of the default 1K blocks.
 
 .SH EXAMPLES
 .B iostat
@@ -427,6 +461,7 @@ Sebastien Godard (sysstat <at> orange.fr)
 .BR pidstat (1),
 .BR mpstat (1),
 .BR vmstat (8),
+.BR tapestat (1),
 .BR nfsiostat (1),
 .BR cifsiostat (1)
 

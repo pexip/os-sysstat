@@ -1,6 +1,6 @@
 /*
  * sar, sadc, sadf, mpstat and iostat common routines.
- * (C) 1999-2016 by Sebastien GODARD (sysstat <at> orange.fr)
+ * (C) 1999-2018 by Sebastien GODARD (sysstat <at> orange.fr)
  *
  ***************************************************************************
  * This program is free software; you can redistribute it and/or modify it *
@@ -35,8 +35,6 @@
 
 #include "version.h"
 #include "common.h"
-#include "ioconf.h"
-#include "rd_stats.h"
 
 #ifdef USE_NLS
 #include <locale.h>
@@ -46,19 +44,25 @@
 #define _(string) (string)
 #endif
 
+/* Number of decimal places */
+extern int dplaces_nr;
+
+/* Units (sectors, Bytes, kilobytes, etc.) */
+char units[] = {'s', 'B', 'k', 'M', 'G', 'T', 'P', '?'};
+
 /* Number of ticks per second */
-unsigned int hz;
+unsigned long hz;
 /* Number of bit shifts to convert pages to kB */
 unsigned int kb_shift;
 
 /* Colors strings */
 char sc_percent_high[MAX_SGR_LEN] = C_BOLD_RED;
-char sc_percent_low[MAX_SGR_LEN] = C_BOLD_BLUE;
-char sc_zero_int_stat[MAX_SGR_LEN] = C_LIGHT_YELLOW;
-char sc_int_stat[MAX_SGR_LEN] = C_BOLD_YELLOW;
+char sc_percent_low[MAX_SGR_LEN] = C_BOLD_MAGENTA;
+char sc_zero_int_stat[MAX_SGR_LEN] = C_LIGHT_BLUE;
+char sc_int_stat[MAX_SGR_LEN] = C_BOLD_BLUE;
 char sc_item_name[MAX_SGR_LEN] = C_LIGHT_GREEN;
 char sc_sa_restart[MAX_SGR_LEN] = C_LIGHT_RED;
-char sc_sa_comment[MAX_SGR_LEN] = C_LIGHT_CYAN;
+char sc_sa_comment[MAX_SGR_LEN] = C_LIGHT_YELLOW;
 char sc_normal[MAX_SGR_LEN] = C_NORMAL;
 
 /* Type of persistent device names used in sar and iostat */
@@ -167,6 +171,113 @@ time_t get_time(struct tm *rectime, int d_off)
 		return get_localtime(rectime, d_off);
 }
 
+#ifdef USE_NLS
+/*
+ ***************************************************************************
+ * Init National Language Support.
+ ***************************************************************************
+ */
+void init_nls(void)
+{
+	setlocale(LC_MESSAGES, "");
+	setlocale(LC_CTYPE, "");
+	setlocale(LC_TIME, "");
+	setlocale(LC_NUMERIC, "");
+
+	bindtextdomain(PACKAGE, LOCALEDIR);
+	textdomain(PACKAGE);
+}
+#endif
+
+/*
+ ***************************************************************************
+ * Test whether given name is a device or a partition, using sysfs.
+ * This is more straightforward that using ioc_iswhole() function from
+ * ioconf.c which should be used only with kernels that don't have sysfs.
+ *
+ * IN:
+ * @name		Device or partition name.
+ * @allow_virtual	TRUE if virtual devices are also accepted.
+ *			The device is assumed to be virtual if no
+ *			/sys/block/<device>/device link exists.
+ *
+ * RETURNS:
+ * TRUE if @name is not a partition.
+ ***************************************************************************
+ */
+int is_device(char *name, int allow_virtual)
+{
+	char syspath[PATH_MAX];
+	char *slash;
+
+	/* Some devices may have a slash in their name (eg. cciss/c0d0...) */
+	while ((slash = strchr(name, '/'))) {
+		*slash = '!';
+	}
+	snprintf(syspath, sizeof(syspath), "%s/%s%s", SYSFS_BLOCK, name,
+		 allow_virtual ? "" : "/device");
+
+	return !(access(syspath, F_OK));
+}
+
+/*
+ ***************************************************************************
+ * Get page shift in kB.
+ ***************************************************************************
+ */
+void get_kb_shift(void)
+{
+	int shift = 0;
+	long size;
+
+	/* One can also use getpagesize() to get the size of a page */
+	if ((size = sysconf(_SC_PAGESIZE)) == -1) {
+		perror("sysconf");
+	}
+
+	size >>= 10;	/* Assume that a page has a minimum size of 1 kB */
+
+	while (size > 1) {
+		shift++;
+		size >>= 1;
+	}
+
+	kb_shift = (unsigned int) shift;
+}
+
+/*
+ ***************************************************************************
+ * Get number of clock ticks per second.
+ ***************************************************************************
+ */
+void get_HZ(void)
+{
+	long ticks;
+
+	if ((ticks = sysconf(_SC_CLK_TCK)) == -1) {
+		perror("sysconf");
+	}
+
+	hz = (unsigned long) ticks;
+}
+
+/*
+ ***************************************************************************
+ * Unhandled situation: Panic and exit. Should never happen.
+ *
+ * IN:
+ * @function	Function name where situation occured.
+ * @error_code	Error code.
+ ***************************************************************************
+ */
+void sysstat_panic(const char *function, int error_code)
+{
+	fprintf(stderr, "sysstat: %s[%d]: Internal error...\n",
+		function, error_code);
+	exit(1);
+}
+
+#ifndef SOURCE_SADC
 /*
  ***************************************************************************
  * Count number of comma-separated values in arguments list. For example,
@@ -214,7 +325,7 @@ int get_dev_part_nr(char *dev_name)
 	DIR *dir;
 	struct dirent *drd;
 	char dfile[MAX_PF_NAME], line[MAX_PF_NAME];
-	int part = 0;
+	int part = 0, err;
 
 	snprintf(dfile, MAX_PF_NAME, "%s/%s", SYSFS_BLOCK, dev_name);
 	dfile[MAX_PF_NAME - 1] = '\0';
@@ -227,8 +338,9 @@ int get_dev_part_nr(char *dev_name)
 	while ((drd = readdir(dir)) != NULL) {
 		if (!strcmp(drd->d_name, ".") || !strcmp(drd->d_name, ".."))
 			continue;
-		snprintf(line, MAX_PF_NAME, "%s/%s/%s", dfile, drd->d_name, S_STAT);
-		line[MAX_PF_NAME - 1] = '\0';
+		err = snprintf(line, MAX_PF_NAME, "%s/%s/%s", dfile, drd->d_name, S_STAT);
+		if ((err < 0) || (err >= MAX_PF_NAME))
+			continue;
 
 		/* Try to guess if current entry is a directory containing a stat file */
 		if (!access(line, R_OK)) {
@@ -350,6 +462,102 @@ int is_iso_time_fmt(void)
 
 /*
  ***************************************************************************
+ * Print tabulations
+ *
+ * IN:
+ * @nr_tab	Number of tabs to print.
+ ***************************************************************************
+ */
+void prtab(int nr_tab)
+{
+	int i;
+
+	for (i = 0; i < nr_tab; i++) {
+		printf("\t");
+	}
+}
+
+/*
+ ***************************************************************************
+ * printf() function modified for XML-like output. Don't print a CR at the
+ * end of the line.
+ *
+ * IN:
+ * @nr_tab	Number of tabs to print.
+ * @fmtf	printf() format.
+ ***************************************************************************
+ */
+void xprintf0(int nr_tab, const char *fmtf, ...)
+{
+	static char buf[1024];
+	va_list args;
+
+	va_start(args, fmtf);
+	vsnprintf(buf, sizeof(buf), fmtf, args);
+	va_end(args);
+
+	prtab(nr_tab);
+	printf("%s", buf);
+}
+
+/*
+ ***************************************************************************
+ * printf() function modified for XML-like output. Print a CR at the end of
+ * the line.
+ *
+ * IN:
+ * @nr_tab	Number of tabs to print.
+ * @fmtf	printf() format.
+ ***************************************************************************
+ */
+void xprintf(int nr_tab, const char *fmtf, ...)
+{
+	static char buf[1024];
+	va_list args;
+
+	va_start(args, fmtf);
+	vsnprintf(buf, sizeof(buf), fmtf, args);
+	va_end(args);
+
+	prtab(nr_tab);
+	printf("%s\n", buf);
+}
+
+/*
+ ***************************************************************************
+ * Get report date as a string of characters.
+ *
+ * IN:
+ * @rectime	Date to display (don't use time fields).
+ * @cur_date	String where date will be saved.
+ * @sz		Max size of cur_date string.
+ *
+ * OUT:
+ * @cur_date	Date (string format).
+ *
+ * RETURNS:
+ * TRUE if S_TIME_FORMAT is set to ISO, or FALSE otherwise.
+ ***************************************************************************
+ */
+int set_report_date(struct tm *rectime, char cur_date[], int sz)
+{
+	if (rectime == NULL) {
+		strncpy(cur_date, "?/?/?", sz);
+		cur_date[sz - 1] = '\0';
+	}
+	else if (is_iso_time_fmt()) {
+		strftime(cur_date, sz, "%Y-%m-%d", rectime);
+		return 1;
+	}
+	else {
+		strftime(cur_date, sz, "%x", rectime);
+	}
+
+	return 0;
+}
+
+/*
+ ***************************************************************************
  * Print banner.
  *
  * IN:
@@ -359,51 +567,42 @@ int is_iso_time_fmt(void)
  * @nodename	Hostname to display.
  * @machine	Machine architecture to display.
  * @cpu_nr	Number of CPU.
+ * @format	Set to FALSE for (default) plain output, and to TRUE for
+ * 		JSON format output.
  *
  * RETURNS:
  * TRUE if S_TIME_FORMAT is set to ISO, or FALSE otherwise.
  ***************************************************************************
  */
 int print_gal_header(struct tm *rectime, char *sysname, char *release,
-		     char *nodename, char *machine, int cpu_nr)
+		     char *nodename, char *machine, int cpu_nr, int format)
 {
 	char cur_date[TIMESTAMP_LEN];
 	int rc = 0;
 
-	if (rectime == NULL) {
-		strcpy(cur_date, "?/?/?");
-	}
-	else if (is_iso_time_fmt()) {
-		strftime(cur_date, sizeof(cur_date), "%Y-%m-%d", rectime);
-		rc = 1;
+	rc = set_report_date(rectime, cur_date, sizeof(cur_date));
+
+	if (format == PLAIN_OUTPUT) {
+		/* Plain output */
+		printf("%s %s (%s) \t%s \t_%s_\t(%d CPU)\n", sysname, release, nodename,
+		       cur_date, machine, cpu_nr);
 	}
 	else {
-		strftime(cur_date, sizeof(cur_date), "%x", rectime);
+		/* JSON output */
+		xprintf(0, "{\"sysstat\": {");
+		xprintf(1, "\"hosts\": [");
+		xprintf(2, "{");
+		xprintf(3, "\"nodename\": \"%s\",", nodename);
+		xprintf(3, "\"sysname\": \"%s\",", sysname);
+		xprintf(3, "\"release\": \"%s\",", release);
+		xprintf(3, "\"machine\": \"%s\",", machine);
+		xprintf(3, "\"number-of-cpus\": %d,", cpu_nr);
+		xprintf(3, "\"date\": \"%s\",", cur_date);
+		xprintf(3, "\"statistics\": [");
 	}
-
-	printf("%s %s (%s) \t%s \t_%s_\t(%d CPU)\n", sysname, release, nodename,
-	       cur_date, machine, cpu_nr);
 
 	return rc;
 }
-
-#ifdef USE_NLS
-/*
- ***************************************************************************
- * Init National Language Support.
- ***************************************************************************
- */
-void init_nls(void)
-{
-	setlocale(LC_MESSAGES, "");
-	setlocale(LC_CTYPE, "");
-	setlocale(LC_TIME, "");
-	setlocale(LC_NUMERIC, "");
-
-	bindtextdomain(PACKAGE, LOCALEDIR);
-	textdomain(PACKAGE);
-}
-#endif
 
 /*
  ***************************************************************************
@@ -468,78 +667,6 @@ char *device_name(char *name)
 
 /*
  ***************************************************************************
- * Test whether given name is a device or a partition, using sysfs.
- * This is more straightforward that using ioc_iswhole() function from
- * ioconf.c which should be used only with kernels that don't have sysfs.
- *
- * IN:
- * @name		Device or partition name.
- * @allow_virtual	TRUE if virtual devices are also accepted.
- *			The device is assumed to be virtual if no
- *			/sys/block/<device>/device link exists.
- *
- * RETURNS:
- * TRUE if @name is not a partition.
- ***************************************************************************
- */
-int is_device(char *name, int allow_virtual)
-{
-	char syspath[PATH_MAX];
-	char *slash;
-
-	/* Some devices may have a slash in their name (eg. cciss/c0d0...) */
-	while ((slash = strchr(name, '/'))) {
-		*slash = '!';
-	}
-	snprintf(syspath, sizeof(syspath), "%s/%s%s", SYSFS_BLOCK, name,
-		 allow_virtual ? "" : "/device");
-
-	return !(access(syspath, F_OK));
-}
-
-/*
- ***************************************************************************
- * Get page shift in kB.
- ***************************************************************************
- */
-void get_kb_shift(void)
-{
-	int shift = 0;
-	long size;
-
-	/* One can also use getpagesize() to get the size of a page */
-	if ((size = sysconf(_SC_PAGESIZE)) == -1) {
-		perror("sysconf");
-	}
-
-	size >>= 10;	/* Assume that a page has a minimum size of 1 kB */
-
-	while (size > 1) {
-		shift++;
-		size >>= 1;
-	}
-
-	kb_shift = (unsigned int) shift;
-}
-
-/*
- ***************************************************************************
- * Get number of clock ticks per second.
- ***************************************************************************
- */
-void get_HZ(void)
-{
-	long ticks;
-
-	if ((ticks = sysconf(_SC_CLK_TCK)) == -1) {
-		perror("sysconf");
-	}
-
-	hz = (unsigned int) ticks;
-}
-
-/*
- ***************************************************************************
  * Workaround for CPU counters read from /proc/stat: Dyn-tick kernels
  * have a race issue that can make those counters go backward.
  ***************************************************************************
@@ -558,11 +685,11 @@ double ll_sp_value(unsigned long long value1, unsigned long long value2,
  * Compute time interval.
  *
  * IN:
- * @prev_uptime	Previous uptime value in jiffies.
- * @curr_uptime	Current uptime value in jiffies.
+ * @prev_uptime	Previous uptime value (in jiffies or 1/100th of a second).
+ * @curr_uptime	Current uptime value (in jiffies or 1/100th of a second).
  *
  * RETURNS:
- * Interval of time in jiffies.
+ * Interval of time in jiffies or 1/100th of a second.
  ***************************************************************************
  */
 unsigned long long get_interval(unsigned long long prev_uptime,
@@ -578,75 +705,6 @@ unsigned long long get_interval(unsigned long long prev_uptime,
 	}
 
 	return itv;
-}
-
-/*
- ***************************************************************************
- * Since ticks may vary slightly from CPU to CPU, we'll want
- * to recalculate itv based on this CPU's tick count, rather
- * than that reported by the "cpu" line. Otherwise we
- * occasionally end up with slightly skewed figures, with
- * the skew being greater as the time interval grows shorter.
- *
- * IN:
- * @scc	Current sample statistics for current CPU.
- * @scp	Previous sample statistics for current CPU.
- *
- * RETURNS:
- * Interval of time based on current CPU.
- ***************************************************************************
- */
-unsigned long long get_per_cpu_interval(struct stats_cpu *scc,
-					struct stats_cpu *scp)
-{
-	unsigned long long ishift = 0LL;
-
-	if ((scc->cpu_user - scc->cpu_guest) < (scp->cpu_user - scp->cpu_guest)) {
-		/*
-		 * Sometimes the nr of jiffies spent in guest mode given by the guest
-		 * counter in /proc/stat is slightly higher than that included in
-		 * the user counter. Update the interval value accordingly.
-		 */
-		ishift += (scp->cpu_user - scp->cpu_guest) -
-		          (scc->cpu_user - scc->cpu_guest);
-	}
-	if ((scc->cpu_nice - scc->cpu_guest_nice) < (scp->cpu_nice - scp->cpu_guest_nice)) {
-		/*
-		 * Idem for nr of jiffies spent in guest_nice mode.
-		 */
-		ishift += (scp->cpu_nice - scp->cpu_guest_nice) -
-		          (scc->cpu_nice - scc->cpu_guest_nice);
-	}
-
-	/*
-	 * Don't take cpu_guest and cpu_guest_nice into account
-	 * because cpu_user and cpu_nice already include them.
-	 */
-	return ((scc->cpu_user    + scc->cpu_nice   +
-		 scc->cpu_sys     + scc->cpu_iowait +
-		 scc->cpu_idle    + scc->cpu_steal  +
-		 scc->cpu_hardirq + scc->cpu_softirq) -
-		(scp->cpu_user    + scp->cpu_nice   +
-		 scp->cpu_sys     + scp->cpu_iowait +
-		 scp->cpu_idle    + scp->cpu_steal  +
-		 scp->cpu_hardirq + scp->cpu_softirq) +
-		 ishift);
-}
-
-/*
- ***************************************************************************
- * Unhandled situation: Panic and exit. Should never happen.
- *
- * IN:
- * @function	Function name where situation occured.
- * @error_code	Error code.
- ***************************************************************************
- */
-void sysstat_panic(const char *function, int error_code)
-{
-	fprintf(stderr, "sysstat: %s[%d]: Internal error...\n",
-		function, error_code);
-	exit(1);
 }
 
 /*
@@ -677,39 +735,6 @@ int count_bits(void *ptr, int size)
 	}
 
 	return nr;
-}
-
-/*
- ***************************************************************************
- * Compute "extended" device statistics (service time, etc.).
- *
- * IN:
- * @sdc		Structure with current device statistics.
- * @sdp		Structure with previous device statistics.
- * @itv		Interval of time in jiffies.
- *
- * OUT:
- * @xds		Structure with extended statistics.
- ***************************************************************************
-*/
-void compute_ext_disk_stats(struct stats_disk *sdc, struct stats_disk *sdp,
-			    unsigned long long itv, struct ext_disk_stats *xds)
-{
-	double tput
-		= ((double) (sdc->nr_ios - sdp->nr_ios)) * HZ / itv;
-
-	xds->util  = S_VALUE(sdp->tot_ticks, sdc->tot_ticks, itv);
-	xds->svctm = tput ? xds->util / tput : 0.0;
-	/*
-	 * Kernel gives ticks already in milliseconds for all platforms
-	 * => no need for further scaling.
-	 */
-	xds->await = (sdc->nr_ios - sdp->nr_ios) ?
-		((sdc->rd_ticks - sdp->rd_ticks) + (sdc->wr_ticks - sdp->wr_ticks)) /
-		((double) (sdc->nr_ios - sdp->nr_ios)) : 0.0;
-	xds->arqsz = (sdc->nr_ios - sdp->nr_ios) ?
-		((sdc->rd_sect - sdp->rd_sect) + (sdc->wr_sect - sdp->wr_sect)) /
-		((double) (sdc->nr_ios - sdp->nr_ios)) : 0.0;
 }
 
 /*
@@ -1022,14 +1047,51 @@ void init_colors(void)
 
 /*
  ***************************************************************************
- * Print 64 bit unsigned values using colors.
+ * Print a value in human readable format. Such a value is a decimal number
+ * followed by a unit (B, k, M, etc.)
  *
  * IN:
+ * @unit	Default value unit.
+ * @dval	Value to print.
+ * @wi		Output width.
+ ***************************************************************************
+*/
+void cprintf_unit(int unit, int wi, double dval)
+{
+	if (wi < 4) {
+		/* E.g. 1.3M */
+		wi = 4;
+	}
+	if (!unit) {
+		/* Value is a number of sectors. Convert it to kB */
+		dval /= 2;
+		unit = 2;
+	}
+	while (dval >= 1024) {
+		dval /= 1024;
+		unit++;
+	}
+	printf(" %*.*f", wi - 1, dplaces_nr ? 1 : 0, dval);
+	printf("%s", sc_normal);
+
+	/* Display unit */
+	if (unit >= NR_UNITS) {
+		unit = NR_UNITS - 1;
+	}
+	printf("%c", units[unit]);
+}
+
+/*
+ ***************************************************************************
+ * Print 64 bit unsigned values using colors, possibly followed by a unit.
+ *
+ * IN:
+ * @unit	Default values unit. -1 if no unit should be displayed.
  * @num		Number of values to print.
  * @wi		Output width.
  ***************************************************************************
 */
-void cprintf_u64(int num, int wi, ...)
+void cprintf_u64(int unit, int num, int wi, ...)
 {
 	int i;
 	uint64_t val;
@@ -1045,8 +1107,13 @@ void cprintf_u64(int num, int wi, ...)
 		else {
 			printf("%s", sc_int_stat);
 		}
-		printf(" %*"PRIu64, wi, val);
-		printf("%s", sc_normal);
+		if (unit < 0) {
+			printf(" %*"PRIu64, wi, val);
+			printf("%s", sc_normal);
+		}
+		else {
+			cprintf_unit(unit, wi, (double) val);
+		}
 	}
 
 	va_end(args);
@@ -1081,33 +1148,54 @@ void cprintf_x(int num, int wi, ...)
 
 /*
  ***************************************************************************
- * Print "double" statistics values using colors.
+ * Print "double" statistics values using colors, possibly followed by a
+ * unit.
  *
  * IN:
+ * @unit	Default values unit. -1 if no unit should be displayed.
  * @num		Number of values to print.
  * @wi		Output width.
  * @wd		Number of decimal places.
  ***************************************************************************
 */
-void cprintf_f(int num, int wi, int wd, ...)
+void cprintf_f(int unit, int num, int wi, int wd, ...)
 {
 	int i;
-	double val;
+	double val, lim = 0.005;;
 	va_list args;
+
+	/*
+	 * If there are decimal places then get the value
+	 * entered on the command line (if existing).
+	 */
+	if ((wd > 0) && (dplaces_nr >= 0)) {
+		wd = dplaces_nr;
+	}
+
+	/* Update limit value according to number of decimal places */
+	if (wd == 1) {
+		lim = 0.05;
+	}
 
 	va_start(args, wd);
 
 	for (i = 0; i < num; i++) {
 		val = va_arg(args, double);
-		if (((val < 0.005) && (val > -0.005)) ||
-		    ((wd == 0) && (val < 0.5))) {
+		if (((wd > 0) && (val < lim) && (val > (lim * -1))) ||
+		    ((wd == 0) && (val <= 0.5) && (val >= -0.5))) {	/* "Round half to even" law */
 			printf("%s", sc_zero_int_stat);
 		}
 		else {
 			printf("%s", sc_int_stat);
 		}
-		printf(" %*.*f", wi, wd, val);
-		printf("%s", sc_normal);
+
+		if (unit < 0) {
+			printf(" %*.*f", wi, wd, val);
+			printf("%s", sc_normal);
+		}
+		else {
+			cprintf_unit(unit, wi, val);
+		}
 	}
 
 	va_end(args);
@@ -1118,16 +1206,47 @@ void cprintf_f(int num, int wi, int wd, ...)
  * Print "percent" statistics values using colors.
  *
  * IN:
+ * @human	Set to > 0 if a percent sign (%) shall be displayed after
+ *		the value.
  * @num		Number of values to print.
  * @wi		Output width.
  * @wd		Number of decimal places.
  ***************************************************************************
 */
-void cprintf_pc(int num, int wi, int wd, ...)
+void cprintf_pc(int human, int num, int wi, int wd, ...)
 {
 	int i;
-	double val;
+	double val, lim = 0.005;
 	va_list args;
+
+	/*
+	 * If there are decimal places then get the value
+	 * entered on the command line (if existing).
+	 */
+	if ((wd > 0) && (dplaces_nr >= 0)) {
+		wd = dplaces_nr;
+	}
+
+	/*
+	 * If a percent sign is to be displayed, then there will be
+	 * zero (or one) decimal place.
+	 */
+	if (human > 0) {
+		if (wi < 4) {
+			/* E.g., 100% */
+			wi = 4;
+		}
+		/* Keep one place for the percent sign */
+		wi -= 1;
+		if (wd > 1) {
+			wd -= 1;
+		}
+	}
+
+	/* Update limit value according to number of decimal places */
+	if (wd == 1) {
+		lim = 0.05;
+	}
 
 	va_start(args, wd);
 
@@ -1139,7 +1258,8 @@ void cprintf_pc(int num, int wi, int wd, ...)
 		else if (val >= PERCENT_LIMIT_LOW) {
 			printf("%s", sc_percent_low);
 		}
-		else if (val < 0.005) {
+		else if (((wd > 0) && (val < lim)) ||
+			 ((wd == 0) && (val <= 0.5))) {	/* "Round half to even" law */
 			printf("%s", sc_zero_int_stat);
 		}
 		else {
@@ -1147,6 +1267,7 @@ void cprintf_pc(int num, int wi, int wd, ...)
 		}
 		printf(" %*.*f", wi, wd, val);
 		printf("%s", sc_normal);
+		if (human > 0) printf("%%");
 	}
 
 	va_end(args);
@@ -1204,3 +1325,113 @@ void cprintf_s(int type, char *format, char *string)
 	printf(format, string);
 	printf("%s", sc_normal);
 }
+
+/*
+ ***************************************************************************
+ * Parse a string containing a numerical value (e.g. CPU or IRQ number).
+ * The string should contain only one value, not a range of values.
+ *
+ * IN:
+ * @s		String to parse.
+ * @max_val	Upper limit that value should not reach.
+ *
+ * OUT:
+ * @val		Value, or -1 if the string @s was empty.
+ *
+ * RETURNS:
+ * 0 if the value has been properly read, 1 otherwise.
+ ***************************************************************************
+ */
+int parse_valstr(char *s, int max_val, int *val)
+{
+	if (!strlen(s)) {
+		*val = -1;
+		return 0;
+	}
+	if (strspn(s, DIGITS) != strlen(s))
+		return 1;
+
+	*val = atoi(s);
+	if ((*val < 0) || (*val >= max_val))
+		return 1;
+
+	return 0;
+}
+
+/*
+ ***************************************************************************
+ * Parse string containing a set of coma-separated values or ranges of
+ * values (e.g. "0,2-5,10-"). The ALL keyword is allowed and indicate that
+ * all possible values are selected.
+ *
+ * IN:
+ * @strargv	Current argument in list to parse.
+ * @bitmap	Bitmap whose contents will indicate which values have been
+ *		selected.
+ * @max_val	Upper limit that value should not reach.
+ * @__K_VALUE0	Keyword corresponding to the first bit in bitmap (e.g "all",
+ *		"SUM"...)
+ *
+ * OUT:
+ * @bitmap	Bitmap updated with selected values.
+ *
+ * RETURNS:
+ * 0 on success, 1 otherwise.
+ ***************************************************************************
+ */
+int parse_values(char *strargv, unsigned char bitmap[], int max_val, const char *__K_VALUE0)
+{
+	int i, val_low, val;
+	char *t, *s, *valstr, range[16];
+
+	if (!strcmp(strargv, K_ALL)) {
+		/* Set bit for every possible values (CPU, IRQ, etc.) */
+		memset(bitmap, ~0, BITMAP_SIZE(max_val));
+		return 0;
+	}
+
+	for (t = strtok(strargv, ","); t; t = strtok(NULL, ",")) {
+		if (!strcmp(t, __K_VALUE0)) {
+			/*
+			 * Set bit 0 in bitmap. This may correspond
+			 * to CPU "all" or IRQ "SUM" for example.
+			 */
+			bitmap[0] |= 1;
+		}
+		else {
+			/* Parse value or range of values */
+			strncpy(range, t, 16);
+			range[15] = '\0';
+			valstr = t;
+			if ((s = index(range, '-')) != NULL) {
+				/* Possible range of values */
+				*s = '\0';
+				if (parse_valstr(range, max_val, &val_low) || (val_low < 0))
+					return 1;
+				valstr = s + 1;
+			}
+			if (parse_valstr(valstr, max_val, &val))
+				return 1;
+			if (s && val < 0) {
+				/* Range of values with no upper limit (e.g. "3-") */
+				val = max_val - 1;
+			}
+			if ((!s && (val < 0)) || (s && (val < val_low)))
+				/*
+				 * Individual value: string cannot be empty.
+				 * Range of values: n-m: m can be empty (e.g. "3-") but
+				 * cannot be lower than n.
+				 */
+				return 1;
+			if (!s) {
+				val_low = val;
+			}
+			for (i = val_low; i <= val; i++) {
+				bitmap[(i + 1) >> 3] |= 1 << ((i + 1) & 0x07);
+			}
+		}
+	}
+
+	return 0;
+}
+#endif /* SOURCE_SADC undefined */

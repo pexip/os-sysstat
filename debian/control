@@ -2,11 +2,12 @@ Source: sysstat
 Section: admin
 Priority: optional
 Maintainer: Robert Luberda <robert@debian.org>
-Build-Depends: debhelper (>= 9), gettext, libsensors4-dev, pkg-config
-Standards-Version: 3.9.8
+Build-Depends: debhelper (>= 11), gettext, libsensors4-dev, pkg-config
+Standards-Version: 4.2.0
+Rules-Requires-Root: no
 Homepage: http://pagesperso-orange.fr/sebastien.godard/
-Vcs-Git: https://anonscm.debian.org/git/users/robert/sysstat.git
-Vcs-Browser: https://anonscm.debian.org/cgit/users/robert/sysstat.git/
+Vcs-Git: https://salsa.debian.org/debian/sysstat.git
+Vcs-Browser: https://salsa.debian.org/debian/sysstat
 
 Package: sysstat
 Architecture: linux-any

@@ -1,14 +1,21 @@
-.TH SAR 1 "DECEMBER 2016" Linux "Linux User's Manual" -*- nroff -*-
+.TH SAR 1 "OCTOBER 2018" Linux "Linux User's Manual" -*- nroff -*-
 .SH NAME
 sar \- Collect, report, or save system activity information.
 .SH SYNOPSIS
-.B sar [ -A ] [ -B ] [ -b ] [ -C ] [ -D ] [ -d ] [ -F [ MOUNT ] ] [ -H ] [ -h ] [ -p ] [ -q ] [ -R ]
-.B [ -r [ ALL ] ] [ -S ] [ -t ] [ -u [ ALL ] ] [ -V ] [ -v ] [ -W ] [ -w ] [ -y ] [ --sadc ]
+.B sar [ -A ] [ -B ] [ -b ] [ -C ] [ -D ] [ -d ] [ -F [ MOUNT ] ] [ -H ] [ -h ] [ -p ] [ -q ]
+.B [ -r [ ALL ] ] [ -S ] [ -t ] [ -u [ ALL ] ] [ -V ] [ -v ] [ -W ] [ -w ] [ -y ] [ -z ]
+.B [ --dec={ 0 | 1 | 2 } ] [ --dev=
+.I dev_list
+.B ] [ --fs=
+.I fs_list
+.B ] [ --help ] [ --human ] [ --iface=
+.I iface_list
+.B ] [ --sadc ]
 .B [ -I {
-.I int
-.B [,...] | SUM | ALL | XALL } ] [ -P {
-.I cpu
-.B [,...] | ALL } ]
+.I int_list
+.B | SUM | ALL } ] [ -P {
+.I cpu_list
+.B | ALL } ]
 .B [ -m {
 .I keyword
 .B [,...] | ALL } ]
@@ -116,7 +123,7 @@ processors. If -P ALL
 is given, the
 .B sar
 command reports statistics for each individual processor and global
-statistics among all processors.
+statistics among all processors. Offline processors are not displayed.
 
 You can select information about specific system activities using
 flags. Not specifying any flags selects only CPU activity.
@@ -166,7 +173,7 @@ command only reports on local activities.
 .SH OPTIONS
 .IP -A
 This is equivalent to specifying
-.BR "-bBdFHqRSuvwWy -I SUM -I XALL -m ALL -n ALL -r ALL -u ALL -P ALL".
+.BR "-bBdFHqSuvwWy -I SUM -I ALL -m ALL -n ALL -r ALL -u ALL -P ALL".
 .IP -B
 Report paging statistics.
 The following values are displayed:
@@ -283,7 +290,10 @@ M is the major number of the device and n
 its minor number.
 Device names may also be pretty-printed if option -p
 is used or persistent device names can be printed if option -j is used
-(see below).
+(see below). Statistics for all devices are displayed unless
+a restricted list is specified using option
+.BR --dev=
+(see corresponding option entry).
 Note that disk activity depends on
 .B sadc
 options 
@@ -301,24 +311,28 @@ requests can be combined into a single I/O request to the device.
 A transfer is of indeterminate size.
 .RE
 
-.B rd_sec/s
+.B rkB/s
 .RS
-Number of sectors read from the device. The size of a sector is 512 bytes.
+Number of kilobytes read from the device per second.
 .RE
 
-.B wr_sec/s
+.B wkB/s
 .RS
-Number of sectors written to the device. The size of a sector is 512 bytes.
+Number of kilobytes written to the device per second.
 .RE
 
-.B avgrq-sz
+.B areq-sz
 .RS
-The average size (in sectors) of the requests that were issued to the device.
+The average size (in kilobytes) of the I/O requests that were issued to the device.
+.br
+Note: In previous versions, this field was known as avgrq-sz and was expressed in sectors.
 .RE
 
-.B avgqu-sz
+.B aqu-sz
 .RS
 The average queue length of the requests that were issued to the device.
+.br
+Note: In previous versions, this field was known as avgqu-sz.
 .RE
 
 .B await
@@ -344,6 +358,13 @@ devices serving requests in parallel, such as RAID arrays and modern SSDs,
 this number does not reflect their performance limits.
 .RE
 .RE
+.IP "--dec={ 0 | 1 | 2 }"
+Specify the number of decimal places to use (0 to 2, default value is 2).
+.IP --dev=dev_list
+Specify the block devices for which statistics are to be displayed by
+.BR sar .
+.IR dev_list
+is a list of comma-separated device names.
 .IP "-e [ hh:mm[:ss] ]"
 Set the ending time of the report. The default ending time is
 18:00:00. Hours must be given in 24-hour format.
@@ -357,7 +378,10 @@ will display a summary of all those filesystems.
 Use of the
 .B MOUNT
 parameter keyword indicates that mountpoint will be reported instead of
-filesystem device.
+filesystem device. Statistics for all filesystems are displayed unless
+a restricted list is specified using option
+.BR --fs=
+(see corresponding option entry).
 Note that filesystems statistics depend on
 .B sadc
 option
@@ -369,7 +393,7 @@ The following values are displayed:
 .B MBfsfree
 .RS
 .RS
-Total amount a free space in megabytes (including space available only to privileged user).
+Total amount of free space in megabytes (including space available only to privileged user).
 .RE
 
 .B MBfsused
@@ -415,6 +439,11 @@ If
 is a directory instead of a plain file then it is considered as the
 directory where the standard system activity daily data files are
 located. The -f option is exclusive of the -o option.
+.IP --fs=fs_list
+Specify the filesystems for which statistics are to be displayed by
+.BR sar .
+.IR fs_list
+is a list of comma-separated filesystem names or mountpoints.
 .IP -H
 Report hugepages utilization statistics.
 The following values are displayed:
@@ -436,21 +465,29 @@ Percentage of total hugepages memory that has been allocated.
 .RE
 .RE
 .IP -h
+Make the output of sar easier to read by a human. Options
+.B --human
+and
+.B -p
+(pretty-print) are enabled implicitly with this option.
+This option may be especially useful when displaying e.g., network interfaces
+or block devices statistics.
+.IP --help
 Display a short help message then exit.
-.IP "-I { int [,...] | SUM | ALL | XALL }"
-Report statistics for a given interrupt.
-.I int
-is the interrupt number. Specifying multiple -I
-.I int
-parameters on the command line will look at multiple independent interrupts.
+.IP --human
+Print sizes in human readable format (e.g. 1.0k, 1.2M, etc.)
+The units displayed with this option supersede any other default units (e.g.
+kilobytes, sectors...) associated with the metrics.
+.IP "-I { int_list | SUM | ALL }"
+Report statistics for interrupts.
+.I int_list
+is a list of comma-separated values or range of values (e.g.,
+.BR 0-16,35,400- ).
 The
 .B SUM
 keyword indicates that the total number of interrupts received per second
 is to be displayed. The
 .B ALL
-keyword indicates that statistics from
-the first 16 interrupts are to be reported, whereas the
-.B XALL
 keyword indicates that statistics from all interrupts, including potential
 APIC interrupt sources, are to be reported.
 Note that interrupt statistics depend on
@@ -462,6 +499,11 @@ Select data records at seconds as close as possible to the number specified
 by the
 .I interval
 parameter.
+.IP --iface=iface_list
+Specify the network interfaces for which statistics are to be displayed by
+.BR sar .
+.IR iface_list
+is a list of comma-separated interface names.
 .IP "-j { ID | LABEL | PATH | UUID | ... }"
 Display persistent device names. Use this option in conjunction with option -d.
 Options
@@ -639,6 +681,7 @@ Possible keywords are
 .BR NFSD ,
 .BR SOCK ,
 .BR SOCK6 ,
+.BR SOFT ,
 .BR TCP ,
 .BR ETCP ,
 .BR UDP
@@ -648,6 +691,10 @@ and
 With the
 .B DEV
 keyword, statistics from the network devices are reported.
+Statistics for all network interfaces are displayed unless
+a restricted list is specified using option
+.BR --iface=
+(see corresponding option entry).
 The following values are displayed:
 
 .B IFACE
@@ -701,6 +748,10 @@ of the interface speed. For full-duplex, this is the greater of rxkB/S or txkB/s
 With the
 .B EDEV
 keyword, statistics on failures (errors) from the network devices are reported.
+Statistics for all network interfaces are displayed unless
+a restricted list is specified using option
+.BR --iface=
+(see corresponding option entry).
 The following values are displayed:
 
 .B IFACE
@@ -1645,6 +1696,44 @@ Number of IPv6 fragments currently in use.
 .RE
 
 With the
+.B SOFT
+keyword, statistics about software-based network processing are reported.
+The following values are displayed:
+
+.B total/s
+.RS
+The total number of network frames processed per second.
+.RE
+
+.B dropd/s
+.RS
+The total number of network frames dropped per second because there
+was no room on the processing queue.
+.RE
+
+.B squeezd/s
+.RS
+The number of times the softirq handler function terminated per second
+because its budget was consumed or the time limit was reached, but more
+work could have been done.
+.RE
+
+.B rx_rps/s
+.RS
+The number of times the CPU has been woken up per second
+to process packets via an inter-processor interrupt.
+.RE
+
+.B flw_lim/s
+.RS
+The number of times the flow limit has been reached per second.
+Flow limiting is an optional RPS feature that can be used to limit the number of
+packets queued to the backlog for each flow to a certain amount.
+This can help ensure that smaller flows are processed even though
+much larger flows are pushing packets in.
+.RE
+
+With the
 .B TCP
 keyword, statistics about TCPv4 network traffic are reported.
 Note that TCPv4 statistics depend on
@@ -1812,13 +1901,18 @@ with the option "-S ALL".
 See
 .BR sadc (8)
 manual page).
-.IP "-P { cpu [,...] | ALL }"
+.IP "-P { cpu_list | ALL }"
 Report per-processor statistics for the specified processor or processors.
+.I cpu_list
+is a list of comma-separated values or range of values (e.g.,
+.BR 0,2,4-7,12- ).
+Note that processor 0 is the first processor, and processor
+.B all
+is the global average among all processors.
 Specifying the
 .B ALL
 keyword reports statistics for each individual processor, and globally for
-all processors.
-Note that processor 0 is the first processor.
+all processors. Offline processors are not displayed.
 .IP -p
 Pretty-print device names. Use this option in conjunction with option -d.
 By default names are printed as
@@ -1864,29 +1958,6 @@ System load average for the past 15 minutes.
 Number of tasks currently blocked, waiting for I/O to complete.
 .RE
 .RE
-.IP -R
-Report memory statistics. The following values are displayed:
-
-.B frmpg/s
-.RS
-.RS
-Number of memory pages freed by the system per second.
-A negative value represents a number of pages allocated by the system.
-Note that a page has a size of 4 kiB or 8 kiB according to the machine architecture.
-.RE
-
-.B bufpg/s
-.RS
-Number of additional memory pages used as buffers by the system per second.
-A negative value means fewer pages used as buffers by the system.
-.RE
-
-.B campg/s
-.RS
-Number of additional memory pages cached by the system per second.
-A negative value means fewer pages in the cache.
-.RE
-.RE
 .IP "-r [ ALL ]"
 Report memory utilization statistics. The
 .B ALL
@@ -1899,10 +1970,26 @@ The following values may be displayed:
 Amount of free memory available in kilobytes.
 .RE
 
+.B kbavail
+.RS
+Estimate of how much memory in kilobytes is available for starting new
+applications, without swapping.
+The estimate takes into account that the system needs some page cache to
+function well, and that not all reclaimable slab will be reclaimable,
+due to items being in use. The impact of those factors will vary from
+system to system.
+.RE
+
 .B kbmemused
 .RS
-Amount of used memory in kilobytes. This does not take into account memory
-used by the kernel itself.
+Amount of used memory in kilobytes (calculated as total installed memory -
+.B kbmemfree
+-
+.B kbbuffers
+-
+.B kbcached
+-
+.BR kbslab ).
 .RE
 
 .B %memused
@@ -2105,9 +2192,6 @@ Percentage of time spent by the CPU or CPUs to run a niced guest.
 Percentage of time that the CPU or CPUs were idle and the system
 did not have an outstanding disk I/O request.
 .RE
-
-Note: On SMP machines a processor that does not have any activity at all
-(0.00 for every field) is a disabled (offline) processor.
 .RE
 .IP -V
 Print version number then exit.
@@ -2199,6 +2283,11 @@ Number of breaks per second for current serial line.
 Number of overrun errors per second for current serial line.
 .RE
 .RE
+.IP -z
+Tell
+.B sar
+to omit output for any devices for which there was no activity during the
+sample period.
 
 .SH ENVIRONMENT
 The
@@ -2221,7 +2310,7 @@ ranges of values.
 .IP S_COLORS_SGR
 Specify the colors and other attributes used to display statistics on the terminal. 
 Its value is a colon-separated list of capabilities that defaults to
-.BR C=36;22:H=31;1:I=32;22:M=34;1:N=33;1:R=31;22:Z=33;22 .
+.BR C=33;22:H=31;1:I=32;22:M=35;1:N=34;1:R=31;22:Z=34;22 .
 Supported capabilities are:
 
 .RS
@@ -2332,5 +2421,7 @@ Sebastien Godard (sysstat <at> orange.fr)
 .BR mpstat (1),
 .BR iostat (1),
 .BR vmstat (8)
+
+.I https://github.com/sysstat/sysstat
 
 .I http://pagesperso-orange.fr/sebastien.godard/

@@ -1,6 +1,6 @@
 /*
  * xml_stats.c: Funtions used by sadf to display statistics in XML.
- * (C) 1999-2016 by Sebastien GODARD (sysstat <at> orange.fr)
+ * (C) 1999-2018 by Sebastien GODARD (sysstat <at> orange.fr)
  *
  ***************************************************************************
  * This program is free software; you can redistribute it and/or modify it *
@@ -24,7 +24,6 @@
 #include <stdarg.h>
 
 #include "sa.h"
-#include "sadf.h"
 #include "ioconf.h"
 #include "xml_stats.h"
 
@@ -37,7 +36,6 @@
 #endif
 
 extern unsigned int flags;
-extern unsigned int dm_major;
 
 /*
  ***************************************************************************
@@ -101,67 +99,73 @@ void xml_markup_power_management(int tab, int action)
  * @a		Activity structure with statistics.
  * @curr	Index in array for current sample statistics.
  * @tab		Indentation in XML output.
- * @g_itv	Interval of time in jiffies mutliplied by the number of
- * 		processors.
+ * @itv		Interval of time in 1/100th of a second (independent of the
+ *		number of processors). Unused here.
  ***************************************************************************
  */
 __print_funct_t xml_print_cpu_stats(struct activity *a, int curr, int tab,
-				    unsigned long long g_itv)
+				    unsigned long long itv)
 {
-	int i, cpu_offline;
+	int i;
+	unsigned long long deltot_jiffies = 1;
 	struct stats_cpu *scc, *scp;
-	char cpuno[8];
+	unsigned char offline_cpu_bitmap[BITMAP_SIZE(NR_CPUS)] = {0};
+	char cpuno[16];
 
 	xprintf(tab++, "<cpu-load>");
 
-	for (i = 0; (i < a->nr) && (i < a->bitmap->b_size + 1); i++) {
+	/* @nr[curr] cannot normally be greater than @nr_ini */
+	if (a->nr[curr] > a->nr_ini) {
+		a->nr_ini = a->nr[curr];
+	}
+
+	/*
+	 * Compute CPU "all" as sum of all individual CPU (on SMP machines)
+	 * and look for offline CPU.
+	 */
+	if (a->nr_ini > 1) {
+		deltot_jiffies = get_global_cpu_statistics(a, !curr, curr,
+							   flags, offline_cpu_bitmap);
+	}
+
+	for (i = 0; (i < a->nr_ini) && (i < a->bitmap->b_size + 1); i++) {
+
+		/* Should current CPU (including CPU "all") be displayed? */
+		if (!(a->bitmap->b_array[i >> 3] & (1 << (i & 0x07))) ||
+		    offline_cpu_bitmap[i >> 3] & (1 << (i & 0x07)))
+			/* Don't display CPU */
+			continue;
 
 		scc = (struct stats_cpu *) ((char *) a->buf[curr]  + i * a->msize);
 		scp = (struct stats_cpu *) ((char *) a->buf[!curr] + i * a->msize);
 
-		/* Should current CPU (including CPU "all") be displayed? */
-		if (!(a->bitmap->b_array[i >> 3] & (1 << (i & 0x07))))
-			/* No */
-			continue;
-
-		/* Yes: Display it */
-		if (!i) {
+		if (i == 0) {
 			/* This is CPU "all" */
 			strcpy(cpuno, "all");
+
+			if (a->nr_ini == 1) {
+				/*
+				 * This is a UP machine. In this case
+				 * interval has still not been calculated.
+				 */
+				deltot_jiffies = get_per_cpu_interval(scc, scp);
+			}
+			if (!deltot_jiffies) {
+				/* CPU "all" cannot be tickless */
+				deltot_jiffies = 1;
+			}
 		}
 		else {
 			sprintf(cpuno, "%d", i - 1);
 
 			/*
-			 * If the CPU is offline then it is omited from /proc/stat:
-			 * All the fields couldn't have been read and the sum of them is zero.
-			 * (Remember that guest/guest_nice times are already included in
-			 * user/nice modes.)
+			 * Recalculate interval for current proc.
+			 * If result is 0 then current CPU is a tickless one.
 			 */
-			if ((scc->cpu_user + scc->cpu_nice + scc->cpu_sys +
-			     scc->cpu_iowait + scc->cpu_idle + scc->cpu_steal +
-			     scc->cpu_hardirq + scc->cpu_softirq) == 0) {
-				/*
-				 * Set current struct fields (which have been set to zero)
-				 * to values from previous iteration. Hence their values won't
-				 * jump from zero when the CPU comes back online.
-				 */
-				*scc = *scp;
+			deltot_jiffies = get_per_cpu_interval(scc, scp);
 
-				g_itv = 0;
-				cpu_offline = TRUE;
-			}
-			else {
-				/*
-				 * Recalculate interval for current proc.
-				 * If result is 0 then current CPU is a tickless one.
-				 */
-				g_itv = get_per_cpu_interval(scc, scp);
-				cpu_offline = FALSE;
-			}
-
-			if (!g_itv) {
-				/* Current CPU is offline or tickless */
+			if (!deltot_jiffies) {
+				/* Current CPU is tickless */
 				if (DISPLAY_CPU_DEF(a->opt_flags)) {
 					xprintf(tab, "<cpu number=\"%d\" "
 						"user=\"%.2f\" "
@@ -170,8 +174,7 @@ __print_funct_t xml_print_cpu_stats(struct activity *a, int curr, int tab,
 						"iowait=\"%.2f\" "
 						"steal=\"%.2f\" "
 						"idle=\"%.2f\"/>",
-						i - 1, 0.0, 0.0, 0.0, 0.0, 0.0,
-						cpu_offline ? 0.0 : 100.0);
+						i - 1, 0.0, 0.0, 0.0, 0.0, 0.0, 100.0);
 				}
 				else if (DISPLAY_CPU_ALL(a->opt_flags)) {
 					xprintf(tab, "<cpu number=\"%d\" "
@@ -186,8 +189,7 @@ __print_funct_t xml_print_cpu_stats(struct activity *a, int curr, int tab,
 						"gnice=\"%.2f\" "
 						"idle=\"%.2f\"/>",
 						i - 1, 0.0, 0.0, 0.0, 0.0,
-						0.0, 0.0, 0.0, 0.0, 0.0,
-						cpu_offline ? 0.0 : 100.0);
+						0.0, 0.0, 0.0, 0.0, 0.0, 100.0);
 				}
 				continue;
 			}
@@ -202,16 +204,16 @@ __print_funct_t xml_print_cpu_stats(struct activity *a, int curr, int tab,
 				"steal=\"%.2f\" "
 				"idle=\"%.2f\"/>",
 				cpuno,
-				ll_sp_value(scp->cpu_user,   scc->cpu_user,   g_itv),
-				ll_sp_value(scp->cpu_nice,   scc->cpu_nice,   g_itv),
+				ll_sp_value(scp->cpu_user, scc->cpu_user, deltot_jiffies),
+				ll_sp_value(scp->cpu_nice, scc->cpu_nice, deltot_jiffies),
 				ll_sp_value(scp->cpu_sys + scp->cpu_hardirq + scp->cpu_softirq,
 					    scc->cpu_sys + scc->cpu_hardirq + scc->cpu_softirq,
-					    g_itv),
-				ll_sp_value(scp->cpu_iowait, scc->cpu_iowait, g_itv),
-				ll_sp_value(scp->cpu_steal,  scc->cpu_steal,  g_itv),
+					    deltot_jiffies),
+				ll_sp_value(scp->cpu_iowait, scc->cpu_iowait, deltot_jiffies),
+				ll_sp_value(scp->cpu_steal,  scc->cpu_steal, deltot_jiffies),
 				scc->cpu_idle < scp->cpu_idle ?
 				0.0 :
-				ll_sp_value(scp->cpu_idle,   scc->cpu_idle,   g_itv));
+				ll_sp_value(scp->cpu_idle, scc->cpu_idle, deltot_jiffies));
 		}
 		else if (DISPLAY_CPU_ALL(a->opt_flags)) {
 			xprintf(tab, "<cpu number=\"%s\" "
@@ -229,21 +231,21 @@ __print_funct_t xml_print_cpu_stats(struct activity *a, int curr, int tab,
 				(scc->cpu_user - scc->cpu_guest) < (scp->cpu_user - scp->cpu_guest) ?
 				0.0 :
 				ll_sp_value(scp->cpu_user - scp->cpu_guest,
-					    scc->cpu_user - scc->cpu_guest, g_itv),
+					    scc->cpu_user - scc->cpu_guest, deltot_jiffies),
 				(scc->cpu_nice - scc->cpu_guest_nice) < (scp->cpu_nice - scp->cpu_guest_nice) ?
 				0.0 :
 				ll_sp_value(scp->cpu_nice - scp->cpu_guest_nice,
-					    scc->cpu_nice - scc->cpu_guest_nice, g_itv),
-				ll_sp_value(scp->cpu_sys, scc->cpu_sys, g_itv),
-				ll_sp_value(scp->cpu_iowait, scc->cpu_iowait, g_itv),
-				ll_sp_value(scp->cpu_steal, scc->cpu_steal, g_itv),
-				ll_sp_value(scp->cpu_hardirq, scc->cpu_hardirq, g_itv),
-				ll_sp_value(scp->cpu_softirq, scc->cpu_softirq, g_itv),
-				ll_sp_value(scp->cpu_guest, scc->cpu_guest, g_itv),
-				ll_sp_value(scp->cpu_guest_nice, scc->cpu_guest_nice, g_itv),
+					    scc->cpu_nice - scc->cpu_guest_nice, deltot_jiffies),
+				ll_sp_value(scp->cpu_sys, scc->cpu_sys, deltot_jiffies),
+				ll_sp_value(scp->cpu_iowait, scc->cpu_iowait, deltot_jiffies),
+				ll_sp_value(scp->cpu_steal, scc->cpu_steal, deltot_jiffies),
+				ll_sp_value(scp->cpu_hardirq, scc->cpu_hardirq, deltot_jiffies),
+				ll_sp_value(scp->cpu_softirq, scc->cpu_softirq, deltot_jiffies),
+				ll_sp_value(scp->cpu_guest, scc->cpu_guest, deltot_jiffies),
+				ll_sp_value(scp->cpu_guest_nice, scc->cpu_guest_nice, deltot_jiffies),
 				scc->cpu_idle < scp->cpu_idle ?
 				0.0 :
-				ll_sp_value(scp->cpu_idle, scc->cpu_idle, g_itv));
+				ll_sp_value(scp->cpu_idle, scc->cpu_idle, deltot_jiffies));
 		}
 	}
 
@@ -258,7 +260,7 @@ __print_funct_t xml_print_cpu_stats(struct activity *a, int curr, int tab,
  * @a		Activity structure with statistics.
  * @curr	Index in array for current sample statistics.
  * @tab		Indentation in XML output.
- * @itv		Interval of time in jiffies.
+ * @itv		Interval of time in 1/100th of a second.
  ***************************************************************************
  */
 __print_funct_t xml_print_pcsw_stats(struct activity *a, int curr, int tab,
@@ -284,7 +286,7 @@ __print_funct_t xml_print_pcsw_stats(struct activity *a, int curr, int tab,
  * @a		Activity structure with statistics.
  * @curr	Index in array for current sample statistics.
  * @tab		Indentation in XML output.
- * @itv		Interval of time in jiffies.
+ * @itv		Interval of time in 1/100th of a second.
  ***************************************************************************
  */
 __print_funct_t xml_print_irq_stats(struct activity *a, int curr, int tab,
@@ -292,12 +294,12 @@ __print_funct_t xml_print_irq_stats(struct activity *a, int curr, int tab,
 {
 	int i;
 	struct stats_irq *sic, *sip;
-	char irqno[8];
+	char irqno[16];
 
 	xprintf(tab++, "<interrupts>");
 	xprintf(tab++, "<int-global per=\"second\">");
 
-	for (i = 0; (i < a->nr) && (i < a->bitmap->b_size + 1); i++) {
+	for (i = 0; (i < a->nr[curr]) && (i < a->bitmap->b_size + 1); i++) {
 
 		sic = (struct stats_irq *) ((char *) a->buf[curr]  + i * a->msize);
 		sip = (struct stats_irq *) ((char *) a->buf[!curr] + i * a->msize);
@@ -331,7 +333,7 @@ __print_funct_t xml_print_irq_stats(struct activity *a, int curr, int tab,
  * @a		Activity structure with statistics.
  * @curr	Index in array for current sample statistics.
  * @tab		Indentation in XML output.
- * @itv		Interval of time in jiffies.
+ * @itv		Interval of time in 1/100th of a second.
  ***************************************************************************
  */
 __print_funct_t xml_print_swap_stats(struct activity *a, int curr, int tab,
@@ -356,7 +358,7 @@ __print_funct_t xml_print_swap_stats(struct activity *a, int curr, int tab,
  * @a		Activity structure with statistics.
  * @curr	Index in array for current sample statistics.
  * @tab		Indentation in XML output.
- * @itv		Interval of time in jiffies.
+ * @itv		Interval of time in 1/100th of a second.
  ***************************************************************************
  */
 __print_funct_t xml_print_paging_stats(struct activity *a, int curr, int tab,
@@ -399,7 +401,7 @@ __print_funct_t xml_print_paging_stats(struct activity *a, int curr, int tab,
  * @a		Activity structure with statistics.
  * @curr	Index in array for current sample statistics.
  * @tab		Indentation in XML output.
- * @itv		Interval of time in jiffies.
+ * @itv		Interval of time in 1/100th of a second.
  ***************************************************************************
  */
 __print_funct_t xml_print_io_stats(struct activity *a, int curr, int tab,
@@ -444,38 +446,46 @@ __print_funct_t xml_print_io_stats(struct activity *a, int curr, int tab,
  * @a		Activity structure with statistics.
  * @curr	Index in array for current sample statistics.
  * @tab		Indentation in XML output.
- * @itv		Interval of time in jiffies.
+ * @itv		Interval of time in 1/100th of a second.
  ***************************************************************************
  */
 __print_funct_t xml_print_memory_stats(struct activity *a, int curr, int tab,
 				       unsigned long long itv)
 {
 	struct stats_memory
-		*smc = (struct stats_memory *) a->buf[curr],
-		*smp = (struct stats_memory *) a->buf[!curr];
+		*smc = (struct stats_memory *) a->buf[curr];
+	unsigned long long nousedmem;
 
 	xprintf(tab, "<memory per=\"second\" unit=\"kB\">");
 
-	if (DISPLAY_MEM_AMT(a->opt_flags)) {
+	if (DISPLAY_MEMORY(a->opt_flags)) {
 
-		xprintf(++tab, "<memfree>%lu</memfree>",
+		nousedmem = smc->frmkb + smc->bufkb + smc->camkb + smc->slabkb;
+		if (nousedmem > smc->tlmkb) {
+			nousedmem = smc->tlmkb;
+		}
+
+		xprintf(++tab, "<memfree>%llu</memfree>",
 			smc->frmkb);
 
-		xprintf(tab, "<memused>%lu</memused>",
-			smc->tlmkb - smc->frmkb);
+		xprintf(tab, "<avail>%llu</avail>",
+			smc->availablekb);
+
+		xprintf(tab, "<memused>%llu</memused>",
+			smc->tlmkb - nousedmem);
 
 		xprintf(tab, "<memused-percent>%.2f</memused-percent>",
 			smc->tlmkb ?
-			SP_VALUE(smc->frmkb, smc->tlmkb, smc->tlmkb) :
+			SP_VALUE(nousedmem, smc->tlmkb, smc->tlmkb) :
 			0.0);
 
-		xprintf(tab, "<buffers>%lu</buffers>",
+		xprintf(tab, "<buffers>%llu</buffers>",
 			smc->bufkb);
 
-		xprintf(tab, "<cached>%lu</cached>",
+		xprintf(tab, "<cached>%llu</cached>",
 			smc->camkb);
 
-		xprintf(tab, "<commit>%lu</commit>",
+		xprintf(tab, "<commit>%llu</commit>",
 			smc->comkb);
 
 		xprintf(tab, "<commit-percent>%.2f</commit-percent>",
@@ -483,39 +493,39 @@ __print_funct_t xml_print_memory_stats(struct activity *a, int curr, int tab,
 			SP_VALUE(0, smc->comkb, smc->tlmkb + smc->tlskb) :
 			0.0);
 
-		xprintf(tab, "<active>%lu</active>",
+		xprintf(tab, "<active>%llu</active>",
 			smc->activekb);
 
-		xprintf(tab, "<inactive>%lu</inactive>",
+		xprintf(tab, "<inactive>%llu</inactive>",
 			smc->inactkb);
 
-		xprintf(tab--, "<dirty>%lu</dirty>",
+		xprintf(tab--, "<dirty>%llu</dirty>",
 			smc->dirtykb);
 
 		if (DISPLAY_MEM_ALL(a->opt_flags)) {
-			xprintf(++tab, "<anonpg>%lu</anonpg>",
+			xprintf(++tab, "<anonpg>%llu</anonpg>",
 				smc->anonpgkb);
 
-			xprintf(tab, "<slab>%lu</slab>",
+			xprintf(tab, "<slab>%llu</slab>",
 				smc->slabkb);
 
-			xprintf(tab, "<kstack>%lu</kstack>",
+			xprintf(tab, "<kstack>%llu</kstack>",
 				smc->kstackkb);
 
-			xprintf(tab, "<pgtbl>%lu</pgtbl>",
+			xprintf(tab, "<pgtbl>%llu</pgtbl>",
 				smc->pgtblkb);
 
-			xprintf(tab--, "<vmused>%lu</vmused>",
+			xprintf(tab--, "<vmused>%llu</vmused>",
 				smc->vmusedkb);
 		}
 	}
 
 	if (DISPLAY_SWAP(a->opt_flags)) {
 
-		xprintf(++tab, "<swpfree>%lu</swpfree>",
+		xprintf(++tab, "<swpfree>%llu</swpfree>",
 			smc->frskb);
 
-		xprintf(tab, "<swpused>%lu</swpused>",
+		xprintf(tab, "<swpused>%llu</swpused>",
 			smc->tlskb - smc->frskb);
 
 		xprintf(tab, "<swpused-percent>%.2f</swpused-percent>",
@@ -523,28 +533,13 @@ __print_funct_t xml_print_memory_stats(struct activity *a, int curr, int tab,
 			SP_VALUE(smc->frskb, smc->tlskb, smc->tlskb) :
 			0.0);
 
-		xprintf(tab, "<swpcad>%lu</swpcad>",
+		xprintf(tab, "<swpcad>%llu</swpcad>",
 			smc->caskb);
 
 		xprintf(tab--, "<swpcad-percent>%.2f</swpcad-percent>",
 			(smc->tlskb - smc->frskb) ?
 			SP_VALUE(0, smc->caskb, smc->tlskb - smc->frskb) :
 			0.0);
-	}
-
-	if (DISPLAY_MEMORY(a->opt_flags)) {
-
-		xprintf(++tab, "<frmpg>%.2f</frmpg>",
-			S_VALUE((double) KB_TO_PG(smp->frmkb),
-				(double) KB_TO_PG(smc->frmkb), itv));
-
-		xprintf(tab, "<bufpg>%.2f</bufpg>",
-			S_VALUE((double) KB_TO_PG(smp->bufkb),
-				(double) KB_TO_PG(smc->bufkb), itv));
-
-		xprintf(tab--, "<campg>%.2f</campg>",
-			S_VALUE((double) KB_TO_PG(smp->camkb),
-				(double) KB_TO_PG(smc->camkb), itv));
 	}
 
 	xprintf(tab, "</memory>");
@@ -558,7 +553,7 @@ __print_funct_t xml_print_memory_stats(struct activity *a, int curr, int tab,
  * @a		Activity structure with statistics.
  * @curr	Index in array for current sample statistics.
  * @tab		Indentation in XML output.
- * @itv		Interval of time in jiffies.
+ * @itv		Interval of time in 1/100th of a second.
  ***************************************************************************
  */
 __print_funct_t xml_print_ktables_stats(struct activity *a, int curr, int tab,
@@ -568,10 +563,10 @@ __print_funct_t xml_print_ktables_stats(struct activity *a, int curr, int tab,
 		*skc = (struct stats_ktables *) a->buf[curr];
 
 	xprintf(tab, "<kernel "
-		"dentunusd=\"%u\" "
-		"file-nr=\"%u\" "
-		"inode-nr=\"%u\" "
-		"pty-nr=\"%u\"/>",
+		"dentunusd=\"%llu\" "
+		"file-nr=\"%llu\" "
+		"inode-nr=\"%llu\" "
+		"pty-nr=\"%llu\"/>",
 		skc->dentry_stat,
 		skc->file_used,
 		skc->inode_used,
@@ -586,7 +581,7 @@ __print_funct_t xml_print_ktables_stats(struct activity *a, int curr, int tab,
  * @a		Activity structure with statistics.
  * @curr	Index in array for current sample statistics.
  * @tab		Indentation in XML output.
- * @itv		Interval of time in jiffies.
+ * @itv		Interval of time in 1/100th of a second.
  ***************************************************************************
  */
 __print_funct_t xml_print_queue_stats(struct activity *a, int curr, int tab,
@@ -596,12 +591,12 @@ __print_funct_t xml_print_queue_stats(struct activity *a, int curr, int tab,
 		*sqc = (struct stats_queue *) a->buf[curr];
 
 	xprintf(tab, "<queue "
-		"runq-sz=\"%lu\" "
-		"plist-sz=\"%u\" "
+		"runq-sz=\"%llu\" "
+		"plist-sz=\"%llu\" "
 		"ldavg-1=\"%.2f\" "
 		"ldavg-5=\"%.2f\" "
 		"ldavg-15=\"%.2f\" "
-		"blocked=\"%lu\"/>",
+		"blocked=\"%llu\"/>",
 		sqc->nr_running,
 		sqc->nr_threads,
 		(double) sqc->load_avg_1 / 100,
@@ -618,42 +613,63 @@ __print_funct_t xml_print_queue_stats(struct activity *a, int curr, int tab,
  * @a		Activity structure with statistics.
  * @curr	Index in array for current sample statistics.
  * @tab		Indentation in XML output.
- * @itv		Interval of time in jiffies.
+ * @itv		Interval of time in 1/100th of a second.
  ***************************************************************************
  */
 __print_funct_t xml_print_serial_stats(struct activity *a, int curr, int tab,
 				       unsigned long long itv)
 {
-	int i;
+	int i, j, j0, found;
 	struct stats_serial *ssc, *ssp;
 
 	xprintf(tab++, "<serial per=\"second\">");
 
-	for (i = 0; i < a->nr; i++) {
+	for (i = 0; i < a->nr[curr]; i++) {
 
-		ssc = (struct stats_serial *) ((char *) a->buf[curr]  + i * a->msize);
-		ssp = (struct stats_serial *) ((char *) a->buf[!curr] + i * a->msize);
+		found = FALSE;
 
-		if (ssc->line == 0)
+		if (a->nr[!curr] > 0) {
+			ssc = (struct stats_serial *) ((char *) a->buf[curr]  + i * a->msize);
+
+			/* Look for corresponding serial line in previous iteration */
+			j = i;
+
+			if (j >= a->nr[!curr]) {
+				j = a->nr[!curr] - 1;
+			}
+
+			j0 = j;
+
+			do {
+				ssp = (struct stats_serial *) ((char *) a->buf[!curr] + j * a->msize);
+				if (ssc->line == ssp->line) {
+					found = TRUE;
+					break;
+				}
+				if (++j >= a->nr[!curr]) {
+					j = 0;
+				}
+			}
+			while (j != j0);
+		}
+
+		if (!found)
 			continue;
 
-		if (ssc->line == ssp->line) {
-
-			xprintf(tab, "<tty line=\"%d\" "
-				"rcvin=\"%.2f\" "
-				"xmtin=\"%.2f\" "
-				"framerr=\"%.2f\" "
-				"prtyerr=\"%.2f\" "
-				"brk=\"%.2f\" "
-				"ovrun=\"%.2f\"/>",
-				ssc->line - 1,
-				S_VALUE(ssp->rx,      ssc->rx,      itv),
-				S_VALUE(ssp->tx,      ssc->tx,      itv),
-				S_VALUE(ssp->frame,   ssc->frame,   itv),
-				S_VALUE(ssp->parity,  ssc->parity,  itv),
-				S_VALUE(ssp->brk,     ssc->brk,     itv),
-				S_VALUE(ssp->overrun, ssc->overrun, itv));
-		}
+		xprintf(tab, "<tty line=\"%d\" "
+			"rcvin=\"%.2f\" "
+			"xmtin=\"%.2f\" "
+			"framerr=\"%.2f\" "
+			"prtyerr=\"%.2f\" "
+			"brk=\"%.2f\" "
+			"ovrun=\"%.2f\"/>",
+			ssc->line,
+			S_VALUE(ssp->rx,      ssc->rx,      itv),
+			S_VALUE(ssp->tx,      ssc->tx,      itv),
+			S_VALUE(ssp->frame,   ssc->frame,   itv),
+			S_VALUE(ssp->parity,  ssc->parity,  itv),
+			S_VALUE(ssp->brk,     ssc->brk,     itv),
+			S_VALUE(ssp->overrun, ssc->overrun, itv));
 	}
 
 	xprintf(--tab, "</serial>");
@@ -667,7 +683,7 @@ __print_funct_t xml_print_serial_stats(struct activity *a, int curr, int tab,
  * @a		Activity structure with statistics.
  * @curr	Index in array for current sample statistics.
  * @tab		Indentation in XML output.
- * @itv		Interval of time in jiffies.
+ * @itv		Interval of time in 1/100th of a second.
  ***************************************************************************
  */
 __print_funct_t xml_print_disk_stats(struct activity *a, int curr, int tab,
@@ -676,18 +692,15 @@ __print_funct_t xml_print_disk_stats(struct activity *a, int curr, int tab,
 	int i, j;
 	struct stats_disk *sdc,	*sdp, sdpzero;
 	struct ext_disk_stats xds;
-	char *dev_name, *persist_dev_name;
+	char *dev_name;
 
 	memset(&sdpzero, 0, STATS_DISK_SIZE);
 
 	xprintf(tab++, "<disk per=\"second\">");
 
-	for (i = 0; i < a->nr; i++) {
+	for (i = 0; i < a->nr[curr]; i++) {
 
 		sdc = (struct stats_disk *) ((char *) a->buf[curr] + i * a->msize);
-
-		if (!(sdc->major + sdc->minor))
-			continue;
 
 		j = check_disk_reg(a, curr, !curr, i);
 		if (j < 0) {
@@ -698,46 +711,43 @@ __print_funct_t xml_print_disk_stats(struct activity *a, int curr, int tab,
 			sdp = (struct stats_disk *) ((char *) a->buf[!curr] + j * a->msize);
 		}
 
+		/* Get device name */
+		dev_name = get_sa_devname(sdc->major, sdc->minor, flags);
+
+		if (a->item_list != NULL) {
+			/* A list of devices has been entered on the command line */
+			if (!search_list_item(a->item_list, dev_name))
+				/* Device not found */
+				continue;
+		}
+
 		/* Compute extended statistics values */
 		compute_ext_disk_stats(sdc, sdp, itv, &xds);
-
-		dev_name = NULL;
-		persist_dev_name = NULL;
-
-		if (DISPLAY_PERSIST_NAME_S(flags)) {
-			persist_dev_name = get_persistent_name_from_pretty(get_devname(sdc->major, sdc->minor, TRUE));
-		}
-
-		if (persist_dev_name) {
-			dev_name = persist_dev_name;
-		}
-		else {
-			if ((USE_PRETTY_OPTION(flags)) && (sdc->major == dm_major)) {
-				dev_name = transform_devmapname(sdc->major, sdc->minor);
-			}
-
-			if (!dev_name) {
-				dev_name = get_devname(sdc->major, sdc->minor,
-						       USE_PRETTY_OPTION(flags));
-			}
-		}
 
 		xprintf(tab, "<disk-device dev=\"%s\" "
 			"tps=\"%.2f\" "
 			"rd_sec=\"%.2f\" "
 			"wr_sec=\"%.2f\" "
+			"rkB=\"%.2f\" "
+			"wkB=\"%.2f\" "
 			"avgrq-sz=\"%.2f\" "
+			"areq-sz=\"%.2f\" "
 			"avgqu-sz=\"%.2f\" "
+			"aqu-sz=\"%.2f\" "
 			"await=\"%.2f\" "
 			"svctm=\"%.2f\" "
 			"util-percent=\"%.2f\"/>",
 			/* Confusion possible here between index and minor numbers */
 			dev_name,
 			S_VALUE(sdp->nr_ios, sdc->nr_ios, itv),
-			S_VALUE(sdp->rd_sect, sdc->rd_sect, itv),
+			S_VALUE(sdp->rd_sect, sdc->rd_sect, itv), /* Unit = sectors (for backward compatibility) */
 			S_VALUE(sdp->wr_sect, sdc->wr_sect, itv),
+			S_VALUE(sdp->rd_sect, sdc->rd_sect, itv) / 2,
+			S_VALUE(sdp->wr_sect, sdc->wr_sect, itv) / 2,
 			/* See iostat for explanations */
-			xds.arqsz,
+			xds.arqsz,	/* Unit = sectors (for backward compatibility) */
+			xds.arqsz / 2,
+			S_VALUE(sdp->rq_ticks, sdc->rq_ticks, itv) / 1000.0,	/* For backward compatibility */
 			S_VALUE(sdp->rq_ticks, sdc->rq_ticks, itv) / 1000.0,
 			xds.await,
 			xds.svctm,
@@ -755,7 +765,7 @@ __print_funct_t xml_print_disk_stats(struct activity *a, int curr, int tab,
  * @a		Activity structure with statistics.
  * @curr	Index in array for current sample statistics.
  * @tab		Indentation in XML output.
- * @itv		Interval of time in jiffies.
+ * @itv		Interval of time in 1/100th of a second.
  ***************************************************************************
  */
 __print_funct_t xml_print_net_dev_stats(struct activity *a, int curr, int tab,
@@ -773,12 +783,16 @@ __print_funct_t xml_print_net_dev_stats(struct activity *a, int curr, int tab,
 	xml_markup_network(tab, OPEN_XML_MARKUP);
 	tab++;
 
-	for (i = 0; i < a->nr; i++) {
+	for (i = 0; i < a->nr[curr]; i++) {
 
 		sndc = (struct stats_net_dev *) ((char *) a->buf[curr] + i * a->msize);
 
-		if (!strcmp(sndc->interface, ""))
-			break;
+		if (a->item_list != NULL) {
+			/* A list of devices has been entered on the command line */
+			if (!search_list_item(a->item_list, sndc->interface))
+				/* Device not found */
+				continue;
+		}
 
 		j = check_net_dev_reg(a, curr, !curr, i);
 		if (j < 0) {
@@ -828,7 +842,7 @@ close_xml_markup:
  * @a		Activity structure with statistics.
  * @curr	Index in array for current sample statistics.
  * @tab		Indentation in XML output.
- * @itv		Interval of time in jiffies.
+ * @itv		Interval of time in 1/100th of a second.
  ***************************************************************************
  */
 __print_funct_t xml_print_net_edev_stats(struct activity *a, int curr, int tab,
@@ -845,12 +859,16 @@ __print_funct_t xml_print_net_edev_stats(struct activity *a, int curr, int tab,
 	xml_markup_network(tab, OPEN_XML_MARKUP);
 	tab++;
 
-	for (i = 0; i < a->nr; i++) {
+	for (i = 0; i < a->nr[curr]; i++) {
 
 		snedc = (struct stats_net_edev *) ((char *) a->buf[curr] + i * a->msize);
 
-		if (!strcmp(snedc->interface, ""))
-			break;
+		if (a->item_list != NULL) {
+			/* A list of devices has been entered on the command line */
+			if (!search_list_item(a->item_list, snedc->interface))
+				/* Device not found */
+				continue;
+		}
 
 		j = check_net_edev_reg(a, curr, !curr, i);
 		if (j < 0) {
@@ -898,7 +916,7 @@ close_xml_markup:
  * @a		Activity structure with statistics.
  * @curr	Index in array for current sample statistics.
  * @tab		Indentation in XML output.
- * @itv		Interval of time in jiffies.
+ * @itv		Interval of time in 1/100th of a second.
  ***************************************************************************
  */
 __print_funct_t xml_print_net_nfs_stats(struct activity *a, int curr, int tab,
@@ -943,7 +961,7 @@ close_xml_markup:
  * @a		Activity structure with statistics.
  * @curr	Index in array for current sample statistics.
  * @tab		Indentation in XML output.
- * @itv		Interval of time in jiffies.
+ * @itv		Interval of time in 1/100th of a second.
  ***************************************************************************
  */
 __print_funct_t xml_print_net_nfsd_stats(struct activity *a, int curr, int tab,
@@ -998,7 +1016,7 @@ close_xml_markup:
  * @a		Activity structure with statistics.
  * @curr	Index in array for current sample statistics.
  * @tab		Indentation in XML output.
- * @itv		Interval of time in jiffies.
+ * @itv		Interval of time in 1/100th of a second.
  ***************************************************************************
  */
 __print_funct_t xml_print_net_sock_stats(struct activity *a, int curr, int tab,
@@ -1042,7 +1060,7 @@ close_xml_markup:
  * @a		Activity structure with statistics.
  * @curr	Index in array for current sample statistics.
  * @tab		Indentation in XML output.
- * @itv		Interval of time in jiffies.
+ * @itv		Interval of time in 1/100th of a second.
  ***************************************************************************
  */
 __print_funct_t xml_print_net_ip_stats(struct activity *a, int curr, int tab,
@@ -1091,7 +1109,7 @@ close_xml_markup:
  * @a		Activity structure with statistics.
  * @curr	Index in array for current sample statistics.
  * @tab		Indentation in XML output.
- * @itv		Interval of time in jiffies.
+ * @itv		Interval of time in 1/100th of a second.
  ***************************************************************************
  */
 __print_funct_t xml_print_net_eip_stats(struct activity *a, int curr, int tab,
@@ -1140,7 +1158,7 @@ close_xml_markup:
  * @a		Activity structure with statistics.
  * @curr	Index in array for current sample statistics.
  * @tab		Indentation in XML output.
- * @itv		Interval of time in jiffies.
+ * @itv		Interval of time in 1/100th of a second.
  ***************************************************************************
  */
 __print_funct_t xml_print_net_icmp_stats(struct activity *a, int curr, int tab,
@@ -1201,7 +1219,7 @@ close_xml_markup:
  * @a		Activity structure with statistics.
  * @curr	Index in array for current sample statistics.
  * @tab		Indentation in XML output.
- * @itv		Interval of time in jiffies.
+ * @itv		Interval of time in 1/100th of a second.
  ***************************************************************************
  */
 __print_funct_t xml_print_net_eicmp_stats(struct activity *a, int curr, int tab,
@@ -1258,7 +1276,7 @@ close_xml_markup:
  * @a		Activity structure with statistics.
  * @curr	Index in array for current sample statistics.
  * @tab		Indentation in XML output.
- * @itv		Interval of time in jiffies.
+ * @itv		Interval of time in 1/100th of a second.
  ***************************************************************************
  */
 __print_funct_t xml_print_net_tcp_stats(struct activity *a, int curr, int tab,
@@ -1299,7 +1317,7 @@ close_xml_markup:
  * @a		Activity structure with statistics.
  * @curr	Index in array for current sample statistics.
  * @tab		Indentation in XML output.
- * @itv		Interval of time in jiffies.
+ * @itv		Interval of time in 1/100th of a second.
  ***************************************************************************
  */
 __print_funct_t xml_print_net_etcp_stats(struct activity *a, int curr, int tab,
@@ -1342,7 +1360,7 @@ close_xml_markup:
  * @a		Activity structure with statistics.
  * @curr	Index in array for current sample statistics.
  * @tab		Indentation in XML output.
- * @itv		Interval of time in jiffies.
+ * @itv		Interval of time in 1/100th of a second.
  ***************************************************************************
  */
 __print_funct_t xml_print_net_udp_stats(struct activity *a, int curr, int tab,
@@ -1383,7 +1401,7 @@ close_xml_markup:
  * @a		Activity structure with statistics.
  * @curr	Index in array for current sample statistics.
  * @tab		Indentation in XML output.
- * @itv		Interval of time in jiffies.
+ * @itv		Interval of time in 1/100th of a second.
  ***************************************************************************
  */
 __print_funct_t xml_print_net_sock6_stats(struct activity *a, int curr, int tab,
@@ -1423,7 +1441,7 @@ close_xml_markup:
  * @a		Activity structure with statistics.
  * @curr	Index in array for current sample statistics.
  * @tab		Indentation in XML output.
- * @itv		Interval of time in jiffies.
+ * @itv		Interval of time in 1/100th of a second.
  ***************************************************************************
  */
 __print_funct_t xml_print_net_ip6_stats(struct activity *a, int curr, int tab,
@@ -1476,7 +1494,7 @@ close_xml_markup:
  * @a		Activity structure with statistics.
  * @curr	Index in array for current sample statistics.
  * @tab		Indentation in XML output.
- * @itv		Interval of time in jiffies.
+ * @itv		Interval of time in 1/100th of a second.
  ***************************************************************************
  */
 __print_funct_t xml_print_net_eip6_stats(struct activity *a, int curr, int tab,
@@ -1531,7 +1549,7 @@ close_xml_markup:
  * @a		Activity structure with statistics.
  * @curr	Index in array for current sample statistics.
  * @tab		Indentation in XML output.
- * @itv		Interval of time in jiffies.
+ * @itv		Interval of time in 1/100th of a second.
  ***************************************************************************
  */
 __print_funct_t xml_print_net_icmp6_stats(struct activity *a, int curr, int tab,
@@ -1598,7 +1616,7 @@ close_xml_markup:
  * @a		Activity structure with statistics.
  * @curr	Index in array for current sample statistics.
  * @tab		Indentation in XML output.
- * @itv		Interval of time in jiffies.
+ * @itv		Interval of time in 1/100th of a second.
  ***************************************************************************
  */
 __print_funct_t xml_print_net_eicmp6_stats(struct activity *a, int curr, int tab,
@@ -1653,7 +1671,7 @@ close_xml_markup:
  * @a		Activity structure with statistics.
  * @curr	Index in array for current sample statistics.
  * @tab		Indentation in XML output.
- * @itv		Interval of time in jiffies.
+ * @itv		Interval of time in 1/100th of a second.
  ***************************************************************************
  */
 __print_funct_t xml_print_net_udp6_stats(struct activity *a, int curr, int tab,
@@ -1694,7 +1712,7 @@ close_xml_markup:
  * @a		Activity structure with statistics.
  * @curr	Index in array for current sample statistics.
  * @tab		Indentation in XML output.
- * @itv		Interval of time in jiffies.
+ * @itv		Interval of time in 1/100th of a second.
  ***************************************************************************
  */
 __print_funct_t xml_print_pwr_cpufreq_stats(struct activity *a, int curr, int tab,
@@ -1702,9 +1720,9 @@ __print_funct_t xml_print_pwr_cpufreq_stats(struct activity *a, int curr, int ta
 {
 	int i;
 	struct stats_pwr_cpufreq *spc;
-	char cpuno[8];
+	char cpuno[16];
 
-	if (!IS_SELECTED(a->options) || (a->nr <= 0))
+	if (!IS_SELECTED(a->options) || (a->nr[curr] <= 0))
 		goto close_xml_markup;
 
 	xml_markup_power_management(tab, OPEN_XML_MARKUP);
@@ -1712,27 +1730,28 @@ __print_funct_t xml_print_pwr_cpufreq_stats(struct activity *a, int curr, int ta
 
 	xprintf(tab++, "<cpu-frequency unit=\"MHz\">");
 
-	for (i = 0; (i < a->nr) && (i < a->bitmap->b_size + 1); i++) {
+	for (i = 0; (i < a->nr[curr]) && (i < a->bitmap->b_size + 1); i++) {
 
-		spc = (struct stats_pwr_cpufreq *) ((char *) a->buf[curr]  + i * a->msize);
+		spc = (struct stats_pwr_cpufreq *) ((char *) a->buf[curr] + i * a->msize);
 
 		/* Should current CPU (including CPU "all") be displayed? */
-		if (a->bitmap->b_array[i >> 3] & (1 << (i & 0x07))) {
+		if (!(a->bitmap->b_array[i >> 3] & (1 << (i & 0x07))))
+			/* No */
+			continue;
 
-			/* Yes: Display it */
-			if (!i) {
-				/* This is CPU "all" */
-				strcpy(cpuno, "all");
-			}
-			else {
-				sprintf(cpuno, "%d", i - 1);
-			}
-
-			xprintf(tab, "<cpufreq number=\"%s\" "
-				"frequency=\"%.2f\"/>",
-				cpuno,
-				((double) spc->cpufreq) / 100);
+		/* Yes: Display it */
+		if (!i) {
+			/* This is CPU "all" */
+			strcpy(cpuno, "all");
 		}
+		else {
+			sprintf(cpuno, "%d", i - 1);
+		}
+
+		xprintf(tab, "<cpufreq number=\"%s\" "
+			"frequency=\"%.2f\"/>",
+			cpuno,
+			((double) spc->cpufreq) / 100);
 	}
 
 	xprintf(--tab, "</cpu-frequency>");
@@ -1752,7 +1771,7 @@ close_xml_markup:
  * @a		Activity structure with statistics.
  * @curr	Index in array for current sample statistics.
  * @tab		Indentation in XML output.
- * @itv		Interval of time in jiffies.
+ * @itv		Interval of time in 1/100th of a second.
  ***************************************************************************
  */
 __print_funct_t xml_print_pwr_fan_stats(struct activity *a, int curr, int tab,
@@ -1761,7 +1780,7 @@ __print_funct_t xml_print_pwr_fan_stats(struct activity *a, int curr, int tab,
 	int i;
 	struct stats_pwr_fan *spc;
 
-	if (!IS_SELECTED(a->options) || (a->nr <= 0))
+	if (!IS_SELECTED(a->options) || (a->nr[curr] <= 0))
 		goto close_xml_markup;
 
 	xml_markup_power_management(tab, OPEN_XML_MARKUP);
@@ -1769,8 +1788,8 @@ __print_funct_t xml_print_pwr_fan_stats(struct activity *a, int curr, int tab,
 
 	xprintf(tab++, "<fan-speed unit=\"rpm\">");
 
-	for (i = 0; i < a->nr; i++) {
-		spc = (struct stats_pwr_fan *) ((char *) a->buf[curr]  + i * a->msize);
+	for (i = 0; i < a->nr[curr]; i++) {
+		spc = (struct stats_pwr_fan *) ((char *) a->buf[curr] + i * a->msize);
 
 		xprintf(tab, "<fan number=\"%d\" rpm=\"%llu\" drpm=\"%llu\" device=\"%s\"/>",
 			i + 1,
@@ -1796,7 +1815,7 @@ close_xml_markup:
  * @a		Activity structure with statistics.
  * @curr	Index in array for current sample statistics.
  * @tab		Indentation in XML output.
- * @itv		Interval of time in jiffies.
+ * @itv		Interval of time in 1/100th of a second.
  ***************************************************************************
  */
 __print_funct_t xml_print_pwr_temp_stats(struct activity *a, int curr, int tab,
@@ -1805,7 +1824,7 @@ __print_funct_t xml_print_pwr_temp_stats(struct activity *a, int curr, int tab,
 	int i;
 	struct stats_pwr_temp *spc;
 
-	if (!IS_SELECTED(a->options) || (a->nr <= 0))
+	if (!IS_SELECTED(a->options) || (a->nr[curr] <= 0))
 		goto close_xml_markup;
 
 	xml_markup_power_management(tab, OPEN_XML_MARKUP);
@@ -1813,8 +1832,8 @@ __print_funct_t xml_print_pwr_temp_stats(struct activity *a, int curr, int tab,
 
 	xprintf(tab++, "<temperature unit=\"degree Celsius\">");
 
-	for (i = 0; i < a->nr; i++) {
-		spc = (struct stats_pwr_temp *) ((char *) a->buf[curr]  + i * a->msize);
+	for (i = 0; i < a->nr[curr]; i++) {
+		spc = (struct stats_pwr_temp *) ((char *) a->buf[curr] + i * a->msize);
 
 		xprintf(tab, "<temp number=\"%d\" degC=\"%.2f\" percent-temp=\"%.2f\" device=\"%s\"/>",
 			i + 1,
@@ -1842,7 +1861,7 @@ close_xml_markup:
  * @a		Activity structure with statistics.
  * @curr	Index in array for current sample statistics.
  * @tab		Indentation in XML output.
- * @itv		Interval of time in jiffies.
+ * @itv		Interval of time in 1/100th of a second.
  ***************************************************************************
  */
 __print_funct_t xml_print_pwr_in_stats(struct activity *a, int curr, int tab,
@@ -1851,7 +1870,7 @@ __print_funct_t xml_print_pwr_in_stats(struct activity *a, int curr, int tab,
 	int i;
 	struct stats_pwr_in *spc;
 
-	if (!IS_SELECTED(a->options) || (a->nr <= 0))
+	if (!IS_SELECTED(a->options) || (a->nr[curr] <= 0))
 		goto close_xml_markup;
 
 	xml_markup_power_management(tab, OPEN_XML_MARKUP);
@@ -1859,8 +1878,8 @@ __print_funct_t xml_print_pwr_in_stats(struct activity *a, int curr, int tab,
 
 	xprintf(tab++, "<voltage-input unit=\"V\">");
 
-	for (i = 0; i < a->nr; i++) {
-		spc = (struct stats_pwr_in *) ((char *) a->buf[curr]  + i * a->msize);
+	for (i = 0; i < a->nr[curr]; i++) {
+		spc = (struct stats_pwr_in *) ((char *) a->buf[curr] + i * a->msize);
 
 		xprintf(tab, "<in number=\"%d\" inV=\"%.2f\" percent-in=\"%.2f\" device=\"%s\"/>",
 			i,
@@ -1888,7 +1907,7 @@ close_xml_markup:
  * @a		Activity structure with statistics.
  * @curr	Index in array for current sample statistics.
  * @tab		Indentation in XML output.
- * @itv		Interval of time in jiffies.
+ * @itv		Interval of time in 1/100th of a second.
  ***************************************************************************
  */
 __print_funct_t xml_print_huge_stats(struct activity *a, int curr, int tab,
@@ -1899,10 +1918,10 @@ __print_funct_t xml_print_huge_stats(struct activity *a, int curr, int tab,
 
 	xprintf(tab, "<hugepages unit=\"kB\">");
 
-	xprintf(++tab, "<hugfree>%lu</hugfree>",
+	xprintf(++tab, "<hugfree>%llu</hugfree>",
 		smc->frhkb);
 
-	xprintf(tab, "<hugused>%lu</hugused>",
+	xprintf(tab, "<hugused>%llu</hugused>",
 		smc->tlhkb - smc->frhkb);
 
 	xprintf(tab--, "<hugused-percent>%.2f</hugused-percent>",
@@ -1921,7 +1940,7 @@ __print_funct_t xml_print_huge_stats(struct activity *a, int curr, int tab,
  * @a		Activity structure with statistics.
  * @curr	Index in array for current sample statistics.
  * @tab		Indentation in XML output.
- * @itv		Interval of time in jiffies.
+ * @itv		Interval of time in 1/100th of a second.
  ***************************************************************************
  */
 __print_funct_t xml_print_pwr_wghfreq_stats(struct activity *a, int curr, int tab,
@@ -1930,9 +1949,9 @@ __print_funct_t xml_print_pwr_wghfreq_stats(struct activity *a, int curr, int ta
 	int i, k;
 	struct stats_pwr_wghfreq *spc, *spp, *spc_k, *spp_k;
 	unsigned long long tis, tisfreq;
-	char cpuno[8];
+	char cpuno[16];
 
-	if (!IS_SELECTED(a->options) || (a->nr <= 0))
+	if (!IS_SELECTED(a->options) || (a->nr[curr] <= 0))
 		goto close_xml_markup;
 
 	xml_markup_power_management(tab, OPEN_XML_MARKUP);
@@ -1940,43 +1959,43 @@ __print_funct_t xml_print_pwr_wghfreq_stats(struct activity *a, int curr, int ta
 
 	xprintf(tab++, "<cpu-weighted-frequency unit=\"MHz\">");
 
-	for (i = 0; (i < a->nr) && (i < a->bitmap->b_size + 1); i++) {
+	for (i = 0; (i < a->nr[curr]) && (i < a->bitmap->b_size + 1); i++) {
 
 		spc = (struct stats_pwr_wghfreq *) ((char *) a->buf[curr]  + i * a->msize * a->nr2);
 		spp = (struct stats_pwr_wghfreq *) ((char *) a->buf[!curr] + i * a->msize * a->nr2);
 
 		/* Should current CPU (including CPU "all") be displayed? */
-		if (a->bitmap->b_array[i >> 3] & (1 << (i & 0x07))) {
+		if (!(a->bitmap->b_array[i >> 3] & (1 << (i & 0x07))))
+			/* No */
+			continue;
 
-			/* Yes... */
-			tisfreq = 0;
-			tis = 0;
+		tisfreq = 0;
+		tis = 0;
 
-			for (k = 0; k < a->nr2; k++) {
+		for (k = 0; k < a->nr2; k++) {
 
-				spc_k = (struct stats_pwr_wghfreq *) ((char *) spc + k * a->msize);
-				if (!spc_k->freq)
-					break;
-				spp_k = (struct stats_pwr_wghfreq *) ((char *) spp + k * a->msize);
+			spc_k = (struct stats_pwr_wghfreq *) ((char *) spc + k * a->msize);
+			if (!spc_k->freq)
+				break;
+			spp_k = (struct stats_pwr_wghfreq *) ((char *) spp + k * a->msize);
 
-				tisfreq += (spc_k->freq / 1000) *
-				           (spc_k->time_in_state - spp_k->time_in_state);
-				tis     += (spc_k->time_in_state - spp_k->time_in_state);
-			}
-
-			if (!i) {
-				/* This is CPU "all" */
-				strcpy(cpuno, "all");
-			}
-			else {
-				sprintf(cpuno, "%d", i - 1);
-			}
-
-			xprintf(tab, "<cpuwfreq number=\"%s\" "
-				"weighted-frequency=\"%.2f\"/>",
-				cpuno,
-				tis ? ((double) tisfreq) / tis : 0.0);
+			tisfreq += (spc_k->freq / 1000) *
+			           (spc_k->time_in_state - spp_k->time_in_state);
+			tis     += (spc_k->time_in_state - spp_k->time_in_state);
 		}
+
+		if (!i) {
+			/* This is CPU "all" */
+			strcpy(cpuno, "all");
+		}
+		else {
+			sprintf(cpuno, "%d", i - 1);
+		}
+
+		xprintf(tab, "<cpuwfreq number=\"%s\" "
+			"weighted-frequency=\"%.2f\"/>",
+			cpuno,
+			tis ? ((double) tisfreq) / tis : 0.0);
 	}
 
 	xprintf(--tab, "</cpu-weighted-frequency>");
@@ -1996,7 +2015,7 @@ close_xml_markup:
  * @a		Activity structure with statistics.
  * @curr	Index in array for current sample statistics.
  * @tab		Indentation in XML output.
- * @itv		Interval of time in jiffies.
+ * @itv		Interval of time in 1/100th of a second.
  ***************************************************************************
  */
 __print_funct_t xml_print_pwr_usb_stats(struct activity *a, int curr, int tab,
@@ -2005,7 +2024,7 @@ __print_funct_t xml_print_pwr_usb_stats(struct activity *a, int curr, int tab,
 	int i;
 	struct stats_pwr_usb *suc;
 
-	if (!IS_SELECTED(a->options) || (a->nr <= 0))
+	if (!IS_SELECTED(a->options) || (a->nr[curr] <= 0))
 		goto close_xml_markup;
 
 	xml_markup_power_management(tab, OPEN_XML_MARKUP);
@@ -2013,12 +2032,8 @@ __print_funct_t xml_print_pwr_usb_stats(struct activity *a, int curr, int tab,
 
 	xprintf(tab++, "<usb-devices>");
 
-	for (i = 0; i < a->nr; i++) {
-		suc = (struct stats_pwr_usb *) ((char *) a->buf[curr]  + i * a->msize);
-
-		if (!suc->bus_nr)
-			/* Bus#0 doesn't exist: We are at the end of the list */
-			break;
+	for (i = 0; i < a->nr[curr]; i++) {
+		suc = (struct stats_pwr_usb *) ((char *) a->buf[curr] + i * a->msize);
 
 		xprintf(tab, "<usb bus_number=\"%d\" idvendor=\"%x\" idprod=\"%x\" "
 			     "maxpower=\"%u\" manufact=\"%s\" product=\"%s\"/>",
@@ -2047,7 +2062,7 @@ close_xml_markup:
  * @a		Activity structure with statistics.
  * @curr	Index in array for current sample statistics.
  * @tab		Indentation in XML output.
- * @itv		Interval of time in jiffies.
+ * @itv		Interval of time in 1/100th of a second.
  ***************************************************************************
  */
 __print_funct_t xml_print_filesystem_stats(struct activity *a, int curr, int tab,
@@ -2058,13 +2073,17 @@ __print_funct_t xml_print_filesystem_stats(struct activity *a, int curr, int tab
 
 	xprintf(tab++, "<filesystems>");
 
-	for (i = 0; i < a->nr; i++) {
+	for (i = 0; i < a->nr[curr]; i++) {
 
 		sfc = (struct stats_filesystem *) ((char *) a->buf[curr] + i * a->msize);
 
-		if (!sfc->f_blocks)
-			/* Size of filesystem is zero: We are at the end of the list */
-			break;
+		if (a->item_list != NULL) {
+			/* A list of devices has been entered on the command line */
+			if (!search_list_item(a->item_list,
+					      DISPLAY_MOUNT(a->opt_flags) ? sfc->mountp : sfc->fs_name))
+				/* Device not found */
+				continue;
+		}
 
 		xprintf(tab, "<filesystem %s=\"%s\" "
 			"MBfsfree=\"%.0f\" "
@@ -2100,29 +2119,52 @@ __print_funct_t xml_print_filesystem_stats(struct activity *a, int curr, int tab
  * @a		Activity structure with statistics.
  * @curr	Index in array for current sample statistics.
  * @tab		Indentation in XML output.
- * @itv		Interval of time in jiffies.
+ * @itv		Interval of time in 1/100th of a second.
  ***************************************************************************
  */
 __print_funct_t xml_print_fchost_stats(struct activity *a, int curr, int tab,
 				       unsigned long long itv)
 {
-	int i;
+	int i, j, j0, found;
 	struct stats_fchost *sfcc, *sfcp;
 
-	if (!IS_SELECTED(a->options) || (a->nr <= 0))
+	if (!IS_SELECTED(a->options) || (a->nr[curr] <= 0))
 		goto close_xml_markup;
 
 	xml_markup_network(tab, OPEN_XML_MARKUP);
 	tab++;
 
-	for (i = 0; i < a->nr; i++) {
+	for (i = 0; i < a->nr[curr]; i++) {
 
-		sfcc = (struct stats_fchost *) ((char *) a->buf[curr] + i * a->msize);
-		sfcp = (struct stats_fchost *) ((char *) a->buf[!curr] + i * a->msize);
+		found = FALSE;
 
-		if (!sfcc->fchost_name[0])
-			/* We are at the end of the list */
-			break;
+		if (a->nr[!curr] > 0) {
+			sfcc = (struct stats_fchost *) ((char *) a->buf[curr] + i * a->msize);
+
+			/* Look for corresponding structure in previous iteration */
+			j = i;
+
+			if (j >= a->nr[!curr]) {
+				j = a->nr[!curr] - 1;
+			}
+
+			j0 = j;
+
+			do {
+				sfcp = (struct stats_fchost *) ((char *) a->buf[!curr] + j * a->msize);
+				if (!strcmp(sfcc->fchost_name, sfcp->fchost_name)) {
+					found = TRUE;
+					break;
+				}
+				if (++j >= a->nr[!curr]) {
+					j = 0;
+				}
+			}
+			while (j != j0);
+		}
+
+		if (!found)
+			continue;
 
 		xprintf(tab, "<fchost name=\"%s\" "
 			"fch_rxf=\"%.2f\" "
@@ -2134,6 +2176,80 @@ __print_funct_t xml_print_fchost_stats(struct activity *a, int curr, int tab,
 			S_VALUE(sfcp->f_txframes, sfcc->f_txframes, itv),
 			S_VALUE(sfcp->f_rxwords,  sfcc->f_rxwords,  itv),
 			S_VALUE(sfcp->f_txwords,  sfcc->f_rxwords,  itv));
+	}
+	tab--;
+
+close_xml_markup:
+	if (CLOSE_MARKUP(a->options)) {
+		xml_markup_network(tab, CLOSE_XML_MARKUP);
+	}
+}
+
+/*
+ ***************************************************************************
+ * Display softnet statistics in XML.
+ *
+ * IN:
+ * @a		Activity structure with statistics.
+ * @curr	Index in array for current sample statistics.
+ * @tab		Indentation in XML output.
+ * @itv		Interval of time in 1/100th of a second.
+ ***************************************************************************
+ */
+__print_funct_t xml_print_softnet_stats(struct activity *a, int curr, int tab,
+					unsigned long long itv)
+{
+	int i;
+	struct stats_softnet *ssnc, *ssnp;
+	char cpuno[16];
+	unsigned char offline_cpu_bitmap[BITMAP_SIZE(NR_CPUS)] = {0};
+
+	if (!IS_SELECTED(a->options) || (a->nr[curr] <= 0))
+		goto close_xml_markup;
+
+	xml_markup_network(tab, OPEN_XML_MARKUP);
+	tab++;
+
+	/* @nr[curr] cannot normally be greater than @nr_ini */
+	if (a->nr[curr] > a->nr_ini) {
+		a->nr_ini = a->nr[curr];
+	}
+
+	/* Compute statistics for CPU "all" */
+	get_global_soft_statistics(a, !curr, curr, flags, offline_cpu_bitmap);
+
+	for (i = 0; (i < a->nr_ini) && (i < a->bitmap->b_size + 1); i++) {
+
+		/* Should current CPU (including CPU "all") be displayed? */
+		if (!(a->bitmap->b_array[i >> 3] & (1 << (i & 0x07))) ||
+		    offline_cpu_bitmap[i >> 3] & (1 << (i & 0x07)))
+			/* No */
+			continue;
+
+		ssnc = (struct stats_softnet *) ((char *) a->buf[curr]  + i * a->msize);
+		ssnp = (struct stats_softnet *) ((char *) a->buf[!curr] + i * a->msize);
+
+		/* Yes: Display it */
+		if (!i) {
+			/* This is CPU "all" */
+			strcpy(cpuno, "all");
+		}
+		else {
+			sprintf(cpuno, "%d", i - 1);
+		}
+
+		xprintf(tab, "<softnet cpu=\"%s\" "
+			"total=\"%.2f\" "
+			"dropd=\"%.2f\" "
+			"squeezd=\"%.2f\" "
+			"rx_rps=\"%.2f\" "
+			"flw_lim=\"%.2f\"/>",
+			 cpuno,
+			 S_VALUE(ssnp->processed,    ssnc->processed,    itv),
+			 S_VALUE(ssnp->dropped,      ssnc->dropped,      itv),
+			 S_VALUE(ssnp->time_squeeze, ssnc->time_squeeze, itv),
+			 S_VALUE(ssnp->received_rps, ssnc->received_rps, itv),
+			 S_VALUE(ssnp->flow_limit,   ssnc->flow_limit,   itv));
 	}
 	tab--;
 

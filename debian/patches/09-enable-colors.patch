@@ -1,0 +1,133 @@
+From: Robert Luberda <robert@debian.org>
+Date: Sun, 27 May 2018 10:21:55 +0200
+Subject: Enable colors by default
+
+Bug-Debian: https://bugs.debian.org/887152
+---
+ common.c          | 10 ++++++----
+ man/cifsiostat.in |  5 +++++
+ man/iostat.in     |  5 +++++
+ man/mpstat.1      |  5 +++++
+ man/pidstat.1     |  5 +++++
+ man/sar.in        |  5 +++++
+ man/tapestat.1    |  5 +++++
+ 7 files changed, 36 insertions(+), 4 deletions(-)
+
+diff --git a/common.c b/common.c
+index d418abf..8928432 100644
+--- a/common.c
++++ b/common.c
+@@ -986,11 +986,13 @@ void init_colors(void)
+ 	int len;
+ 
+ 	/* Read S_COLORS environment variable */
+-	if (((e = getenv(ENV_COLORS)) == NULL) ||
+-	    !strcmp(e, C_NEVER) ||
+-	    (strcmp(e, C_ALWAYS) && !isatty(STDOUT_FILENO))) {
++	if ((e = getenv(ENV_COLORS)) == NULL
++	   ? !isatty(STDOUT_FILENO)
++	   : (!strcmp(e, C_NEVER) ||
++	      (strcmp(e, C_ALWAYS) && !isatty(STDOUT_FILENO)))) {
+ 		/*
+-		 * Environment variable not set, or set to "never",
++		 * Environment variable not set and stdout is not terminal,
++		 * or set to "never",
+ 		 * or set to "auto" and stdout is not a terminal:
+ 		 * Unset color strings.
+ 		 */
+diff --git a/man/cifsiostat.in b/man/cifsiostat.in
+index 74677cb..1099aad 100644
+--- a/man/cifsiostat.in
++++ b/man/cifsiostat.in
+@@ -133,6 +133,11 @@ or
+ .IR auto
+ (the latter is the default).
+ 
++Note: On Debian sysstems the colors are displayed by default when output is connected
++to the terminal, even if this variable is not set (i.e. unset variable is treated as
++if it were set to
++.IR auto ).
++
+ Please note that the color (being red, yellow, or some other color) used to display a value
+ is not indicative of any kind of issue simply because of the color. It only indicates different
+ ranges of values.
+diff --git a/man/iostat.in b/man/iostat.in
+index 60a2ba0..0ab71a6 100644
+--- a/man/iostat.in
++++ b/man/iostat.in
+@@ -409,6 +409,11 @@ or
+ .IR auto
+ (the latter is the default).
+ 
++Note: On Debian sysstems the colors are displayed by default when output is connected
++to the terminal, even if this variable is not set (i.e. unset variable is treated as
++if it were set to
++.IR auto ).
++
+ Please note that the color (being red, yellow, or some other color) used to display a value
+ is not indicative of any kind of issue simply because of the color. It only indicates different
+ ranges of values.
+diff --git a/man/mpstat.1 b/man/mpstat.1
+index ab34787..f9d4957 100644
+--- a/man/mpstat.1
++++ b/man/mpstat.1
+@@ -233,6 +233,11 @@ or
+ .IR auto
+ (the latter is the default).
+ 
++Note: On Debian sysstems the colors are displayed by default when output is connected
++to the terminal, even if this variable is not set (i.e. unset variable is treated as
++if it were set to
++.IR auto ).
++
+ Please note that the color (being red, yellow, or some other color) used to display a value
+ is not indicative of any kind of issue simply because of the color. It only indicates different
+ ranges of values.
+diff --git a/man/pidstat.1 b/man/pidstat.1
+index 20c8c9a..940e2dc 100644
+--- a/man/pidstat.1
++++ b/man/pidstat.1
+@@ -583,6 +583,11 @@ or
+ .IR auto
+ (the latter is the default).
+ 
++Note: On Debian sysstems the colors are displayed by default when output is connected
++to the terminal, even if this variable is not set (i.e. unset variable is treated as
++if it were set to
++.IR auto ).
++
+ Please note that the color (being red, yellow, or some other color) used to display a value
+ is not indicative of any kind of issue simply because of the color. It only indicates different
+ ranges of values.
+diff --git a/man/sar.in b/man/sar.in
+index 522c777..63f1bd6 100644
+--- a/man/sar.in
++++ b/man/sar.in
+@@ -2303,6 +2303,11 @@ or
+ .IR auto
+ (the latter is the default).
+ 
++Note: On Debian sysstems the colors are displayed by default when output is connected
++to the terminal, even if this variable is not set (i.e. unset variable is treated as
++if it were set to
++.IR auto ).
++
+ Please note that the color (being red, yellow, or some other color) used to display a value
+ is not indicative of any kind of issue simply because of the color. It only indicates different
+ ranges of values.
+diff --git a/man/tapestat.1 b/man/tapestat.1
+index 23e9396..dd5e4ba 100644
+--- a/man/tapestat.1
++++ b/man/tapestat.1
+@@ -193,6 +193,11 @@ or
+ .IR auto
+ (the latter is the default).
+ 
++Note: On Debian sysstems the colors are displayed by default when output is connected
++to the terminal, even if this variable is not set (i.e. unset variable is treated as
++if it were set to
++.IR auto ).
++
+ Please note that the color (being red, yellow, or some other color) used to display a value
+ is not indicative of any kind of issue simply because of the color. It only indicates different
+ ranges of values.

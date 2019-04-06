@@ -1,6 +1,6 @@
 From: Robert Luberda <robert@debian.org>
 Date: Tue, 23 Mar 2010 22:04:47 +0100
-Subject: 03-manpages
+Subject: Debian note in man pages
 
 Added README.Debian file and the 'Debian note' to sa1 and sa2 man pages
 to explain source of common problems (closes: #279049, #269712).
@@ -10,7 +10,7 @@ to explain source of common problems (closes: #279049, #269712).
  2 files changed, 10 insertions(+), 1 deletion(-)
 
 diff --git a/man/sa1.in b/man/sa1.in
-index 7f6f88d..20f6730 100644
+index 36ca008..35458b8 100644
 --- a/man/sa1.in
 +++ b/man/sa1.in
 @@ -63,7 +63,11 @@ To collect data (including those from disks) every 10 minutes,
@@ -27,7 +27,7 @@ index 7f6f88d..20f6730 100644
  .I @SA_DIR@/saDD
  .br
 diff --git a/man/sa2.in b/man/sa2.in
-index b27f102..ddd7931 100644
+index 0674b25..56421cf 100644
 --- a/man/sa2.in
 +++ b/man/sa2.in
 @@ -50,6 +50,11 @@ in the

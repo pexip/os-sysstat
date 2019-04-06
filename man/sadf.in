@@ -1,16 +1,22 @@
-.TH SADF 1 "MAY 2016" Linux "Linux User's Manual" -*- nroff -*-
+.TH SADF 1 "JULY 2018" Linux "Linux User's Manual" -*- nroff -*-
 .SH NAME
 sadf \- Display data collected by sar in multiple formats.
 .SH SYNOPSIS
-.B sadf [ -C ] [ -c | -d | -g | -j | -p | -x ] [ -H ] [ -h ] [ -T | -t | -U ] [ -V ] [ -O
+.B sadf [ -C ] [ -c | -d | -g | -j | -p | -r | -x ] [ -H ] [ -h ] [ -T | -t | -U ] [ -V ] [ -O
 .I opts
 .B [,...] ] [ -P {
-.I cpu
-.B [,...] | ALL } ] [ -s [
+.I cpu_list
+.B | ALL } ] [ -s [
 .I hh:mm[:ss]
 .B ] ] [ -e [
 .I hh:mm[:ss]
-.B ] ] [ --
+.B ] ] [ --dev=
+.I dev_list
+.B ] [ --fs=
+.I fs_list
+.B ] [ --iface=
+.I iface_list
+.B ] [ --
 .I sar_options
 .B ] [
 .I interval
@@ -125,9 +131,22 @@ by
 .I sar_options
 command line options.
 Note that timestamp output can be controlled by options -T, -t and -U.
+.IP --dev=dev_list
+Specify the block devices for which statistics are to be displayed by
+.BR sadf .
+.IR dev_list
+is a list of comma-separated device names. Useful with option -d from
+.BR sar .
 .IP "-e [ hh:mm[:ss] ]"
 Set the ending time of the report, given in local time. The default ending
 time is 18:00:00. Hours must be given in 24-hour format.
+.IP --fs=fs_list
+Specify the filesystems for which statistics are to be displayed by
+.BR sadf .
+.IR fs_list
+is a list of comma-separated filesystem names or mountpoints. Useful with
+option -F from
+.BR sar .
 .IP -g
 Print the contents of the data file in SVG (Scalable Vector Graphics) format.
 This option enables you to display some fancy graphs in your web browser.
@@ -144,13 +163,21 @@ been specified, then the header data (metadata) of the data file are displayed.
 .IP -h
 When used in conjunction with option -d, all activities
 will be displayed horizontally on a single line.
+.IP --iface=iface_list
+Specify the network interfaces for which statistics are to be displayed by
+.BR sadf .
+.IR iface_list
+is a list of comma-separated interface names. Useful with options -n DEV and
+-n EDEV from
+.BR sar .
 .IP -j
 Print the contents of the data file in JSON (JavaScript Object Notation)
 format. Timestamps can be controlled by options -T and -t.
 .IP "-O opts [,...]"
-Use the specified options to control SVG output displayed by
-.B sadf -g.
-Possible options are:
+Use the specified options to control the output of
+.BR sadf .
+The following options are used to control SVG output displayed by
+.BR "sadf -g":
 
 .B autoscale
 .RS
@@ -163,6 +190,12 @@ view, some with only very small values, and others with high ones,
 the latter making the former hardly visible.
 .RE
 
+.BR height= value
+.RS
+Set SVG canvas height to
+.IR value .
+.RE
+
 .B oneday
 .RS
 Display graphs data over a period of 24 hours. Note that hours are still
@@ -170,19 +203,55 @@ printed in UTC by default: You should use option -T to print them in local
 time and get a time window starting from midnight.
 .RE
 
+.B packed
+.RS
+Group all views from the same activity (and for the same device) on the same row.
+.RE
+
+.B showidle
+.RS
+Also display %idle state in graphs for CPU statistics.
+.RE
+
+.B showinfo
+.RS
+Display additional information (such as the date and the host name) on each view.
+.RE
+
+.B showtoc
+.RS
+Add a table of contents at the beginning of the SVG output, consisting of links
+pointing at the first graph of each activity.
+.RE
+
 .B skipempty
 .RS
 Do not display views where all graphs have only zero values.
 .RE
+
+The following option is used to control raw output displayed by
+.BR "sadf -r":
+
+.B debug
+.RS
+Display additional information, mainly useful for debugging purpose.
 .RE
-.IP "-P { cpu [,...] | ALL }"
+.RE
+.IP "-P { cpu_list | ALL }"
 Tell
 .B sadf
 that processor dependent statistics are to be reported only for the
-specified processor or processors. Specifying the
+specified processor or processors.
+.I cpu_list
+is a list of comma-separated values or range of values (e.g.,
+.BR 0,2,4-7,12- ).
+Note that processor 0 is the first processor, and processor
+.B all
+is the global average among all processors.
+Specifying the
 .B ALL
 keyword reports statistics for each individual processor, and globally for
-all processors. Note that processor 0 is the first processor.
+all processors.
 .IP -p
 Print the contents of the data file in a format that can
 easily be handled by pattern processing commands like awk.
@@ -192,6 +261,10 @@ hostname of the host where the file was created, the interval value
 the device name (or - if not applicable),
 the field name and its value.
 Note that timestamp output can be controlled by options -T, -t and -U.
+.IP -r
+Print the raw contents of the data file. With this format, the values for
+all the counters are displayed as read from the kernel, which means e.g., that
+no average values are calculated over the elapsed time interval.
 .IP "-s [ hh:mm[:ss] ]"
 Set the starting time of the data (given in local time), causing the
 .B sadf
@@ -247,7 +320,7 @@ by a pattern processing command.
 
 .SH BUGS
 SVG output (as created by option -g) is fully compliant with SVG 1.1 standard.
-Graphics have been succesfully displayed in various web browsers, including
+Graphics have been successfully displayed in various web browsers, including
 Firefox, Chrome and Opera. Yet SVG rendering is broken on Microsoft browsers
 (tested on Internet Explorer 11 and Edge 13.1): So please don't use them.
 
@@ -269,5 +342,7 @@ Sebastien Godard (sysstat <at> orange.fr)
 .BR sa1 (8),
 .BR sa2 (8),
 .BR sysstat (5)
+
+.I https://github.com/sysstat/sysstat
 
 .I http://pagesperso-orange.fr/sebastien.godard/

@@ -1,8 +1,7 @@
 From: Robert Luberda <robert@debian.org>
 Date: Tue, 23 Mar 2010 22:04:47 +0100
-Subject: 04-configs
+Subject: Minor fixes in config files
 
-Minor fixes in config files.
 ---
  cron/crontab.sample  | 3 ---
  sysstat.sysconfig.in | 9 ++++++---
@@ -21,7 +20,7 @@ index 7cc3b44..40c5025 100644
  # 8am-7pm activity reports every 20 minutes during weekdays.
  # 0 8-18 * * 1-5 @SA_LIB_DIR@/sa1 1200 3 &
 diff --git a/sysstat.sysconfig.in b/sysstat.sysconfig.in
-index fc7c7dd..13bb567 100644
+index 796da1f..7d20252 100644
 --- a/sysstat.sysconfig.in
 +++ b/sysstat.sysconfig.in
 @@ -1,6 +1,7 @@
@@ -30,8 +29,8 @@ index fc7c7dd..13bb567 100644
  
  # How long to keep log files (in days).
 +# Used by sa2(8) script
- # If value is greater than 28, then log files are kept in
- # multiple directories, one for each month.
+ # If value is greater than 28, then use sadc's option -D to prevent older
+ # data files from being overwritten. See sadc(8) and sysstat(5) manual pages.
  HISTORY=@HISTORY@
 @@ -8,9 +9,11 @@ HISTORY=@HISTORY@
  # Compress (using xz, gzip or bzip2) sa and sar files older than (in days):
@@ -45,5 +44,5 @@ index fc7c7dd..13bb567 100644
 +# statisitcs. Use `-S XALL' to collect all available statistics.
 +SADC_OPTIONS="-S DISK"
  
- # Directory where sa and sar files are saved.
+ # Directory where sa and sar files are saved. The directory must exist.
  SA_DIR=@SA_DIR@

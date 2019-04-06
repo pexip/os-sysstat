@@ -1,21 +1,24 @@
-.TH PIDSTAT 1 "MARCH 2016" Linux "Linux User's Manual" -*- nroff -*-
+.TH PIDSTAT 1 "JULY 2018" Linux "Linux User's Manual" -*- nroff -*-
 .SH NAME
 pidstat \- Report statistics for Linux tasks.
 .SH SYNOPSIS
-.B pidstat [ -d ] [ -h ] [ -I ] [ -l ] [ -R ] [ -r ] [ -s ] [ -t ] [ -U [
+.B pidstat [ -d ] [ -H ] [ -h ] [ -I ] [ -l ] [ -R ] [ -r ] [ -s ] [ -t ] [ -U [
 .I username
 .B ] ] [ -u ] [ -V ] [ -v ]
 .B [ -w ] [ -C
 .I comm
 .B ] [ -G
 .I process_name
-.B ] [ -p {
+.B ] [ --dec={ 0 | 1 | 2 } ] [ --human ] [ -p {
 .I pid
 .B [,...] | SELF | ALL } ] [ -T { TASK | CHILD | ALL } ] [
 .I interval
 .B [
 .I count
-.B ] ]
+.B ] ] [ -e
+.I program
+.I args
+.B ]
 .SH DESCRIPTION
 The
 .B pidstat
@@ -119,6 +122,19 @@ completion.
 The command name of the task.
 .RE
 .RE
+.IP "--dec={ 0 | 1 | 2 }"
+Specify the number of decimal places to use (0 to 2, default value is 2).
+.IP "-e program args"
+Execute
+.IR program
+with given arguments
+.IR args
+and monitor it with
+.B pidstat.
+.B pidstat
+stops when
+.IR program
+terminates.
 .IP "-G process_name"
 Display only processes whose command name includes the string
 .IR process_name .
@@ -127,9 +143,16 @@ together with option -G then the threads belonging to that
 process are also displayed (even if their command name doesn't
 include the string
 .IR process_name ).
+.IP -H
+Display timestamp in seconds since the epoch.
 .IP -h
-Display all activities horizontally on a single line. This is
+Display all activities horizontally on a single line, with no
+average statistics at the end of the report. This is
 intended to make it easier to be parsed by other programs.
+.IP --human
+Print sizes in human readable format (e.g. 1.0k, 1.2M, etc.)
+The units displayed with this option supersede any other default units (e.g.
+kilobytes, sectors...) associated with the metrics.
 .IP -I
 In an SMP environment, indicate that tasks CPU usage
 (as displayed by option
@@ -396,6 +419,11 @@ Percentage of CPU spent by the task in virtual machine (running a virtual
 processor).
 .RE
 
+.B %wait
+.RS
+Percentage of CPU spent by the task while waiting to run.
+.RE
+
 .B %CPU
 .RS
 Total percentage of CPU time used by the task. In an SMP environment,
@@ -562,7 +590,7 @@ ranges of values.
 .IP S_COLORS_SGR
 Specify the colors and other attributes used to display statistics on the terminal.
 Its value is a colon-separated list of capabilities that defaults to
-.BR H=31;1:I=32;22:M=34;1:N=33;1:Z=33;22 .
+.BR H=31;1:I=32;22:M=35;1:N=34;1:Z=34;22 .
 Supported capabilities are:
 
 .RS
@@ -639,5 +667,7 @@ Sebastien Godard (sysstat <at> orange.fr)
 .BR mpstat (1),
 .BR iostat (1),
 .BR vmstat (8)
+
+.I https://github.com/sysstat/sysstat
 
 .I http://pagesperso-orange.fr/sebastien.godard/

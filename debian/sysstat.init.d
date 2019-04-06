@@ -23,11 +23,10 @@ umask 022
 # our configuration file
 DEFAULT=/etc/default/sysstat
 
-# default settings...
+# default setting...
 ENABLED="false"
-SA1_OPTIONS=""
 
-# ...overriden in the configuration file
+# ...overridden in the configuration file
 test -r "$DEFAULT" && . "$DEFAULT"
 
 set -e 

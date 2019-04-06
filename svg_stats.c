@@ -1,6 +1,6 @@
 /*
  * svg_stats.c: Funtions used by sadf to display statistics in SVG format.
- * (C) 2016 by Sebastien GODARD (sysstat <at> orange.fr)
+ * (C) 2016-2018 by Sebastien GODARD (sysstat <at> orange.fr)
  *
  ***************************************************************************
  * This program is free software; you can redistribute it and/or modify it *
@@ -26,7 +26,6 @@
 #include <float.h>
 
 #include "sa.h"
-#include "sadf.h"
 #include "ioconf.h"
 #include "svg_stats.h"
 
@@ -39,7 +38,6 @@
 #endif
 
 extern unsigned int flags;
-extern unsigned int dm_major;
 
 unsigned int svg_colors[] = {0x00cc00, 0xff00bf, 0x00ffff, 0xff0000,
 			     0xe85f00, 0x0000ff, 0x006020, 0x7030a0,
@@ -58,17 +56,16 @@ unsigned int svg_colors[] = {0x00cc00, 0xff00bf, 0x00ffff, 0xff0000,
  * followed by @u_nr unsigned int fields.
  *
  * IN:
- * @llu_nr	Number of unsigned long long fields composing the structure.
- * @lu_nr	Number of unsigned long fields composing the structure.
- * @u_nr	Number of unsigned int fields composing the structure.
+ * @types_nr	Number of fields whose type is "long long", "long" and "int"
+ * 		composing the structure.
  * @cs		Pointer on current sample statistics structure.
  * @ps		Pointer on previous sample statistics structure (may be NULL).
- * @itv		Interval of time in jiffies.
+ * @itv		Interval of time in 1/100th of a second.
  * @spmin	Array containing min values already found for this activity.
  * @spmax	Array containing max values already found for this activity.
  * @g_fields	Index in spmin/spmax arrays where extrema values for each
  *		activity metric will be saved. As a consequence spmin/spmax
- *		arrays mau contain values in a different order than that of
+ *		arrays may contain values in a different order than that of
  *		the fields in the statistics structure.
  *
  * OUT:
@@ -76,8 +73,8 @@ unsigned int svg_colors[] = {0x00cc00, 0xff00bf, 0x00ffff, 0xff0000,
  * @spmax	Array containg the possible new max values for current activity.
  ***************************************************************************
  */
-void save_extrema(int llu_nr, int lu_nr, int u_nr, void *cs, void *ps,
-		  unsigned long long itv, double *spmin, double *spmax, int g_fields[])
+void save_extrema(unsigned int types_nr[], void *cs, void *ps, unsigned long long itv,
+		  double *spmin, double *spmax, int g_fields[])
 {
 	unsigned long long *lluc, *llup;
 	unsigned long *luc, *lup;
@@ -88,7 +85,7 @@ void save_extrema(int llu_nr, int lu_nr, int u_nr, void *cs, void *ps,
 	/* Compare unsigned long long fields */
 	lluc = (unsigned long long *) cs;
 	llup = (unsigned long long *) ps;
-	for (i = 0; i < llu_nr; i++, m++) {
+	for (i = 0; i < types_nr[0]; i++, m++) {
 		if (ps) {
 			val = *lluc < *llup ? 0.0 : S_VALUE(*llup, *lluc, itv);
 		}
@@ -114,7 +111,7 @@ void save_extrema(int llu_nr, int lu_nr, int u_nr, void *cs, void *ps,
 	/* Compare unsigned long fields */
 	luc = (unsigned long *) lluc;
 	lup = (unsigned long *) llup;
-	for (i = 0; i < lu_nr; i++, m++) {
+	for (i = 0; i < types_nr[1]; i++, m++) {
 		if (ps) {
 			val = *luc < *lup ? 0.0 : S_VALUE(*lup, *luc, itv);
 		}
@@ -136,7 +133,7 @@ void save_extrema(int llu_nr, int lu_nr, int u_nr, void *cs, void *ps,
 	/* Compare unsigned int fields */
 	uc = (unsigned int *) luc;
 	up = (unsigned int *) lup;
-	for (i = 0; i < u_nr; i++, m++) {
+	for (i = 0; i < types_nr[2]; i++, m++) {
 		if (ps) {
 			val = *uc < *up ? 0.0 : S_VALUE(*up, *uc, itv);
 		}
@@ -321,12 +318,13 @@ void save_svg_data(char *data, char **out, int *outsize)
  *		element in array of chars.
  ***************************************************************************
  */
-void lnappend(unsigned long timetag, double value, char **out, int *outsize, int restart)
+void lnappend(unsigned long long timetag, double value, char **out, int *outsize,
+	      int restart)
 {
 	char data[128];
 
 	/* Prepare additional graph definition data */
-	snprintf(data, 128, " %c%lu,%.2f", restart ? 'M' : 'L', timetag, value);
+	snprintf(data, 128, " %c%llu,%.2f", restart ? 'M' : 'L', timetag, value);
 	data[127] = '\0';
 
 	save_svg_data(data, out, outsize);
@@ -353,13 +351,13 @@ void lnappend(unsigned long timetag, double value, char **out, int *outsize, int
  *		element in array of chars.
  ***************************************************************************
  */
-void lniappend(unsigned long timetag, unsigned long value, char **out, int *outsize,
-	       int restart)
+void lniappend(unsigned long long timetag, unsigned long long value, char **out,
+	       int *outsize, int restart)
 {
 	char data[128];
 
 	/* Prepare additional graph definition data */
-	snprintf(data, 128, " %c%lu,%lu", restart ? 'M' : 'L', timetag, value);
+	snprintf(data, 128, " %c%llu,%llu", restart ? 'M' : 'L', timetag, value);
 	data[127] = '\0';
 
 	save_svg_data(data, out, outsize);
@@ -387,18 +385,22 @@ void lniappend(unsigned long timetag, unsigned long value, char **out, int *outs
  *		element in array of chars.
  ***************************************************************************
  */
-void brappend(unsigned long timetag, double offset, double value, char **out, int *outsize,
-	      unsigned long dt)
+void brappend(unsigned long long timetag, double offset, double value, char **out,
+	      int *outsize, unsigned long long dt)
 {
 	char data[128];
+	unsigned long long t = 0;
 
 	/* Prepare additional graph definition data */
 	if ((value == 0.0) || (dt == 0))
-		/* Dont draw a flat rectangle! */
+		/* Don't draw a flat rectangle! */
 		return;
+	if (dt < timetag) {
+		t = timetag -dt;
+	}
 
-	snprintf(data, 128, "<rect x=\"%lu\" y=\"%.2f\" height=\"%.2f\" width=\"%lu\"/>",
-		 timetag - dt, MINIMUM(offset, 100.0), MINIMUM(value, (100.0 - offset)), dt);
+	snprintf(data, 128, "<rect x=\"%llu\" y=\"%.2f\" height=\"%.2f\" width=\"%llu\"/>",
+		 t, MINIMUM(offset, 100.0), MINIMUM(value, (100.0 - offset)), dt);
 	data[127] = '\0';
 
 	save_svg_data(data, out, outsize);
@@ -430,8 +432,8 @@ void brappend(unsigned long timetag, double offset, double value, char **out, in
  *		element in array of chars.
  ***************************************************************************
  */
-void cpuappend(unsigned long timetag, double *offset, double value, char **out, int *outsize,
-	       unsigned long dt, double *spmin, double *spmax)
+void cpuappend(unsigned long long timetag, double *offset, double value, char **out,
+	       int *outsize, unsigned long long dt, double *spmin, double *spmax)
 {
 	/* Save min and max values */
 	if (value < *spmin) {
@@ -473,10 +475,12 @@ void cpuappend(unsigned long timetag, double *offset, double value, char **out, 
  * @spmax	Max value for this metric.
  ***************************************************************************
  */
-void recappend(unsigned long timetag, double p_value, double value, char **out, int *outsize,
-	       int restart, unsigned long dt, double *spmin, double *spmax)
+void recappend(unsigned long long timetag, double p_value, double value, char **out,
+	       int *outsize, int restart, unsigned long long dt,
+	       double *spmin, double *spmax)
 {
-	char data[128], data1[128], data2[128];
+	char data[512], data1[128], data2[128];
+	unsigned long long t = 0;
 
 	/* Save min and max values */
 	if (value < *spmin) {
@@ -485,18 +489,21 @@ void recappend(unsigned long timetag, double p_value, double value, char **out, 
 	if (value > *spmax) {
 		*spmax = value;
 	}
+	if (dt < timetag) {
+		t = timetag -dt;
+	}
 	/* Prepare additional graph definition data */
 	if (restart) {
-		snprintf(data1, 128, " M%lu,%.2f", timetag - dt, p_value);
-		data1[127] = '\0';
+		snprintf(data1, sizeof(data1), " M%llu,%.2f", t, p_value);
+		data1[sizeof(data1) - 1] = '\0';
 	}
 	if (p_value != value) {
-		snprintf(data2, 128, " L%lu,%.2f", timetag, value);
-		data2[127] = '\0';
+		snprintf(data2, sizeof(data2), " L%llu,%.2f", timetag, value);
+		data2[sizeof(data2) - 1] = '\0';
 	}
-	snprintf(data, 128, "%s L%lu,%.2f%s", restart ? data1 : "", timetag, p_value,
+	snprintf(data, sizeof(data), "%s L%llu,%.2f%s", restart ? data1 : "", timetag, p_value,
 		 p_value != value ? data2 : "");
-	data[127] = '\0';
+	data[sizeof(data) - 1] = '\0';
 
 	save_svg_data(data, out, outsize);
 }
@@ -600,7 +607,7 @@ void display_hgrid(double ypos, double yfactor, double lmax, int dp)
 		       (long) (atof(stmp) * yfactor), dp, ypos * j);
 		j++;
 	}
-	while (ypos * j <= lmax);
+	while ((ypos * j <= lmax) && (j < MAX_HLINES_NR));
 }
 
 /*
@@ -610,7 +617,8 @@ void display_hgrid(double ypos, double yfactor, double lmax, int dp)
  * IN:
  * @xpos	Gap between two vertical lines.
  * @xfactor	Scaling factor on X axis.
- * @v_gridnr	Number of vertical lines to display.
+ * @v_gridnr	Default number of vertical lines to display. The actual
+ *		number may vary between this value and 2 times this value.
  * @svg_p	SVG specific parameters (see draw_activity_graphs() function).
  ***************************************************************************
  */
@@ -623,7 +631,12 @@ void display_vgrid(long int xpos, double xfactor, int v_gridnr, struct svg_parm 
 
 	stamp.ust_time = svg_p->ust_time_ref; /* Only ust_time field needs to be set. TRUE_TIME not allowed */
 
-	for (j = 0; (j <= v_gridnr) && (stamp.ust_time <= svg_p->ust_time_end); j++) {
+	/*
+	 * What really matters to know when we should stop drawing vertical lines
+	 * is the time end. v_gridnr is only informative and used to calculate
+	 * the gap between two lines.
+	 */
+	for (j = 0; (j <= (2 * v_gridnr)) && (stamp.ust_time <= svg_p->ust_time_end); j++) {
 
 		/* Display vertical lines */
 		sa_get_record_timestamp_struct(flags, &stamp, &rectime, NULL);
@@ -638,8 +651,8 @@ void display_vgrid(long int xpos, double xfactor, int v_gridnr, struct svg_parm 
 		 */
 		if (DISPLAY_ONE_DAY(flags) && (rectime.tm_min == 0)) {
 			printf("<text x=\"%ld\" y=\"15\" style=\"fill: white; stroke: none; font-size: 14px; "
-			       "text-anchor: start\">%2dH</text>\n",
-			       (long) (xpos * j * xfactor) - 8, rectime.tm_hour);
+			       "text-anchor: start\">%2d:00</text>\n",
+			       (long) (xpos * j * xfactor) - 15, rectime.tm_hour);
 		}
 		else {
 			printf("<text x=\"%ld\" y=\"10\" style=\"fill: white; stroke: none; font-size: 12px; "
@@ -782,7 +795,7 @@ void skip_current_view(char **out, int *pos, int group)
  * Display all graphs for current activity.
  *
  * IN:
- * @g_nr	Number of sets of graphs (views) to display.
+ * @g_nr	Number of views to display.
  * @g_type	Type of graph (SVG_LINE_GRAPH, SVG_BAR_GRAPH) for each view.
  * @title	Titles for each set of graphs.
  * @g_title	Titles for each graph.
@@ -792,34 +805,38 @@ void skip_current_view(char **out, int *pos, int group)
  * @spmax	Array containing max values for graphs.
  * @out		Pointer on array of chars for each graph definition.
  * @outsize	Size of array of chars for each graph definition.
- * @svg_p	SVG specific parameters: Current graph number (.@graph_no),
+ * @svg_p	SVG specific parameters: Current views row number (.@graph_no),
  *		time for the first sample of stats (.@ust_time_first), and
  *		times used as start and end values on the X axis
  *		(.@ust_time_ref and .@ust_time_end).
  * @record_hdr	Pointer on record header of current stats sample.
+ * @skip_void	Set to <> 0 if graphs with no data should be skipped.
+ *		This is typicallly used to not display CPU offline on the
+ *		whole period.
+ * @id		Current activity id.
+ * @xid		Current activity extra id number.
+ *
+ * RETURNS:
+ * TRUE if at least one graph has been displayed.
  ***************************************************************************
  */
-void draw_activity_graphs(int g_nr, int g_type[], char *title[], char *g_title[], char *item_name,
-			  int group[], double *spmin, double *spmax, char **out, int *outsize,
-			  struct svg_parm *svg_p, struct record_header *record_hdr)
+int draw_activity_graphs(int g_nr, int g_type[], char *title[], char *g_title[], char *item_name,
+			 int group[], double *spmin, double *spmax, char **out, int *outsize,
+			 struct svg_parm *svg_p, struct record_header *record_hdr, int skip_void,
+			 unsigned int id, unsigned int xid)
 {
 	char *out_p;
-	int i, j, dp, pos = 0, views_nr = 0;
-	int v_gridnr;
+	int i, j, dp, pos = 0, views_nr = 0, displayed = FALSE;
+	int v_gridnr, xv, yv;
 	unsigned int asfactor[16];
 	long int xpos;
 	double lmax, xfactor, yfactor, ypos, gmin, gmax;
-	char val[32];
+	char val[32], cur_date[TIMESTAMP_LEN];
 
-	/* Translate to proper position for current activity */
-	printf("<g id=\"g%d\" transform=\"translate(0,%d)\">\n",
-	       svg_p->graph_no,
-	       SVG_H_YSIZE + svg_p->graph_no * SVG_T_YSIZE);
-
-	/* For each set of graphs which are part of current activity */
+	/* For each view which is part of current activity */
 	for (i = 0; i < g_nr; i++) {
 
-		/* Get global min and max value for current set of graphs */
+		/* Get global min and max value for current view */
 		get_global_extrema(pos, group[i], spmin, spmax, &gmin, &gmax);
 
 		/* Don't display empty views if requested */
@@ -827,25 +844,47 @@ void draw_activity_graphs(int g_nr, int g_type[], char *title[], char *g_title[]
 			skip_current_view(out, &pos, group[i]);
 			continue;
 		}
+		/* Skip void graphs */
+		if (skip_void && ((*(spmin + pos) == DBL_MAX) || (*(spmax + pos) == -DBL_MIN)))
+			continue;
+
+		if (!displayed) {
+			/* Translate to proper position for current activity */
+			printf("<g id=\"g%d-%d\" transform=\"translate(0,%d)\">\n",
+			       id, xid,
+			       SVG_H_YSIZE +
+			       SVG_C_YSIZE * (DISPLAY_TOC(flags) ? svg_p->nr_act_dispd : 0) +
+			       SVG_T_YSIZE * svg_p->graph_no);
+			displayed = TRUE;
+		}
+
 		/* Increment number of views actually displayed */
 		views_nr++;
 
+		/* Compute top left position of view */
+		if (PACK_VIEWS(flags)) {
+			xv = (views_nr - 1) * SVG_T_XSIZE;
+			yv = 0;
+		}
+		else {
+			xv = 0;
+			yv = (views_nr - 1) * SVG_T_YSIZE;
+		}
+
 		/* Graph background */
-		printf("<rect x=\"0\" y=\"%d\" height=\"%d\" width=\"%d\"/>\n",
-		       (views_nr - 1) * SVG_T_YSIZE,
-		       SVG_V_YSIZE, SVG_V_XSIZE);
+		printf("<rect x=\"%d\" y=\"%d\" height=\"%d\" width=\"%d\"/>\n",
+		       xv, yv, SVG_V_YSIZE, SVG_V_XSIZE);
 
 		/* Graph title */
-		printf("<text x=\"0\" y=\"%d\" style=\"fill: yellow; stroke: none\">%s",
-		       20 + (views_nr - 1) * SVG_T_YSIZE, title[i]);
+		printf("<text x=\"%d\" y=\"%d\" style=\"fill: yellow; stroke: none\">%s",
+		       xv, 20 + yv, title[i]);
 		if (item_name) {
 			printf(" [%s]", item_name);
 		}
 		printf("\n");
 		printf("<tspan x=\"%d\" y=\"%d\" style=\"fill: yellow; stroke: none; font-size: 12px\">"
 		       "(Min, Max values)</tspan>\n</text>\n",
-		       5 + SVG_M_XSIZE + SVG_G_XSIZE,
-		       25 + (views_nr - 1) * SVG_T_YSIZE);
+		       xv + 5 + SVG_M_XSIZE + SVG_G_XSIZE, yv + 25);
 
 		/*
 		 * At least two samples are needed.
@@ -854,17 +893,17 @@ void draw_activity_graphs(int g_nr, int g_type[], char *title[], char *g_title[]
 		if ((record_hdr->ust_time == svg_p->ust_time_first) ||
 		    (*(spmin + pos) == DBL_MAX) || (*(spmax + pos) == -DBL_MIN)) {
 			/* No data found */
-			printf("<text x=\"0\" y=\"%d\" style=\"fill: red; stroke: none\">No data</text>\n",
-			       SVG_M_YSIZE + (views_nr - 1) * SVG_T_YSIZE);
+			printf("<text x=\"%d\" y=\"%d\" style=\"fill: red; stroke: none\">No data</text>\n",
+			       xv, yv + SVG_M_YSIZE);
 			skip_current_view(out, &pos, group[i]);
 			continue;
 		}
 
 		/* X and Y axis */
 		printf("<polyline points=\"%d,%d %d,%d %d,%d\" stroke=\"white\" stroke-width=\"2\"/>\n",
-		       SVG_M_XSIZE, SVG_M_YSIZE + (views_nr - 1) * SVG_T_YSIZE,
-		       SVG_M_XSIZE, SVG_M_YSIZE + SVG_G_YSIZE + (views_nr - 1) * SVG_T_YSIZE,
-		       SVG_M_XSIZE + SVG_G_XSIZE, SVG_M_YSIZE + SVG_G_YSIZE + (views_nr - 1) * SVG_T_YSIZE);
+		       xv + SVG_M_XSIZE, yv + SVG_M_YSIZE,
+		       xv + SVG_M_XSIZE, yv + SVG_M_YSIZE + SVG_G_YSIZE,
+		       xv + SVG_M_XSIZE + SVG_G_XSIZE, yv + SVG_M_YSIZE + SVG_G_YSIZE);
 
 		/* Autoscaling graphs if needed */
 		gr_autoscaling(asfactor, 16, group[i], g_type[i], pos, gmax, spmax);
@@ -876,16 +915,34 @@ void draw_activity_graphs(int g_nr, int g_type[], char *title[], char *g_title[]
 			snprintf(val, 32, "x%u ", asfactor[j]);
 			printf("<text x=\"%d\" y=\"%d\" style=\"fill: #%06x; stroke: none; font-size: 12px\">"
 			       "%s %s(%.*f, %.*f)</text>\n",
-			       5 + SVG_M_XSIZE + SVG_G_XSIZE, SVG_M_YSIZE + (views_nr - 1) * SVG_T_YSIZE + j * 15,
+			       xv + 5 + SVG_M_XSIZE + SVG_G_XSIZE, yv + SVG_M_YSIZE + j * 15,
 			       svg_colors[(pos + j) & SVG_COLORS_IDX_MASK], g_title[pos + j] + dp,
 			       asfactor[j] == 1 ? "" : val,
 			       !dp * 2, *(spmin + pos + j) * asfactor[j],
 			       !dp * 2, *(spmax + pos + j) * asfactor[j]);
 		}
 
+		if (DISPLAY_INFO(flags)) {
+			/* Display additional info (hostname, date) */
+			printf("<text x=\"%d\" y=\"%d\" "
+			       "style=\"fill: yellow; text-anchor: end; stroke: none; font-size: 14px\">"
+			       "%s\n",
+			       xv + SVG_V_XSIZE - 5, yv + SVG_M_YSIZE + SVG_G_YSIZE,
+			       svg_p->file_hdr->sa_nodename);
+
+			/* Get report date */
+			set_report_date(localtime((const time_t *) &(svg_p->file_hdr->sa_ust_time)),
+					cur_date, sizeof(cur_date));
+			printf("<tspan x=\"%d\" y=\"%d\" "
+			       "style=\"fill: yellow; text-anchor: end; stroke: none; font-size: 14px\">"
+			       "%s</tspan>\n</text>\n",
+			       xv + SVG_V_XSIZE - 5, yv + SVG_M_YSIZE + SVG_G_YSIZE + 14,
+			       cur_date);
+		}
+
 		/* Translate to proper position for current graph within current activity */
 		printf("<g transform=\"translate(%d,%d)\">\n",
-		       SVG_M_XSIZE, SVG_M_YSIZE + SVG_G_YSIZE + (views_nr - 1) * SVG_T_YSIZE);
+		       xv + SVG_M_XSIZE, yv + SVG_M_YSIZE + SVG_G_YSIZE);
 
 		/* Grid */
 		if (g_type[i] == SVG_LINE_GRAPH) {
@@ -935,11 +992,11 @@ void draw_activity_graphs(int g_nr, int g_type[], char *title[], char *g_title[]
 			out_p = *(out + pos + j);
 			if (g_type[i] == SVG_LINE_GRAPH) {
 				/* Line graphs */
-				printf("<path id=\"g%dp%d\" d=\"%s\" "
+				printf("<path d=\"%s\" "
 				       "style=\"vector-effect: non-scaling-stroke; "
 				       "stroke: #%06x; stroke-width: 1; fill-opacity: 0\" "
 				       "transform=\"scale(%f,%f)\"/>\n",
-				       svg_p->graph_no, pos + j, out_p,
+				       out_p,
 				       svg_colors[(pos + j) & SVG_COLORS_IDX_MASK],
 				       xfactor,
 				       yfactor * asfactor[j]);
@@ -956,10 +1013,14 @@ void draw_activity_graphs(int g_nr, int g_type[], char *title[], char *g_title[]
 		printf("</g>\n");
 		pos += group[i];
 	}
-	printf("</g>\n");
+	if (displayed) {
+		printf("</g>\n");
 
-	/* Next graph */
-	(svg_p->graph_no) += views_nr;
+		/* For next row of views */
+		(svg_p->graph_no) += PACK_VIEWS(flags) ? 1 : views_nr;
+	}
+
+	return displayed;
 }
 
 /*
@@ -974,83 +1035,93 @@ void draw_activity_graphs(int g_nr, int g_type[], char *title[], char *g_title[]
  * 		flag indicating that a restart record has been previously
  * 		found (.@restart), and time used for the X axis origin
  *		(@ust_time_ref).
- * @itv		Interval of time in jiffies (only with F_MAIN action).
+ * @itv		Interval of time in 1/100th of a second (only with F_MAIN action).
+ *		Unused here.
  * @record_hdr	Pointer on record header of current stats sample.
  ***************************************************************************
  */
 __print_funct_t svg_print_cpu_stats(struct activity *a, int curr, int action, struct svg_parm *svg_p,
-				    unsigned long long g_itv, struct record_header *record_hdr)
+				    unsigned long long itv, struct record_header *record_hdr)
 {
 	struct stats_cpu *scc, *scp;
+	unsigned long long deltot_jiffies = 1;
+	unsigned char offline_cpu_bitmap[BITMAP_SIZE(NR_CPUS)] = {0};
 	int group1[] = {5};
 	int group2[] = {9};
 	int g_type[] = {SVG_BAR_GRAPH};
-	char *title[] = {"CPU load"};
+	char *title[] = {"CPU utilization"};
 	char *g_title1[] = {"%user", "%nice", "%system", "%iowait", "%steal", "%idle"};
 	char *g_title2[] = {"%usr", "%nice", "%sys", "%iowait", "%steal", "%irq", "%soft", "%guest", "%gnice", "%idle"};
 	static double *spmin, *spmax;
 	static char **out;
 	static int *outsize;
-	char item_name[8];
+	char item_name[16];
 	double offset, val;
-	int i, j, k, pos, cpu_offline;
+	int i, j, k, pos;
 
 	if (action & F_BEGIN) {
 		/*
 		 * Allocate arrays that will contain the graphs data
 		 * and the min/max values.
 		 */
-		out = allocate_graph_lines(10 * a->nr, &outsize, &spmin, &spmax);
+		out = allocate_graph_lines(10 * a->item_list_sz, &outsize, &spmin, &spmax);
 	}
 
 	if (action & F_MAIN) {
+
+		/* @nr[curr] cannot normally be greater than @nr_ini */
+		if (a->nr[curr] > a->nr_ini) {
+			a->nr_ini = a->nr[curr];
+		}
+
+		/*
+		 * Compute CPU "all" as sum of all individual CPU (on SMP machines)
+		 * and look for offline CPU.
+		 */
+		if (a->nr_ini > 1) {
+			deltot_jiffies = get_global_cpu_statistics(a, !curr, curr,
+								   flags, offline_cpu_bitmap);
+		}
+
 		/* For each CPU */
-		for (i = 0; (i < a->nr) && (i < a->bitmap->b_size + 1); i++) {
+		for (i = 0; (i < a->nr_ini) && (i < a->bitmap->b_size + 1); i++) {
+
+			/* Should current CPU (including CPU "all") be displayed? */
+			if (!(a->bitmap->b_array[i >> 3] & (1 << (i & 0x07))) ||
+			    offline_cpu_bitmap[i >> 3] & (1 << (i & 0x07)))
+				/* Don't display CPU */
+				continue;
 
 			scc = (struct stats_cpu *) ((char *) a->buf[curr]  + i * a->msize);
 			scp = (struct stats_cpu *) ((char *) a->buf[!curr] + i * a->msize);
 
-			/* Should current CPU (including CPU "all") be displayed? */
-			if (!(a->bitmap->b_array[i >> 3] & (1 << (i & 0x07))))
-				/* No */
-				continue;
-
 			pos = i * 10;
 			offset = 0.0;
 
-			if (i) {	/* Don't test CPU "all" here */
+			if (i == 0) {
+				/* This is CPU "all" */
+				if (a->nr_ini == 1) {
+					/*
+					 * This is a UP machine. In this case
+					 * interval has still not been calculated.
+					 */
+					deltot_jiffies = get_per_cpu_interval(scc, scp);
+				}
+				if (!deltot_jiffies) {
+					/* CPU "all" cannot be tickless */
+					deltot_jiffies = 1;
+				}
+			}
+			else {
 				/*
-				 * If the CPU is offline then it is omited from /proc/stat:
-				 * All the fields couldn't have been read and the sum of them is zero.
-				 * (Remember that guest/guest_nice times are already included in
-				 * user/nice modes.)
+				 * Recalculate interval for current proc.
+				 * If result is 0 then current CPU is a tickless one.
 				 */
-				if ((scc->cpu_user    + scc->cpu_nice + scc->cpu_sys   +
-				     scc->cpu_iowait  + scc->cpu_idle + scc->cpu_steal +
-				     scc->cpu_hardirq + scc->cpu_softirq) == 0) {
-					/*
-					 * Set current struct fields (which have been set to zero)
-					 * to values from previous iteration. Hence their values won't
-					 * jump from zero when the CPU comes back online.
-					 */
-					*scc = *scp;
+				deltot_jiffies = get_per_cpu_interval(scc, scp);
 
-					g_itv = 0;
-					cpu_offline = TRUE;
-				}
-				else {
-					/*
-					 * Recalculate interval for current proc.
-					 * If result is 0 then current CPU is a tickless one.
-					 */
-					g_itv = get_per_cpu_interval(scc, scp);
-					cpu_offline = FALSE;
-				}
+				if (!deltot_jiffies) {	/* Current CPU is tickless */
 
-				if (!g_itv) {	/* Current CPU is offline or tickless */
-
-					val = (cpu_offline ? 0.0	/* Offline CPU: %idle = 0% */
-							   : 100.0);	/* Tickless CPU: %idle = 100% */
+					val = 100.0;	/* Tickless CPU: %idle = 100% */
 
 					if (DISPLAY_CPU_DEF(a->opt_flags)) {
 						j  = 5;	/* -u */
@@ -1081,7 +1152,7 @@ __print_funct_t svg_print_cpu_stats(struct activity *a, int curr, int action, st
 			if (DISPLAY_CPU_DEF(a->opt_flags)) {
 				/* %user */
 				cpuappend(record_hdr->ust_time - svg_p->ust_time_ref,
-					  &offset, ll_sp_value(scp->cpu_user, scc->cpu_user, g_itv),
+					  &offset, ll_sp_value(scp->cpu_user, scc->cpu_user, deltot_jiffies),
 					  out + pos, outsize + pos, svg_p->dt,
 					  spmin + pos, spmax + pos);
 			}
@@ -1092,7 +1163,7 @@ __print_funct_t svg_print_cpu_stats(struct activity *a, int curr, int action, st
 					  (scc->cpu_user - scc->cpu_guest) < (scp->cpu_user - scp->cpu_guest) ?
 					   0.0 :
 					   ll_sp_value(scp->cpu_user - scp->cpu_guest,
-						       scc->cpu_user - scc->cpu_guest, g_itv),
+						       scc->cpu_user - scc->cpu_guest, deltot_jiffies),
 					  out + pos, outsize + pos, svg_p->dt,
 					  spmin + pos, spmax + pos);
 			}
@@ -1100,7 +1171,7 @@ __print_funct_t svg_print_cpu_stats(struct activity *a, int curr, int action, st
 			if (DISPLAY_CPU_DEF(a->opt_flags)) {
 				/* %nice */
 				cpuappend(record_hdr->ust_time - svg_p->ust_time_ref,
-					  &offset, ll_sp_value(scp->cpu_nice, scc->cpu_nice, g_itv),
+					  &offset, ll_sp_value(scp->cpu_nice, scc->cpu_nice, deltot_jiffies),
 					  out + pos + 1, outsize + pos + 1, svg_p->dt,
 					  spmin + pos + 1, spmax + pos + 1);
 			}
@@ -1111,7 +1182,7 @@ __print_funct_t svg_print_cpu_stats(struct activity *a, int curr, int action, st
 					  (scc->cpu_nice - scc->cpu_guest_nice) < (scp->cpu_nice - scp->cpu_guest_nice) ?
 					   0.0 :
 					   ll_sp_value(scp->cpu_nice - scp->cpu_guest_nice,
-						       scc->cpu_nice - scc->cpu_guest_nice, g_itv),
+						       scc->cpu_nice - scc->cpu_guest_nice, deltot_jiffies),
 					  out + pos + 1, outsize + pos + 1, svg_p->dt,
 					  spmin + pos + 1, spmax + pos + 1);
 			}
@@ -1122,48 +1193,48 @@ __print_funct_t svg_print_cpu_stats(struct activity *a, int curr, int action, st
 					  &offset,
 					  ll_sp_value(scp->cpu_sys + scp->cpu_hardirq + scp->cpu_softirq,
 						      scc->cpu_sys + scc->cpu_hardirq + scc->cpu_softirq,
-						      g_itv),
+						      deltot_jiffies),
 					  out + pos + 2, outsize + pos + 2, svg_p->dt,
 					  spmin + pos + 2, spmax + pos + 2);
 			}
 			else {
 				/* %sys */
 				cpuappend(record_hdr->ust_time - svg_p->ust_time_ref,
-					  &offset, ll_sp_value(scp->cpu_sys, scc->cpu_sys, g_itv),
+					  &offset, ll_sp_value(scp->cpu_sys, scc->cpu_sys, deltot_jiffies),
 					  out + pos + 2, outsize + pos + 2, svg_p->dt,
 					  spmin + pos + 2, spmax + pos + 2);
 			}
 
 			/* %iowait */
 			cpuappend(record_hdr->ust_time - svg_p->ust_time_ref,
-				  &offset, ll_sp_value(scp->cpu_iowait, scc->cpu_iowait, g_itv),
+				  &offset, ll_sp_value(scp->cpu_iowait, scc->cpu_iowait, deltot_jiffies),
 				  out + pos + 3, outsize + pos + 3, svg_p->dt,
 				  spmin + pos + 3, spmax + pos + 3);
 			/* %steal */
 			cpuappend(record_hdr->ust_time - svg_p->ust_time_ref,
-				  &offset, ll_sp_value(scp->cpu_steal, scc->cpu_steal, g_itv),
+				  &offset, ll_sp_value(scp->cpu_steal, scc->cpu_steal, deltot_jiffies),
 				  out + pos + 4, outsize + pos + 4, svg_p->dt,
 				  spmin + pos + 4, spmax + pos + 4);
 
 			if (DISPLAY_CPU_ALL(a->opt_flags)) {
 				/* %irq */
 				cpuappend(record_hdr->ust_time - svg_p->ust_time_ref,
-					  &offset, ll_sp_value(scp->cpu_hardirq, scc->cpu_hardirq, g_itv),
+					  &offset, ll_sp_value(scp->cpu_hardirq, scc->cpu_hardirq, deltot_jiffies),
 					  out + pos + 5, outsize + pos + 5, svg_p->dt,
 					  spmin + pos + 5, spmax + pos + 5);
 				/* %soft */
 				cpuappend(record_hdr->ust_time - svg_p->ust_time_ref,
-					  &offset, ll_sp_value(scp->cpu_softirq, scc->cpu_softirq, g_itv),
+					  &offset, ll_sp_value(scp->cpu_softirq, scc->cpu_softirq, deltot_jiffies),
 					  out + pos + 6, outsize + pos + 6, svg_p->dt,
 					  spmin + pos + 6, spmax + pos + 6);
 				/* %guest */
 				cpuappend(record_hdr->ust_time - svg_p->ust_time_ref,
-					  &offset, ll_sp_value(scp->cpu_guest, scc->cpu_guest, g_itv),
+					  &offset, ll_sp_value(scp->cpu_guest, scc->cpu_guest, deltot_jiffies),
 					  out + pos + 7, outsize + pos + 7, svg_p->dt,
 					  spmin + pos + 7, spmax + pos + 7);
 				/* %gnice */
 				cpuappend(record_hdr->ust_time - svg_p->ust_time_ref,
-					  &offset, ll_sp_value(scp->cpu_guest_nice, scc->cpu_guest_nice, g_itv),
+					  &offset, ll_sp_value(scp->cpu_guest_nice, scc->cpu_guest_nice, deltot_jiffies),
 					  out + pos + 8, outsize + pos + 8, svg_p->dt,
 					  spmin + pos + 8, spmax + pos + 8);
 
@@ -1177,14 +1248,22 @@ __print_funct_t svg_print_cpu_stats(struct activity *a, int curr, int action, st
 			cpuappend(record_hdr->ust_time - svg_p->ust_time_ref,
 				  &offset,
 				  (scc->cpu_idle < scp->cpu_idle ? 0.0 :
-				   ll_sp_value(scp->cpu_idle, scc->cpu_idle, g_itv)),
+				   ll_sp_value(scp->cpu_idle, scc->cpu_idle, deltot_jiffies)),
 				  out + pos + j, outsize + pos + j, svg_p->dt,
 				  spmin + pos + j, spmax + pos + j);
 		}
 	}
 
 	if (action & F_END) {
-		for (i = 0; (i < a->nr) && (i < a->bitmap->b_size + 1); i++) {
+		int xid = 0, displayed;
+
+		if (DISPLAY_IDLE(flags)) {
+			/* Include additional %idle field */
+			group1[0]++;
+			group2[0]++;
+		}
+
+		for (i = 0; (i < a->item_list_sz) && (i < a->bitmap->b_size + 1); i++) {
 
 			/* Should current CPU (including CPU "all") be displayed? */
 			if (!(a->bitmap->b_array[i >> 3] & (1 << (i & 0x07))))
@@ -1201,16 +1280,19 @@ __print_funct_t svg_print_cpu_stats(struct activity *a, int curr, int action, st
 			}
 
 			if (DISPLAY_CPU_DEF(a->opt_flags)) {
-				draw_activity_graphs(a->g_nr, g_type,
-						     title, g_title1, item_name, group1,
-						     spmin + pos, spmax + pos, out + pos, outsize + pos,
-						     svg_p, record_hdr);
+				displayed = draw_activity_graphs(a->g_nr, g_type,
+								 title, g_title1, item_name, group1,
+								 spmin + pos, spmax + pos, out + pos, outsize + pos,
+								 svg_p, record_hdr, i, a->id, xid);
 			}
 			else {
-				draw_activity_graphs(a->g_nr, g_type,
-						     title, g_title2, item_name, group2,
-						     spmin + pos, spmax + pos, out + pos, outsize + pos,
-						     svg_p, record_hdr);
+				displayed = draw_activity_graphs(a->g_nr, g_type,
+								 title, g_title2, item_name, group2,
+								 spmin + pos, spmax + pos, out + pos, outsize + pos,
+								 svg_p, record_hdr, i, a->id, xid);
+			}
+			if (displayed) {
+				xid++;
 			}
 		}
 
@@ -1231,7 +1313,7 @@ __print_funct_t svg_print_cpu_stats(struct activity *a, int curr, int action, st
  * 		flag indicating that a restart record has been previously
  * 		found (.@restart) and time used for the X axis origin
  * 		(@ust_time_ref).
- * @itv		Interval of time in jiffies (only with F_MAIN action).
+ * @itv		Interval of time in 1/100th of a second (only with F_MAIN action).
  * @record_hdr	Pointer on record header of current stats sample.
  ***************************************************************************
  */
@@ -1261,7 +1343,7 @@ __print_funct_t svg_print_pcsw_stats(struct activity *a, int curr, int action, s
 
 	if (action & F_MAIN) {
 		/* Check for min/max values */
-		save_extrema(1, 1, 0, (void *) a->buf[curr], (void *) a->buf[!curr],
+		save_extrema(a->gtypes_nr, (void *) a->buf[curr], (void *) a->buf[!curr],
 			     itv, spmin, spmax, g_fields);
 		/* proc/s */
 		lnappend(record_hdr->ust_time - svg_p->ust_time_ref,
@@ -1275,7 +1357,7 @@ __print_funct_t svg_print_pcsw_stats(struct activity *a, int curr, int action, s
 
 	if (action & F_END) {
 		draw_activity_graphs(a->g_nr, g_type, title, g_title, NULL, group,
-				     spmin, spmax, out, outsize, svg_p, record_hdr);
+				     spmin, spmax, out, outsize, svg_p, record_hdr, FALSE, a->id, 0);
 
 		/* Free remaining structures */
 		free_graphs(out, outsize, spmin, spmax);
@@ -1294,7 +1376,7 @@ __print_funct_t svg_print_pcsw_stats(struct activity *a, int curr, int action, s
  * 		flag indicating that a restart record has been previously
  * 		found (.@restart) and time used for the X axis origin
  * 		(@ust_time_ref).
- * @itv		Interval of time in jiffies (only with F_MAIN action).
+ * @itv		Interval of time in 1/100th of a second (only with F_MAIN action).
  * @record_hdr	Pointer on record header of current stats sample.
  ***************************************************************************
  */
@@ -1323,7 +1405,7 @@ __print_funct_t svg_print_swap_stats(struct activity *a, int curr, int action, s
 
 	if (action & F_MAIN) {
 		/* Check for min/max values */
-		save_extrema(0, 2, 0, (void *) a->buf[curr], (void *) a->buf[!curr],
+		save_extrema(a->gtypes_nr, (void *) a->buf[curr], (void *) a->buf[!curr],
 			     itv, spmin, spmax, g_fields);
 		/* pswpin/s */
 		lnappend(record_hdr->ust_time - svg_p->ust_time_ref,
@@ -1337,7 +1419,7 @@ __print_funct_t svg_print_swap_stats(struct activity *a, int curr, int action, s
 
 	if (action & F_END) {
 		draw_activity_graphs(a->g_nr, g_type, title, g_title, NULL, group,
-				     spmin, spmax, out, outsize, svg_p, record_hdr);
+				     spmin, spmax, out, outsize, svg_p, record_hdr, FALSE, a->id, 0);
 
 		/* Free remaining structures */
 		free_graphs(out, outsize, spmin, spmax);
@@ -1356,7 +1438,7 @@ __print_funct_t svg_print_swap_stats(struct activity *a, int curr, int action, s
  * 		flag indicating that a restart record has been previously
  * 		found (.@restart) and time used for the X axis origin
  * 		(@ust_time_ref).
- * @itv		Interval of time in jiffies (only with F_MAIN action).
+ * @itv		Interval of time in 1/100th of a second (only with F_MAIN action).
  * @record_hdr	Pointer on record header of current stats sample.
  ***************************************************************************
  */
@@ -1387,7 +1469,7 @@ __print_funct_t svg_print_paging_stats(struct activity *a, int curr, int action,
 
 	if (action & F_MAIN) {
 		/* Check for min/max values */
-		save_extrema(0, 8, 0, (void *) a->buf[curr], (void *) a->buf[!curr],
+		save_extrema(a->gtypes_nr, (void *) a->buf[curr], (void *) a->buf[!curr],
 			     itv, spmin, spmax, g_fields);
 		/* pgpgin/s */
 		lnappend(record_hdr->ust_time - svg_p->ust_time_ref,
@@ -1425,7 +1507,7 @@ __print_funct_t svg_print_paging_stats(struct activity *a, int curr, int action,
 
 	if (action & F_END) {
 		draw_activity_graphs(a->g_nr, g_type, title, g_title, NULL, group,
-				     spmin, spmax, out, outsize, svg_p, record_hdr);
+				     spmin, spmax, out, outsize, svg_p, record_hdr, FALSE, a->id, 0);
 
 		/* Free remaining structures */
 		free_graphs(out, outsize, spmin, spmax);
@@ -1444,7 +1526,7 @@ __print_funct_t svg_print_paging_stats(struct activity *a, int curr, int action,
  * 		flag indicating that a restart record has been previously
  * 		found (.@restart) and time used for the X axis origin
  * 		(@ust_time_ref).
- * @itv		Interval of time in jiffies (only with F_MAIN action).
+ * @itv		Interval of time in 1/100th of a second (only with F_MAIN action).
  * @record_hdr	Pointer on record header of current stats sample.
  ***************************************************************************
  */
@@ -1474,7 +1556,7 @@ __print_funct_t svg_print_io_stats(struct activity *a, int curr, int action, str
 
 	if (action & F_MAIN) {
 		/* Check for min/max values */
-		save_extrema(0, 5, 0, (void *) a->buf[curr], (void *) a->buf[!curr],
+		save_extrema(a->gtypes_nr, (void *) a->buf[curr], (void *) a->buf[!curr],
 			     itv, spmin, spmax, g_fields);
 
 		/*
@@ -1512,7 +1594,7 @@ __print_funct_t svg_print_io_stats(struct activity *a, int curr, int action, str
 
 	if (action & F_END) {
 		draw_activity_graphs(a->g_nr, g_type, title, g_title, NULL, group,
-				     spmin, spmax, out, outsize, svg_p, record_hdr);
+				     spmin, spmax, out, outsize, svg_p, record_hdr, FALSE, a->id, 0);
 
 		/* Free remaining structures */
 		free_graphs(out, outsize, spmin, spmax);
@@ -1531,7 +1613,7 @@ __print_funct_t svg_print_io_stats(struct activity *a, int curr, int action, str
  * 		flag indicating that a restart record has been previously
  * 		found (.@restart) and time used for the X axis origin
  * 		(@ust_time_ref).
- * @itv		Interval of time in jiffies (only with F_MAIN action).
+ * @itv		Interval of time in 1/100th of a second (only with F_MAIN action).
  * @record_hdr	Pointer on record header of current stats sample.
  ***************************************************************************
  */
@@ -1540,7 +1622,7 @@ __print_funct_t svg_print_memory_stats(struct activity *a, int curr, int action,
 {
 	struct stats_memory
 		*smc = (struct stats_memory *) a->buf[curr];
-	int group1[] = {2, 1, 3, 1, 3, 5};
+	int group1[] = {3, 1, 3, 1, 3, 5};
 	int g_type1[] = {SVG_LINE_GRAPH, SVG_BAR_GRAPH, SVG_LINE_GRAPH,
 			 SVG_BAR_GRAPH, SVG_LINE_GRAPH, SVG_LINE_GRAPH};
 	int group2[] = {3, 1, 1};
@@ -1550,81 +1632,87 @@ __print_funct_t svg_print_memory_stats(struct activity *a, int curr, int action,
 			  "Memory utilization (5)", "Memory utilization (6)"};
 	char *title2[] = {"Swap utilization (1)", "Swap utilization (2)",
 			  "Swap utilization (3)"};
-	char *g_title1[] = {"MBmemfree", "MBmemused", "%memused", "MBbuffers",
+	char *g_title1[] = {"MBmemfree", "MBavail", "MBmemused", "%memused", "MBbuffers",
 			    "MBcached", "MBcommit", "%commit", "MBactive", "MBinact",
 			    "MBdirty", "MBanonpg", "MBslab", "MBkstack", "MBpgtbl",
 			    "MBvmused"};
 	char *g_title2[] = {"MBswpfree", "MBswpused", "MBswpcad", "%swpused",
 			    "%swpcad"};
-	int g_fields[] = {0, 3, 4, 20, 15, 21, 17, 5, 7, 8, 9, 10, 11, 12, 13, 14};
+	int g_fields[] = {0, 4, 5, 21, 16, 22, 18, 6, 8, 9, 10, 11, 12, 13, 14, 15, 1};
 	static double *spmin, *spmax;
 	static char **out;
 	static int *outsize;
+	static int xid = 0;
 	double tval;
 	int i;
+	unsigned long long nousedmem;
 
 	if (action & F_BEGIN) {
 		/*
 		 * Allocate arrays that will contain the graphs data
 		 * and the min/max values.
 		 */
-		out = allocate_graph_lines(22, &outsize, &spmin, &spmax);
+		out = allocate_graph_lines(23, &outsize, &spmin, &spmax);
 	}
 
 	if (action & F_MAIN) {
 		/* Check for min/max values */
-		save_extrema(0, 16, 0, (void *) a->buf[curr], NULL,
+		save_extrema(a->gtypes_nr, (void *) a->buf[curr], NULL,
 			     itv, spmin, spmax, g_fields);
 		/* Compute %memused min/max values */
-		tval = smc->tlmkb ? SP_VALUE(smc->frmkb, smc->tlmkb, smc->tlmkb) : 0.0;
-		if (tval > *(spmax + 2)) {
-			*(spmax + 2) = tval;
+		nousedmem = smc->frmkb + smc->bufkb + smc->camkb + smc->slabkb;
+		if (nousedmem > smc->tlmkb) {
+			nousedmem = smc->tlmkb;
 		}
-		if (tval < *(spmin + 2)) {
-			*(spmin + 2) = tval;
+		tval = smc->tlmkb ? SP_VALUE(nousedmem, smc->tlmkb, smc->tlmkb) : 0.0;
+		if (tval > *(spmax + 3)) {
+			*(spmax + 3) = tval;
+		}
+		if (tval < *(spmin + 3)) {
+			*(spmin + 3) = tval;
 		}
 		/* Compute %commit min/max values */
 		tval = (smc->tlmkb + smc->tlskb) ?
 		       SP_VALUE(0, smc->comkb, smc->tlmkb + smc->tlskb) : 0.0;
-		if (tval > *(spmax + 6)) {
-			*(spmax + 6) = tval;
+		if (tval > *(spmax + 7)) {
+			*(spmax + 7) = tval;
 		}
-		if (tval < *(spmin + 6)) {
-			*(spmin + 6) = tval;
+		if (tval < *(spmin + 7)) {
+			*(spmin + 7) = tval;
 		}
 		/* Compute %swpused min/max values */
 		tval = smc->tlskb ?
 		       SP_VALUE(smc->frskb, smc->tlskb, smc->tlskb) : 0.0;
-		if (tval > *(spmax + 18)) {
-			*(spmax + 18) = tval;
-		}
-		if (tval < *(spmin + 18)) {
-			*(spmin + 18) = tval;
-		}
-		/* Compute %swpcad min/max values */
-		tval = (smc->tlskb - smc->frskb) ?
-		       SP_VALUE(0, smc->caskb, smc->tlskb - smc->frskb) : 0.0;
 		if (tval > *(spmax + 19)) {
 			*(spmax + 19) = tval;
 		}
 		if (tval < *(spmin + 19)) {
 			*(spmin + 19) = tval;
 		}
-		/* Compute memused min/max values in MB */
-		tval = ((double) (smc->tlmkb - smc->frmkb)) / 1024;
-		if (tval > *(spmax + 1)) {
-			*(spmax + 1) = tval;
+		/* Compute %swpcad min/max values */
+		tval = (smc->tlskb - smc->frskb) ?
+		       SP_VALUE(0, smc->caskb, smc->tlskb - smc->frskb) : 0.0;
+		if (tval > *(spmax + 20)) {
+			*(spmax + 20) = tval;
 		}
-		if (tval < *(spmin + 1)) {
-			*(spmin + 1) = tval;
+		if (tval < *(spmin + 20)) {
+			*(spmin + 20) = tval;
+		}
+		/* Compute memused min/max values in MB */
+		tval = ((double) (smc->tlmkb - nousedmem)) / 1024;
+		if (tval > *(spmax + 2)) {
+			*(spmax + 2) = tval;
+		}
+		if (tval < *(spmin + 2)) {
+			*(spmin + 2) = tval;
 		}
 		/* Compute swpused min/max values in MB */
 		tval = ((double) (smc->tlskb - smc->frskb)) / 1024;
-		if (tval > *(spmax + 16)) {
-			*(spmax + 16) = tval;
+		if (tval > *(spmax + 17)) {
+			*(spmax + 17) = tval;
 		}
-		if (tval < *(spmin + 16)) {
-			*(spmin + 16) = tval;
+		if (tval < *(spmin + 17)) {
+			*(spmin + 17) = tval;
 		}
 
 		/* MBmemfree */
@@ -1633,108 +1721,115 @@ __print_funct_t svg_print_memory_stats(struct activity *a, int curr, int action,
 			 out, outsize, svg_p->restart);
 		/* MBmemused */
 		lnappend(record_hdr->ust_time - svg_p->ust_time_ref,
-			 ((double) (smc->tlmkb - smc->frmkb)) / 1024,
+			 ((double) (smc->tlmkb - nousedmem)) / 1024,
+			 out + 2, outsize + 2, svg_p->restart);
+		/* MBavail */
+		lnappend(record_hdr->ust_time - svg_p->ust_time_ref,
+			 ((double) smc->availablekb) / 1024,
 			 out + 1, outsize + 1, svg_p->restart);
 		/* MBbuffers */
 		lnappend(record_hdr->ust_time - svg_p->ust_time_ref,
 			 ((double) smc->bufkb) / 1024,
-			 out + 3, outsize + 3, svg_p->restart);
+			 out + 4, outsize + 4, svg_p->restart);
 		/* MBcached */
 		lnappend(record_hdr->ust_time - svg_p->ust_time_ref,
 			 ((double) smc->camkb) / 1024,
-			  out + 4, outsize + 4, svg_p->restart);
+			  out + 5, outsize + 5, svg_p->restart);
 		/* MBswpfree */
 		lnappend(record_hdr->ust_time - svg_p->ust_time_ref,
 			 ((double) smc->frskb) / 1024,
-			 out + 15, outsize + 15, svg_p->restart);
+			 out + 16, outsize + 16, svg_p->restart);
 		/* MBswpused */
 		lnappend(record_hdr->ust_time - svg_p->ust_time_ref,
 			 ((double) (smc->tlskb - smc->frskb)) / 1024,
-			 out + 16, outsize + 16, svg_p->restart);
+			 out + 17, outsize + 17, svg_p->restart);
 		/* MBswpcad */
 		lnappend(record_hdr->ust_time - svg_p->ust_time_ref,
 			 ((double) smc->caskb) / 1024,
-			 out + 17, outsize + 17, svg_p->restart);
+			 out + 18, outsize + 18, svg_p->restart);
 		/* MBcommit */
 		lnappend(record_hdr->ust_time - svg_p->ust_time_ref,
 			 ((double) smc->comkb) / 1024,
-			 out + 5, outsize + 5, svg_p->restart);
+			 out + 6, outsize + 6, svg_p->restart);
 		/* MBactive */
 		lnappend(record_hdr->ust_time - svg_p->ust_time_ref,
 			 ((double) smc->activekb) / 1024,
-			 out + 7, outsize + 7, svg_p->restart);
+			 out + 8, outsize + 8, svg_p->restart);
 		/* MBinact */
 		lnappend(record_hdr->ust_time - svg_p->ust_time_ref,
 			 ((double) smc->inactkb) / 1024,
-			 out + 8, outsize + 8, svg_p->restart);
+			 out + 9, outsize + 9, svg_p->restart);
 		/* MBdirty */
 		lnappend(record_hdr->ust_time - svg_p->ust_time_ref,
 			 ((double) smc->dirtykb) / 1024,
-			 out + 9, outsize + 9, svg_p->restart);
+			 out + 10, outsize + 10, svg_p->restart);
 		/* MBanonpg */
 		lnappend(record_hdr->ust_time - svg_p->ust_time_ref,
 			 ((double) smc->anonpgkb) / 1024,
-			 out + 10, outsize + 10, svg_p->restart);
+			 out + 11, outsize + 11, svg_p->restart);
 		/* MBslab */
 		lnappend(record_hdr->ust_time - svg_p->ust_time_ref,
 			 ((double) smc->slabkb) / 1024,
-			 out + 11, outsize + 11, svg_p->restart);
+			 out + 12, outsize + 12, svg_p->restart);
 		/* MBkstack */
 		lnappend(record_hdr->ust_time - svg_p->ust_time_ref,
 			 ((double) smc->kstackkb) / 1024,
-			 out + 12, outsize + 12, svg_p->restart);
+			 out + 13, outsize + 13, svg_p->restart);
 		/* MBpgtbl */
 		lnappend(record_hdr->ust_time - svg_p->ust_time_ref,
 			 ((double) smc->pgtblkb) / 1024,
-			 out + 13, outsize + 13, svg_p->restart);
+			 out + 14, outsize + 14, svg_p->restart);
 		/* MBvmused */
 		lnappend(record_hdr->ust_time - svg_p->ust_time_ref,
 			 ((double) smc->vmusedkb) / 1024,
-			 out + 14, outsize + 14, svg_p->restart);
+			 out + 15, outsize + 15, svg_p->restart);
 		/* %memused */
 		brappend(record_hdr->ust_time - svg_p->ust_time_ref,
 			 0.0,
 			 smc->tlmkb ?
-			 SP_VALUE(smc->frmkb, smc->tlmkb, smc->tlmkb) : 0.0,
-			 out + 2, outsize + 2, svg_p->dt);
+			 SP_VALUE(nousedmem, smc->tlmkb, smc->tlmkb) : 0.0,
+			 out + 3, outsize + 3, svg_p->dt);
 		/* %commit */
 		brappend(record_hdr->ust_time - svg_p->ust_time_ref,
 			 0.0,
 			 (smc->tlmkb + smc->tlskb) ?
 			 SP_VALUE(0, smc->comkb, smc->tlmkb + smc->tlskb) : 0.0,
-			 out + 6, outsize + 6, svg_p->dt);
+			 out + 7, outsize + 7, svg_p->dt);
 		/* %swpused */
 		brappend(record_hdr->ust_time - svg_p->ust_time_ref,
 			 0.0,
 			 smc->tlskb ?
 			 SP_VALUE(smc->frskb, smc->tlskb, smc->tlskb) : 0.0,
-			 out + 18, outsize + 18, svg_p->dt);
+			 out + 19, outsize + 19, svg_p->dt);
 		/* %swpcad */
 		brappend(record_hdr->ust_time - svg_p->ust_time_ref,
 			 0.0,
 			 (smc->tlskb - smc->frskb) ?
 			 SP_VALUE(0, smc->caskb, smc->tlskb - smc->frskb) : 0.0,
-			 out + 19, outsize + 19, svg_p->dt);
+			 out + 20, outsize + 20, svg_p->dt);
 	}
 
 	if (action & F_END) {
 
 		/* Conversion kB -> MB */
-		for (i = 0; i < 16; i++) {
+		for (i = 0; i < 17; i++) {
 			*(spmin + g_fields[i]) /= 1024;
 			*(spmax + g_fields[i]) /= 1024;
 		}
 
-		if (DISPLAY_MEM_AMT(a->opt_flags)) {
-			draw_activity_graphs(DISPLAY_MEM_ALL(a->opt_flags) ? 6 : 5,
-					     g_type1, title1, g_title1, NULL, group1,
-					     spmin, spmax, out, outsize, svg_p, record_hdr);
+		if (DISPLAY_MEMORY(a->opt_flags)) {
+			if (draw_activity_graphs(DISPLAY_MEM_ALL(a->opt_flags) ? 6 : 5,
+						 g_type1, title1, g_title1, NULL, group1,
+						 spmin, spmax, out, outsize, svg_p, record_hdr,
+						 FALSE, a->id, xid)) {
+				xid++;
+			}
 		}
 
 		if (DISPLAY_SWAP(a->opt_flags)) {
 			draw_activity_graphs(3, g_type2, title2, g_title2, NULL, group2,
-					     spmin + 15, spmax + 15, out + 15, outsize + 15,
-					     svg_p, record_hdr);
+					     spmin + 16, spmax + 16, out + 16, outsize + 16,
+					     svg_p, record_hdr, FALSE, a->id, xid);
 		}
 
 		/* Free remaining structures */
@@ -1754,7 +1849,7 @@ __print_funct_t svg_print_memory_stats(struct activity *a, int curr, int action,
  * 		flag indicating that a restart record has been previously
  * 		found (.@restart) and time used for the X axis origin
  * 		(@ust_time_ref).
- * @itv		Interval of time in jiffies (only with F_MAIN action).
+ * @itv		Interval of time in 1/100th of a second (only with F_MAIN action).
  * @record_hdr	Pointer on record header of current stats sample.
  ***************************************************************************
  */
@@ -1765,7 +1860,7 @@ __print_funct_t svg_print_ktables_stats(struct activity *a, int curr, int action
 		*skc = (struct stats_ktables *) a->buf[curr];
 	int group[] = {3, 1};
 	int g_type[] = {SVG_LINE_GRAPH, SVG_LINE_GRAPH};
-	char *title[] = {"Kernel tables (1)", "Kernel tables (2)"};
+	char *title[] = {"Kernel tables statistics (1)", "Kernel tables statistics (2)"};
 	char *g_title[] = {"~dentunusd", "~file-nr", "~inode-nr",
 			   "~pty-nr"};
 	int g_fields[] = {1, 2, 0, 3};
@@ -1783,29 +1878,29 @@ __print_funct_t svg_print_ktables_stats(struct activity *a, int curr, int action
 
 	if (action & F_MAIN) {
 		/* Check for min/max values */
-		save_extrema(0, 0, 4, (void *) a->buf[curr], NULL,
+		save_extrema(a->gtypes_nr, (void *) a->buf[curr], NULL,
 			     itv, spmin, spmax, g_fields);
 		/* dentunusd */
 		lniappend(record_hdr->ust_time - svg_p->ust_time_ref,
-			  (unsigned long) skc->dentry_stat,
+			  (unsigned long long) skc->dentry_stat,
 			  out, outsize, svg_p->restart);
 		/* file-nr */
 		lniappend(record_hdr->ust_time - svg_p->ust_time_ref,
-			  (unsigned long) skc->file_used,
+			  (unsigned long long) skc->file_used,
 			  out + 1, outsize + 1, svg_p->restart);
 		/* inode-nr */
 		lniappend(record_hdr->ust_time - svg_p->ust_time_ref,
-			  (unsigned long) skc->inode_used,
+			  (unsigned long long) skc->inode_used,
 			  out + 2, outsize + 2, svg_p->restart);
 		/* pty-nr */
 		lniappend(record_hdr->ust_time - svg_p->ust_time_ref,
-			  (unsigned long) skc->pty_nr,
+			  (unsigned long long) skc->pty_nr,
 			  out + 3, outsize + 3, svg_p->restart);
 	}
 
 	if (action & F_END) {
 		draw_activity_graphs(a->g_nr, g_type, title, g_title, NULL, group,
-				     spmin, spmax, out, outsize, svg_p, record_hdr);
+				     spmin, spmax, out, outsize, svg_p, record_hdr, FALSE, a->id, 0);
 
 		/* Free remaining structures */
 		free_graphs(out, outsize, spmin, spmax);
@@ -1824,7 +1919,7 @@ __print_funct_t svg_print_ktables_stats(struct activity *a, int curr, int action
  * 		flag indicating that a restart record has been previously
  * 		found (.@restart) and time used for the X axis origin
  * 		(@ust_time_ref).
- * @itv		Interval of time in jiffies (only with F_MAIN action).
+ * @itv		Interval of time in 1/100th of a second (only with F_MAIN action).
  * @record_hdr	Pointer on record header of current stats sample.
  ***************************************************************************
  */
@@ -1835,11 +1930,11 @@ __print_funct_t svg_print_queue_stats(struct activity *a, int curr, int action, 
 		*sqc = (struct stats_queue *) a->buf[curr];
 	int group[] = {2, 1, 3};
 	int g_type[] = {SVG_LINE_GRAPH, SVG_LINE_GRAPH, SVG_LINE_GRAPH};
-	char *title[] = {"Queue length", "Task list", "Load average"};
+	char *title[] = {"Queue length", "Task list statistics", "Load average statistics"};
 	char *g_title[] = {"~runq-sz", "~blocked",
 			   "~plist-sz",
 			   "ldavg-1", "ldavg-5", "ldavg-15"};
-	int g_fields[] = {0, 1, 3, 4, 5, 2};
+	int g_fields[] = {0, 1, 2, 3, 4, 5};
 	static double *spmin, *spmax;
 	static char **out;
 	static int *outsize;
@@ -1854,19 +1949,19 @@ __print_funct_t svg_print_queue_stats(struct activity *a, int curr, int action, 
 
 	if (action & F_MAIN) {
 		/* Check for min/max values */
-		save_extrema(0, 2, 4, (void *) a->buf[curr], NULL,
+		save_extrema(a->gtypes_nr, (void *) a->buf[curr], NULL,
 			     itv, spmin, spmax, g_fields);
 		/* runq-sz */
 		lniappend(record_hdr->ust_time - svg_p->ust_time_ref,
-			  (unsigned long) sqc->nr_running,
+			  (unsigned long long) sqc->nr_running,
 			  out, outsize, svg_p->restart);
 		/* blocked */
 		lniappend(record_hdr->ust_time - svg_p->ust_time_ref,
-			  (unsigned long) sqc->procs_blocked,
+			  (unsigned long long) sqc->procs_blocked,
 			  out + 1, outsize + 1, svg_p->restart);
 		/* plist-sz */
 		lniappend(record_hdr->ust_time - svg_p->ust_time_ref,
-			  (unsigned long) sqc->nr_threads,
+			  (unsigned long long) sqc->nr_threads,
 			  out + 2, outsize + 2, svg_p->restart);
 		/* ldavg-1 */
 		lnappend(record_hdr->ust_time - svg_p->ust_time_ref,
@@ -1889,7 +1984,7 @@ __print_funct_t svg_print_queue_stats(struct activity *a, int curr, int action, 
 		*(spmin + 5) /= 100; *(spmax + 5) /= 100;
 
 		draw_activity_graphs(a->g_nr, g_type, title, g_title, NULL, group,
-				     spmin, spmax, out, outsize, svg_p, record_hdr);
+				     spmin, spmax, out, outsize, svg_p, record_hdr, FALSE, a->id, 0);
 
 		/* Free remaining structures */
 		free_graphs(out, outsize, spmin, spmax);
@@ -1908,7 +2003,7 @@ __print_funct_t svg_print_queue_stats(struct activity *a, int curr, int action, 
  * 		flag indicating that a restart record has been previously
  * 		found (.@restart) and time used for the X axis origin
  * 		(@ust_time_ref).
- * @itv		Interval of time in jiffies (only with F_MAIN action).
+ * @itv		Interval of time in 1/100th of a second (only with F_MAIN action).
  * @record_hdr	Pointer on record header of current stats sample.
  ***************************************************************************
  */
@@ -1920,20 +2015,21 @@ __print_funct_t svg_print_disk_stats(struct activity *a, int curr, int action, s
 	int group[] = {1, 2, 2, 2, 1};
 	int g_type[] = {SVG_LINE_GRAPH, SVG_LINE_GRAPH, SVG_LINE_GRAPH,
 			SVG_LINE_GRAPH, SVG_BAR_GRAPH};
-	char *title[] = {"Disk statistics (1)", "Disk statistics (2)",
-			 "Disk statistics (3)", "Disk statistics (4)",
-			 "Disk statistics (5)"};
+	char *title[] = {"Block devices statistics (1)", "Block devices statistics (2)",
+			 "Block devices statistics (3)", "Block devices statistics (4)",
+			 "Block devices statistics (5)"};
 	char *g_title[] = {"tps",
-			   "rd_sec/s", "wr_sec/s",
-			   "avgrq-sz", "avgqu-sz",
+			   "rkB/s", "wkB/s",
+			   "areq-sz", "aqu-sz",
 			   "await", "svctm",
 			   "%util"};
 	int g_fields[] = {0, 1, 2};
+	unsigned int local_types_nr[] = {1, 0, 0};
 	static double *spmin, *spmax;
 	static char **out;
 	static int *outsize;
-	char *item_name, *persist_dev_name;
-	double aqusz;
+	char *item_name;
+	double rkB, wkB, aqusz;
 	int i, j, k, pos, restart, *unregistered;
 
 	if (action & F_BEGIN) {
@@ -1946,7 +2042,7 @@ __print_funct_t svg_print_disk_stats(struct activity *a, int curr, int action, s
 		 * outsize + 8 will contain a positive value (TRUE) if the device
 		 * has either still not been registered, or has been unregistered.
 		 */
-		out = allocate_graph_lines(9 * a->nr, &outsize, &spmin, &spmax);
+		out = allocate_graph_lines(9 * a->item_list_sz, &outsize, &spmin, &spmax);
 	}
 
 	if (action & F_MAIN) {
@@ -1956,7 +2052,7 @@ __print_funct_t svg_print_disk_stats(struct activity *a, int curr, int action, s
 		 * Mark previously registered devices as now
 		 * possibly unregistered for all graphs.
 		 */
-		for (k = 0; k < a->nr; k++) {
+		for (k = 0; k < a->item_list_sz; k++) {
 			unregistered = outsize + k * 9 + 8;
 			if (*unregistered == FALSE) {
 				*unregistered = MAYBE;
@@ -1964,40 +2060,43 @@ __print_funct_t svg_print_disk_stats(struct activity *a, int curr, int action, s
 		}
 
 		/* For each device structure */
-		for (i = 0; i < a->nr; i++) {
+		for (i = 0; i < a->nr[curr]; i++) {
 			sdc = (struct stats_disk *) ((char *) a->buf[curr] + i * a->msize);
-			if (!(sdc->major + sdc->minor))
-				/* Empty structure: Ignore it */
-				continue;
+
+			/* Get device name */
+			item_name = get_sa_devname(sdc->major, sdc->minor, flags);
+
+			if (a->item_list != NULL) {
+				/* A list of devices has been entered on the command line */
+				if (!search_list_item(a->item_list, item_name))
+					/* Device not found */
+					continue;
+			}
 
 			/* Look for corresponding graph */
-			for (k = 0; k < a->nr; k++) {
+			for (k = 0; k < a->item_list_sz; k++) {
 				if ((sdc->major == *(spmax + k * 9 + 8)) &&
 				    (sdc->minor == *(spmin + k * 9 + 8)))
 					/* Graph found! */
 					break;
 			}
-			if (k == a->nr) {
+			if (k == a->item_list_sz) {
 				/* Graph not found: Look for first free entry */
-				for (k = 0; k < a->nr; k++) {
+				for (k = 0; k < a->item_list_sz; k++) {
 					if (*(spmax + k * 9 + 8) == -DBL_MAX)
 						break;
 				}
-				if (k == a->nr)
-					/* No free graph entry: Graph for this item won't be drawn */
+				if (k == a->item_list_sz) {
+					/* No free graph entry: Ignore it (should never happen) */
+#ifdef DEBUG
+					fprintf(stderr, "%s: Name=%s major=%d minor=%d\n",
+						__FUNCTION__, item_name, sdc->major, sdc->minor);
+#endif
 					continue;
+				}
 			}
 			pos = k * 9;
 			unregistered = outsize + pos + 8;
-
-			j = check_disk_reg(a, curr, !curr, i);
-			if (j < 0) {
-				/* This is a newly registered interface. Previous stats are zero */
-				sdp = &sdpzero;
-			}
-			else {
-				sdp = (struct stats_disk *) ((char *) a->buf[!curr] + j * a->msize);
-			}
 
 			/*
 			 * If current device was marked as previously unregistered,
@@ -2015,16 +2114,40 @@ __print_funct_t svg_print_disk_stats(struct activity *a, int curr, int action, s
 				*(spmin + pos + 8) = sdc->minor;
 			}
 
+			j = check_disk_reg(a, curr, !curr, i);
+			if (j < 0) {
+				/* This is a newly registered interface. Previous stats are zero */
+				sdp = &sdpzero;
+			}
+			else {
+				sdp = (struct stats_disk *) ((char *) a->buf[!curr] + j * a->msize);
+			}
+
 			/* Check for min/max values */
-			save_extrema(1, 2, 0, (void *) sdc, (void *) sdp,
+			save_extrema(local_types_nr, (void *) sdc, (void *) sdp,
 				     itv, spmin + pos, spmax + pos, g_fields);
 
-			compute_ext_disk_stats(sdc, sdp, itv, &xds);
-			if (xds.arqsz < *(spmin + pos + 3)) {
-				*(spmin + pos + 3) = xds.arqsz;
+			rkB = S_VALUE(sdp->rd_sect, sdc->rd_sect, itv) / 2;
+			wkB = S_VALUE(sdp->wr_sect, sdc->wr_sect, itv) / 2;
+			if (rkB < *(spmin + pos + 1)) {
+				*(spmin + pos + 1) = rkB;
 			}
-			if (xds.arqsz > *(spmax + pos + 3)) {
-				*(spmax + pos + 3) = xds.arqsz;
+			if (rkB > *(spmax + pos + 1)) {
+				*(spmax + pos + 1) = rkB;
+			}
+			if (wkB < *(spmin + pos + 2)) {
+				*(spmin + pos + 2) = wkB;
+			}
+			if (wkB > *(spmax + pos + 2)) {
+				*(spmax + pos + 2) = wkB;
+			}
+
+			compute_ext_disk_stats(sdc, sdp, itv, &xds);
+			if ((xds.arqsz / 2) < *(spmin + pos + 3)) {
+				*(spmin + pos + 3) = xds.arqsz / 2;
+			}
+			if ((xds.arqsz / 2) > *(spmax + pos + 3)) {
+				*(spmax + pos + 3) = xds.arqsz / 2;
 			}
 			aqusz = S_VALUE(sdp->rq_ticks, sdc->rq_ticks, itv) / 1000.0;
 			if (aqusz < *(spmin + pos + 4)) {
@@ -2056,19 +2179,19 @@ __print_funct_t svg_print_disk_stats(struct activity *a, int curr, int action, s
 			lnappend(record_hdr->ust_time - svg_p->ust_time_ref,
 				 S_VALUE(sdp->nr_ios, sdc->nr_ios, itv),
 				 out + pos, outsize + pos, restart);
-			/* rd_sec/s */
+			/* rkB/s */
 			lnappend(record_hdr->ust_time - svg_p->ust_time_ref,
-				 S_VALUE(sdp->rd_sect, sdc->rd_sect, itv),
+				 S_VALUE(sdp->rd_sect, sdc->rd_sect, itv) / 2,
 				 out + pos + 1, outsize + pos + 1, restart);
-			/* wr_sec/s */
+			/* wkB/s */
 			lnappend(record_hdr->ust_time - svg_p->ust_time_ref,
-				 S_VALUE(sdp->wr_sect, sdc->wr_sect, itv),
+				 S_VALUE(sdp->wr_sect, sdc->wr_sect, itv) / 2,
 				 out + pos + 2, outsize + pos + 2, restart);
-			/* avgrq-sz */
+			/* areq-sz */
 			lnappend(record_hdr->ust_time - svg_p->ust_time_ref,
-				 xds.arqsz,
+				 xds.arqsz / 2,
 				 out + pos + 3, outsize + pos + 3, restart);
-			/* avgqu-sz */
+			/* aqu-sz */
 			lnappend(record_hdr->ust_time - svg_p->ust_time_ref,
 				 aqusz,
 				 out + pos + 4, outsize + pos + 4, restart);
@@ -2087,7 +2210,7 @@ __print_funct_t svg_print_disk_stats(struct activity *a, int curr, int action, s
 		}
 
 		/* Mark devices not seen here as now unregistered */
-		for (k = 0; k < a->nr; k++) {
+		for (k = 0; k < a->item_list_sz; k++) {
 			unregistered = outsize + k * 9 + 8;
 			if (*unregistered != FALSE) {
 				*unregistered = TRUE;
@@ -2096,38 +2219,23 @@ __print_funct_t svg_print_disk_stats(struct activity *a, int curr, int action, s
 	}
 
 	if (action & F_END) {
-		for (i = 0; i < a->nr; i++) {
+		int xid = 0;
+
+		for (i = 0; i < a->item_list_sz; i++) {
 			/* Check if there is something to display */
 			pos = i * 9;
 			if (!**(out + pos))
 				continue;
 
-			item_name = NULL;
-			persist_dev_name = NULL;
+			/* Get device name */
+			item_name = get_sa_devname(*(spmax + pos + 8), *(spmin + pos + 8), flags);
 
-			if (DISPLAY_PERSIST_NAME_S(flags)) {
-				persist_dev_name = get_persistent_name_from_pretty(get_devname(*(spmax + pos + 8),
-											       *(spmin + pos + 8),
-											       TRUE));
+			if (draw_activity_graphs(a->g_nr, g_type,
+						 title, g_title, item_name, group,
+						 spmin + pos, spmax + pos, out + pos, outsize + pos,
+						 svg_p, record_hdr, FALSE, a->id, xid)) {
+				xid++;
 			}
-			if (persist_dev_name) {
-				item_name = persist_dev_name;
-			}
-			else {
-				if ((USE_PRETTY_OPTION(flags)) && (*(spmax + pos + 8) == dm_major)) {
-					item_name = transform_devmapname(*(spmax + pos + 8), *(spmin + pos + 8));
-				}
-
-				if (!item_name) {
-					item_name = get_devname(*(spmax + pos + 8), *(spmin + pos + 8),
-								USE_PRETTY_OPTION(flags));
-				}
-			}
-
-			draw_activity_graphs(a->g_nr, g_type,
-					     title, g_title, item_name, group,
-					     spmin + pos, spmax + pos, out + pos, outsize + pos,
-					     svg_p, record_hdr);
 		}
 
 		/* Free remaining structures */
@@ -2147,7 +2255,7 @@ __print_funct_t svg_print_disk_stats(struct activity *a, int curr, int action, s
  * 		flag indicating that a restart record has been previously
  * 		found (.@restart) and time used for the X axis origin
  * 		(@ust_time_ref).
- * @itv		Interval of time in jiffies (only with F_MAIN action).
+ * @itv		Interval of time in 1/100th of a second (only with F_MAIN action).
  * @record_hdr	Pointer on record header of current stats sample.
  ***************************************************************************
  */
@@ -2158,13 +2266,14 @@ __print_funct_t svg_print_net_dev_stats(struct activity *a, int curr, int action
 	int group[] = {2, 2, 3, 1};
 	int g_type[] = {SVG_LINE_GRAPH, SVG_LINE_GRAPH, SVG_LINE_GRAPH,
 			SVG_BAR_GRAPH};
-	char *title[] = {"Network statistics (1)", "Network statistics (2)",
-			 "Network statistics (3)", "Network statistics (4)"};
+	char *title[] = {"Network interfaces statistics (1)", "Network interfaces statistics (2)",
+			 "Network interfaces statistics (3)", "Network interfaces statistics (4)"};
 	char *g_title[] = {"rxpck/s", "txpck/s",
 			   "rxkB/s", "txkB/s",
 			   "rxcmp/s", "txcmp/s", "rxmcst/s",
 			   "%ifutil"};
 	int g_fields[] = {0, 1, 2, 3, 4, 5, 6};
+	unsigned int local_types_nr[] = {7, 0, 0};
 	static double *spmin, *spmax;
 	static char **out;
 	static int *outsize;
@@ -2181,7 +2290,7 @@ __print_funct_t svg_print_net_dev_stats(struct activity *a, int curr, int action
 		 * outsize + 8 will contain a positive value (TRUE) if the interface
 		 * has either still not been registered, or has been unregistered.
 		 */
-		out = allocate_graph_lines(9 * a->nr, &outsize, &spmin, &spmax);
+		out = allocate_graph_lines(9 * a->item_list_sz, &outsize, &spmin, &spmax);
 	}
 
 	if (action & F_MAIN) {
@@ -2191,7 +2300,7 @@ __print_funct_t svg_print_net_dev_stats(struct activity *a, int curr, int action
 		 * Mark previously registered interfaces as now
 		 * possibly unregistered for all graphs.
 		 */
-		for (k = 0; k < a->nr; k++) {
+		for (k = 0; k < a->item_list_sz; k++) {
 			unregistered = outsize + k * 9 + 8;
 			if (*unregistered == FALSE) {
 				*unregistered = MAYBE;
@@ -2199,31 +2308,39 @@ __print_funct_t svg_print_net_dev_stats(struct activity *a, int curr, int action
 		}
 
 		/* For each network interfaces structure */
-		for (i = 0; i < a->nr; i++) {
+		for (i = 0; i < a->nr[curr]; i++) {
 			sndc = (struct stats_net_dev *) ((char *) a->buf[curr] + i * a->msize);
-			if (!strcmp(sndc->interface, ""))
-				/* Empty structure: This is the end of the list */
-				break;
+
+			if (a->item_list != NULL) {
+				/* A list of devices has been entered on the command line */
+				if (!search_list_item(a->item_list, sndc->interface))
+					/* Device not found */
+					continue;
+			}
 
 			/* Look for corresponding graph */
-			for (k = 0; k < a->nr; k++) {
+			for (k = 0; k < a->item_list_sz; k++) {
 				item_name = *(out + k * 9 + 8);
 				if (!strcmp(sndc->interface, item_name))
 					/* Graph found! */
 					break;
 			}
-			if (k == a->nr) {
+			if (k == a->item_list_sz) {
 				/* Graph not found: Look for first free entry */
-				for (k = 0; k < a->nr; k++) {
+				for (k = 0; k < a->item_list_sz; k++) {
 					item_name = *(out + k * 9 + 8);
 					if (!strcmp(item_name, ""))
 						break;
 				}
-				if (k == a->nr)
-					/* No free graph entry: Graph for this item won't be drawn */
+				if (k == a->item_list_sz) {
+					/* No free graph entry: Ignore it (should never happen) */
+#ifdef DEBUG
+					fprintf(stderr, "%s: Name=%s\n",
+						__FUNCTION__, sndc->interface);
+#endif
 					continue;
+				}
 			}
-
 			pos = k * 9;
 			unregistered = outsize + pos + 8;
 
@@ -2246,6 +2363,7 @@ __print_funct_t svg_print_net_dev_stats(struct activity *a, int curr, int action
 			}
 			*unregistered = FALSE;
 
+			item_name = *(out + pos + 8);
 			if (!item_name[0]) {
 				/* Save network interface name (if not already done) */
 				strncpy(item_name, sndc->interface, CHUNKSIZE);
@@ -2253,7 +2371,7 @@ __print_funct_t svg_print_net_dev_stats(struct activity *a, int curr, int action
 			}
 
 			/* Check for min/max values */
-			save_extrema(7, 0, 0, (void *) sndc, (void *) sndp,
+			save_extrema(local_types_nr, (void *) sndc, (void *) sndp,
 				     itv, spmin + pos, spmax + pos, g_fields);
 
 			rxkb = S_VALUE(sndp->rx_bytes, sndc->rx_bytes, itv);
@@ -2301,7 +2419,7 @@ __print_funct_t svg_print_net_dev_stats(struct activity *a, int curr, int action
 		}
 
 		/* Mark interfaces not seen here as now unregistered */
-		for (k = 0; k < a->nr; k++) {
+		for (k = 0; k < a->item_list_sz; k++) {
 			unregistered = outsize + k * 9 + 8;
 			if (*unregistered != FALSE) {
 				*unregistered = TRUE;
@@ -2310,7 +2428,9 @@ __print_funct_t svg_print_net_dev_stats(struct activity *a, int curr, int action
 	}
 
 	if (action & F_END) {
-		for (i = 0; i < a->nr; i++) {
+		int xid = 0;
+
+		for (i = 0; i < a->item_list_sz; i++) {
 			/*
 			 * Check if there is something to display.
 			 * Don't test sndc->interface because maybe the network
@@ -2327,10 +2447,12 @@ __print_funct_t svg_print_net_dev_stats(struct activity *a, int curr, int action
 			*(spmax + pos + 3) /= 1024;
 
 			item_name = *(out + pos + 8);
-			draw_activity_graphs(a->g_nr, g_type,
-					     title, g_title, item_name, group,
-					     spmin + pos, spmax + pos, out + pos, outsize + pos,
-					     svg_p, record_hdr);
+			if (draw_activity_graphs(a->g_nr, g_type,
+						 title, g_title, item_name, group,
+						 spmin + pos, spmax + pos, out + pos, outsize + pos,
+						 svg_p, record_hdr, FALSE, a->id, xid)) {
+				xid++;
+			}
 		}
 
 		/* Free remaining structures */
@@ -2340,7 +2462,7 @@ __print_funct_t svg_print_net_dev_stats(struct activity *a, int curr, int action
 
 /*
  ***************************************************************************
- * Display network interface errors statistics in SVG.
+ * Display network interfaces errors statistics in SVG.
  *
  * IN:
  * @a		Activity structure with statistics.
@@ -2350,7 +2472,7 @@ __print_funct_t svg_print_net_dev_stats(struct activity *a, int curr, int action
  * 		flag indicating that a restart record has been previously
  * 		found (.@restart) and time used for the X axis origin
  * 		(@ust_time_ref).
- * @itv		Interval of time in jiffies (only with F_MAIN action).
+ * @itv		Interval of time in 1/100th of a second (only with F_MAIN action).
  * @record_hdr	Pointer on record header of current stats sample.
  ***************************************************************************
  */
@@ -2361,8 +2483,8 @@ __print_funct_t svg_print_net_edev_stats(struct activity *a, int curr, int actio
 	int group[] = {2, 2, 2, 3};
 	int g_type[] = {SVG_LINE_GRAPH, SVG_LINE_GRAPH, SVG_LINE_GRAPH,
 			SVG_LINE_GRAPH};
-	char *title[] = {"Network errors statistics (1)", "Network errors statistics (2)",
-			 "Network errors statistics (3)", "Network errors statistics (4)"};
+	char *title[] = {"Network interfaces errors statistics (1)", "Network interfaces errors statistics (2)",
+			 "Network interfaces errors statistics (3)", "Network interfaces errors statistics (4)"};
 	char *g_title[] = {"rxerr/s", "txerr/s",
 			    "rxdrop/s", "txdrop/s",
 			    "rxfifo/s", "txfifo/s",
@@ -2383,7 +2505,7 @@ __print_funct_t svg_print_net_edev_stats(struct activity *a, int curr, int actio
 		 * outsize + 9 will contain a positive value (TRUE) if the interface
 		 * has either still not been registered, or has been unregistered.
 		 */
-		out = allocate_graph_lines(10 * a->nr, &outsize, &spmin, &spmax);
+		out = allocate_graph_lines(10 * a->item_list_sz, &outsize, &spmin, &spmax);
 	}
 
 	if (action & F_MAIN) {
@@ -2393,7 +2515,7 @@ __print_funct_t svg_print_net_edev_stats(struct activity *a, int curr, int actio
 		 * Mark previously registered interfaces as now
 		 * possibly unregistered for all graphs.
 		 */
-		for (k = 0; k < a->nr; k++) {
+		for (k = 0; k < a->item_list_sz; k++) {
 			unregistered = outsize + k * 10 + 9;
 			if (*unregistered == FALSE) {
 				*unregistered = MAYBE;
@@ -2401,29 +2523,41 @@ __print_funct_t svg_print_net_edev_stats(struct activity *a, int curr, int actio
 		}
 
 		/* For each network interfaces structure */
-		for (i = 0; i < a->nr; i++) {
+		for (i = 0; i < a->nr[curr]; i++) {
 			snedc = (struct stats_net_edev *) ((char *) a->buf[curr] + i * a->msize);
 			if (!strcmp(snedc->interface, ""))
 				/* Empty structure: This is the end of the list */
 				break;
 
+			if (a->item_list != NULL) {
+				/* A list of devices has been entered on the command line */
+				if (!search_list_item(a->item_list, snedc->interface))
+					/* Device not found */
+					continue;
+			}
+
 			/* Look for corresponding graph */
-			for (k = 0; k < a->nr; k++) {
+			for (k = 0; k < a->item_list_sz; k++) {
 				item_name = *(out + k * 10 + 9);
 				if (!strcmp(snedc->interface, item_name))
 					/* Graph found! */
 					break;
 			}
-			if (k == a->nr) {
+			if (k == a->item_list_sz) {
 				/* Graph not found: Look for first free entry */
-				for (k = 0; k < a->nr; k++) {
+				for (k = 0; k < a->item_list_sz; k++) {
 					item_name = *(out + k * 10 + 9);
 					if (!strcmp(item_name, ""))
 						break;
 				}
-				if (k == a->nr)
-					/* No free graph entry: Graph for this item won't be drawn */
+				if (k == a->item_list_sz) {
+					/* No free graph entry: Ignore it (should never happen) */
+#ifdef DEBUG
+					fprintf(stderr, "%s: Name=%s\n",
+						__FUNCTION__, snedc->interface);
+#endif
 					continue;
+				}
 			}
 
 			pos = k * 10;
@@ -2448,6 +2582,7 @@ __print_funct_t svg_print_net_edev_stats(struct activity *a, int curr, int actio
 			}
 			*unregistered = FALSE;
 
+			item_name = *(out + pos + 9);
 			if (!item_name[0]) {
 				/* Save network interface name (if not already done) */
 				strncpy(item_name, snedc->interface, CHUNKSIZE);
@@ -2455,7 +2590,7 @@ __print_funct_t svg_print_net_edev_stats(struct activity *a, int curr, int actio
 			}
 
 			/* Check for min/max values */
-			save_extrema(9, 0, 0, (void *) snedc, (void *) snedp,
+			save_extrema(a->gtypes_nr, (void *) snedc, (void *) snedp,
 				     itv, spmin + pos, spmax + pos, g_fields);
 
 			/* rxerr/s */
@@ -2497,7 +2632,7 @@ __print_funct_t svg_print_net_edev_stats(struct activity *a, int curr, int actio
 		}
 
 		/* Mark interfaces not seen here as now unregistered */
-		for (k = 0; k < a->nr; k++) {
+		for (k = 0; k < a->item_list_sz; k++) {
 			unregistered = outsize + k * 10 + 9;
 			if (*unregistered != FALSE) {
 				*unregistered = TRUE;
@@ -2506,7 +2641,9 @@ __print_funct_t svg_print_net_edev_stats(struct activity *a, int curr, int actio
 	}
 
 	if (action & F_END) {
-		for (i = 0; i < a->nr; i++) {
+		int xid = 0;
+
+		for (i = 0; i < a->item_list_sz; i++) {
 			/*
 			 * Check if there is something to display.
 			 * Don't test snedc->interface because maybe the network
@@ -2517,10 +2654,12 @@ __print_funct_t svg_print_net_edev_stats(struct activity *a, int curr, int actio
 				continue;
 
 			item_name = *(out + pos + 9);
-			draw_activity_graphs(a->g_nr, g_type,
-					     title, g_title, item_name, group,
-					     spmin + pos, spmax + pos, out + pos, outsize + pos,
-					     svg_p, record_hdr);
+			if (draw_activity_graphs(a->g_nr, g_type,
+						 title, g_title, item_name, group,
+						 spmin + pos, spmax + pos, out + pos, outsize + pos,
+						 svg_p, record_hdr, FALSE, a->id, xid)) {
+				xid++;
+			}
 		}
 
 		/* Free remaining structures */
@@ -2540,7 +2679,7 @@ __print_funct_t svg_print_net_edev_stats(struct activity *a, int curr, int actio
  * 		flag indicating that a restart record has been previously
  * 		found (.@restart) and time used for the X axis origin
  * 		(@ust_time_ref).
- * @itv		Interval of time in jiffies (only with F_MAIN action).
+ * @itv		Interval of time in 1/100th of a second (only with F_MAIN action).
  * @record_hdr	Pointer on record header of current stats sample.
  ***************************************************************************
  */
@@ -2572,7 +2711,7 @@ __print_funct_t svg_print_net_nfs_stats(struct activity *a, int curr, int action
 
 	if (action & F_MAIN) {
 		/* Check for min/max values */
-		save_extrema(0, 0, 6, (void *) a->buf[curr], (void *) a->buf[!curr],
+		save_extrema(a->gtypes_nr, (void *) a->buf[curr], (void *) a->buf[!curr],
 			     itv, spmin, spmax, g_fields);
 
 		/* call/s */
@@ -2603,7 +2742,7 @@ __print_funct_t svg_print_net_nfs_stats(struct activity *a, int curr, int action
 
 	if (action & F_END) {
 		draw_activity_graphs(a->g_nr, g_type, title, g_title, NULL, group,
-				     spmin, spmax, out, outsize, svg_p, record_hdr);
+				     spmin, spmax, out, outsize, svg_p, record_hdr, FALSE, a->id, 0);
 
 		/* Free remaining structures */
 		free_graphs(out, outsize, spmin, spmax);
@@ -2622,7 +2761,7 @@ __print_funct_t svg_print_net_nfs_stats(struct activity *a, int curr, int action
  * 		flag indicating that a restart record has been previously
  * 		found (.@restart) and time used for the X axis origin
  * 		(@ust_time_ref).
- * @itv		Interval of time in jiffies (only with F_MAIN action).
+ * @itv		Interval of time in 1/100th of a second (only with F_MAIN action).
  * @record_hdr	Pointer on record header of current stats sample.
  ***************************************************************************
  */
@@ -2658,7 +2797,7 @@ __print_funct_t svg_print_net_nfsd_stats(struct activity *a, int curr, int actio
 
 	if (action & F_MAIN) {
 		/* Check for min/max values */
-		save_extrema(0, 0, 11, (void *) a->buf[curr], (void *) a->buf[!curr],
+		save_extrema(a->gtypes_nr, (void *) a->buf[curr], (void *) a->buf[!curr],
 			     itv, spmin, spmax, g_fields);
 
 		/* scall/s */
@@ -2709,7 +2848,7 @@ __print_funct_t svg_print_net_nfsd_stats(struct activity *a, int curr, int actio
 
 	if (action & F_END) {
 		draw_activity_graphs(a->g_nr, g_type, title, g_title, NULL, group,
-				     spmin, spmax, out, outsize, svg_p, record_hdr);
+				     spmin, spmax, out, outsize, svg_p, record_hdr, FALSE, a->id, 0);
 
 		/* Free remaining structures */
 		free_graphs(out, outsize, spmin, spmax);
@@ -2718,7 +2857,7 @@ __print_funct_t svg_print_net_nfsd_stats(struct activity *a, int curr, int actio
 
 /*
  ***************************************************************************
- * Display network socket statistics in SVG.
+ * Display socket statistics in SVG.
  *
  * IN:
  * @a		Activity structure with statistics.
@@ -2728,7 +2867,7 @@ __print_funct_t svg_print_net_nfsd_stats(struct activity *a, int curr, int actio
  * 		flag indicating that a restart record has been previously
  * 		found (.@restart) and time used for the X axis origin
  * 		(@ust_time_ref).
- * @itv		Interval of time in jiffies (only with F_MAIN action).
+ * @itv		Interval of time in 1/100th of a second (only with F_MAIN action).
  * @record_hdr	Pointer on record header of current stats sample.
  ***************************************************************************
  */
@@ -2739,7 +2878,7 @@ __print_funct_t svg_print_net_sock_stats(struct activity *a, int curr, int actio
 		*snsc = (struct stats_net_sock *) a->buf[curr];
 	int group[] = {1, 5};
 	int g_type[] = {SVG_LINE_GRAPH, SVG_LINE_GRAPH};
-	char *title[] = {"IPv4 network sockets (1)", "IPv4 network sockets (2)"};
+	char *title[] = {"IPv4 sockets statistics (1)", "IPv4 sockets statistics (2)"};
 	char *g_title[] = {"~totsck",
 			   "~tcpsck", "~udpsck", "~rawsck", "~ip-frag", "~tcp-tw"};
 	int g_fields[] = {0, 1, 5, 2, 3, 4};
@@ -2757,37 +2896,37 @@ __print_funct_t svg_print_net_sock_stats(struct activity *a, int curr, int actio
 
 	if (action & F_MAIN) {
 		/* Check for min/max values */
-		save_extrema(0, 0, 6, (void *) a->buf[curr], NULL,
+		save_extrema(a->gtypes_nr, (void *) a->buf[curr], NULL,
 			     itv, spmin, spmax, g_fields);
 		/* totsck */
 		lniappend(record_hdr->ust_time - svg_p->ust_time_ref,
-			  (unsigned long) snsc->sock_inuse,
+			  (unsigned long long) snsc->sock_inuse,
 			  out, outsize, svg_p->restart);
 		/* tcpsck */
 		lniappend(record_hdr->ust_time - svg_p->ust_time_ref,
-			  (unsigned long) snsc->tcp_inuse,
+			  (unsigned long long) snsc->tcp_inuse,
 			  out + 1, outsize + 1, svg_p->restart);
 		/* udpsck */
 		lniappend(record_hdr->ust_time - svg_p->ust_time_ref,
-			  (unsigned long) snsc->udp_inuse,
+			  (unsigned long long) snsc->udp_inuse,
 			  out + 2, outsize + 2, svg_p->restart);
 		/* rawsck */
 		lniappend(record_hdr->ust_time - svg_p->ust_time_ref,
-			  (unsigned long) snsc->raw_inuse,
+			  (unsigned long long) snsc->raw_inuse,
 			  out + 3, outsize + 3, svg_p->restart);
 		/* ip-frag */
 		lniappend(record_hdr->ust_time - svg_p->ust_time_ref,
-			  (unsigned long) snsc->frag_inuse,
+			  (unsigned long long) snsc->frag_inuse,
 			  out + 4, outsize + 4, svg_p->restart);
 		/* tcp-tw */
 		lniappend(record_hdr->ust_time - svg_p->ust_time_ref,
-			  (unsigned long) snsc->tcp_tw,
+			  (unsigned long long) snsc->tcp_tw,
 			  out + 5, outsize + 5, svg_p->restart);
 	}
 
 	if (action & F_END) {
 		draw_activity_graphs(a->g_nr, g_type, title, g_title, NULL, group,
-				     spmin, spmax, out, outsize, svg_p, record_hdr);
+				     spmin, spmax, out, outsize, svg_p, record_hdr, FALSE, a->id, 0);
 
 		/* Free remaining structures */
 		free_graphs(out, outsize, spmin, spmax);
@@ -2796,7 +2935,7 @@ __print_funct_t svg_print_net_sock_stats(struct activity *a, int curr, int actio
 
 /*
  ***************************************************************************
- * Display IPv4 network statistics in SVG.
+ * Display IPv4 traffic statistics in SVG.
  *
  * IN:
  * @a		Activity structure with statistics.
@@ -2806,7 +2945,7 @@ __print_funct_t svg_print_net_sock_stats(struct activity *a, int curr, int actio
  * 		flag indicating that a restart record has been previously
  * 		found (.@restart) and time used for the X axis origin
  * 		(@ust_time_ref).
- * @itv		Interval of time in jiffies (only with F_MAIN action).
+ * @itv		Interval of time in 1/100th of a second (only with F_MAIN action).
  * @record_hdr	Pointer on record header of current stats sample.
  ***************************************************************************
  */
@@ -2818,7 +2957,7 @@ __print_funct_t svg_print_net_ip_stats(struct activity *a, int curr, int action,
 		*snip = (struct stats_net_ip *) a->buf[!curr];
 	int group[] = {4, 2, 2};
 	int g_type[] = {SVG_LINE_GRAPH, SVG_LINE_GRAPH, SVG_LINE_GRAPH};
-	char *title[] = {"IPv4 network statistics (1)", "IPv4 network statistics (2)", "IPv4 network statistics (3)"};
+	char *title[] = {"IPv4 traffic statistics (1)", "IPv4 traffic statistics (2)", "IPv4 traffic statistics (3)"};
 	char *g_title[] = {"irec/s", "fwddgm/s", "idel/s", "orq/s",
 			   "asmrq/s", "asmok/s",
 			   "fragok/s", "fragcrt/s"};
@@ -2837,7 +2976,7 @@ __print_funct_t svg_print_net_ip_stats(struct activity *a, int curr, int action,
 
 	if (action & F_MAIN) {
 		/* Check for min/max values */
-		save_extrema(8, 0, 0, (void *) a->buf[curr], (void *) a->buf[!curr],
+		save_extrema(a->gtypes_nr, (void *) a->buf[curr], (void *) a->buf[!curr],
 			     itv, spmin, spmax, g_fields);
 
 		/* irec/s */
@@ -2876,7 +3015,7 @@ __print_funct_t svg_print_net_ip_stats(struct activity *a, int curr, int action,
 
 	if (action & F_END) {
 		draw_activity_graphs(a->g_nr, g_type, title, g_title, NULL, group,
-				     spmin, spmax, out, outsize, svg_p, record_hdr);
+				     spmin, spmax, out, outsize, svg_p, record_hdr, FALSE, a->id, 0);
 
 		/* Free remaining structures */
 		free_graphs(out, outsize, spmin, spmax);
@@ -2885,7 +3024,7 @@ __print_funct_t svg_print_net_ip_stats(struct activity *a, int curr, int action,
 
 /*
  ***************************************************************************
- * Display IPv4 network errors statistics in SVG.
+ * Display IPv4 traffic errors statistics in SVG.
  *
  * IN:
  * @a		Activity structure with statistics.
@@ -2895,7 +3034,7 @@ __print_funct_t svg_print_net_ip_stats(struct activity *a, int curr, int action,
  * 		flag indicating that a restart record has been previously
  * 		found (.@restart) and time used for the X axis origin
  * 		(@ust_time_ref).
- * @itv		Interval of time in jiffies (only with F_MAIN action).
+ * @itv		Interval of time in 1/100th of a second (only with F_MAIN action).
  * @record_hdr	Pointer on record header of current stats sample.
  ***************************************************************************
  */
@@ -2907,8 +3046,8 @@ __print_funct_t svg_print_net_eip_stats(struct activity *a, int curr, int action
 		*sneip = (struct stats_net_eip *) a->buf[!curr];
 	int group[] = {3, 2, 3};
 	int g_type[] = {SVG_LINE_GRAPH, SVG_LINE_GRAPH, SVG_LINE_GRAPH};
-	char *title[] = {"IPv4 network errors statistics (1)", "IPv4 network errors statistics (2)",
-			 "IPv4 network errors statistics (3)"};
+	char *title[] = {"IPv4 traffic errors statistics (1)", "IPv4 traffic errors statistics (2)",
+			 "IPv4 traffic errors statistics (3)"};
 	char *g_title[] = {"ihdrerr/s", "iadrerr/s", "iukwnpr/s",
 			   "idisc/s", "odisc/s",
 			   "onort/s", "asmf/s", "fragf/s"};
@@ -2927,7 +3066,7 @@ __print_funct_t svg_print_net_eip_stats(struct activity *a, int curr, int action
 
 	if (action & F_MAIN) {
 		/* Check for min/max values */
-		save_extrema(8, 0, 0, (void *) a->buf[curr], (void *) a->buf[!curr],
+		save_extrema(a->gtypes_nr, (void *) a->buf[curr], (void *) a->buf[!curr],
 			     itv, spmin, spmax, g_fields);
 
 		/* ihdrerr/s */
@@ -2966,7 +3105,7 @@ __print_funct_t svg_print_net_eip_stats(struct activity *a, int curr, int action
 
 	if (action & F_END) {
 		draw_activity_graphs(a->g_nr, g_type, title, g_title, NULL, group,
-				     spmin, spmax, out, outsize, svg_p, record_hdr);
+				     spmin, spmax, out, outsize, svg_p, record_hdr, FALSE, a->id, 0);
 
 		/* Free remaining structures */
 		free_graphs(out, outsize, spmin, spmax);
@@ -2975,7 +3114,7 @@ __print_funct_t svg_print_net_eip_stats(struct activity *a, int curr, int action
 
 /*
  ***************************************************************************
- * Display ICMPv4 network statistics in SVG.
+ * Display ICMPv4 traffic statistics in SVG.
  *
  * IN:
  * @a		Activity structure with statistics.
@@ -2985,7 +3124,7 @@ __print_funct_t svg_print_net_eip_stats(struct activity *a, int curr, int action
  * 		flag indicating that a restart record has been previously
  * 		found (.@restart) and time used for the X axis origin
  * 		(@ust_time_ref).
- * @itv		Interval of time in jiffies (only with F_MAIN action).
+ * @itv		Interval of time in 1/100th of a second (only with F_MAIN action).
  * @record_hdr	Pointer on record header of current stats sample.
  ***************************************************************************
  */
@@ -2998,8 +3137,8 @@ __print_funct_t svg_print_net_icmp_stats(struct activity *a, int curr, int actio
 	int group[] = {2, 4, 4, 4};
 	int g_type[] = {SVG_LINE_GRAPH, SVG_LINE_GRAPH, SVG_LINE_GRAPH,
 			SVG_LINE_GRAPH};
-	char *title[] = {"ICMPv4 network statistics (1)", "ICMPv4 network statistics (2)",
-			 "ICMPv4 network statistics (3)", "ICMPv4 network statistics (4)"};
+	char *title[] = {"ICMPv4 traffic statistics (1)", "ICMPv4 traffic statistics (2)",
+			 "ICMPv4 traffic statistics (3)", "ICMPv4 traffic statistics (4)"};
 	char *g_title[] = {"imsg/s", "omsg/s",
 			   "iech/s", "iechr/s", "oech/s", "oechr/s",
 			   "itm/s", "itmr/s", "otm/s", "otmr/s",
@@ -3019,7 +3158,7 @@ __print_funct_t svg_print_net_icmp_stats(struct activity *a, int curr, int actio
 
 	if (action & F_MAIN) {
 		/* Check for min/max values */
-		save_extrema(0, 14, 0, (void *) a->buf[curr], (void *) a->buf[!curr],
+		save_extrema(a->gtypes_nr, (void *) a->buf[curr], (void *) a->buf[!curr],
 			     itv, spmin, spmax, g_fields);
 
 		/* imsg/s */
@@ -3082,7 +3221,7 @@ __print_funct_t svg_print_net_icmp_stats(struct activity *a, int curr, int actio
 
 	if (action & F_END) {
 		draw_activity_graphs(a->g_nr, g_type, title, g_title, NULL, group,
-				     spmin, spmax, out, outsize, svg_p, record_hdr);
+				     spmin, spmax, out, outsize, svg_p, record_hdr, FALSE, a->id, 0);
 
 		/* Free remaining structures */
 		free_graphs(out, outsize, spmin, spmax);
@@ -3091,7 +3230,7 @@ __print_funct_t svg_print_net_icmp_stats(struct activity *a, int curr, int actio
 
 /*
  ***************************************************************************
- * Display ICMPv4 network errors statistics in SVG.
+ * Display ICMPv4 traffic errors statistics in SVG.
  *
  * IN:
  * @a		Activity structure with statistics.
@@ -3101,7 +3240,7 @@ __print_funct_t svg_print_net_icmp_stats(struct activity *a, int curr, int actio
  * 		flag indicating that a restart record has been previously
  * 		found (.@restart) and time used for the X axis origin
  * 		(@ust_time_ref).
- * @itv		Interval of time in jiffies (only with F_MAIN action).
+ * @itv		Interval of time in 1/100th of a second (only with F_MAIN action).
  * @record_hdr	Pointer on record header of current stats sample.
  ***************************************************************************
  */
@@ -3114,9 +3253,9 @@ __print_funct_t svg_print_net_eicmp_stats(struct activity *a, int curr, int acti
 	int group[] = {2, 2, 2, 2, 2, 2};
 	int g_type[] = {SVG_LINE_GRAPH, SVG_LINE_GRAPH, SVG_LINE_GRAPH,
 			SVG_LINE_GRAPH, SVG_LINE_GRAPH, SVG_LINE_GRAPH};
-	char *title[] = {"ICMPv4 network errors statistics (1)", "ICMPv4 network errors statistics (2)",
-			 "ICMPv4 network errors statistics (3)", "ICMPv4 network errors statistics (4)",
-			 "ICMPv4 network errors statistics (5)", "ICMPv4 network errors statistics (6)"};
+	char *title[] = {"ICMPv4 traffic errors statistics (1)", "ICMPv4 traffic errors statistics (2)",
+			 "ICMPv4 traffic errors statistics (3)", "ICMPv4 traffic errors statistics (4)",
+			 "ICMPv4 traffic errors statistics (5)", "ICMPv4 traffic errors statistics (6)"};
 	char *g_title[] = {"ierr/s", "oerr/s",
 			   "idstunr/s", "odstunr/s",
 			   "itmex/s", "otmex/s",
@@ -3138,7 +3277,7 @@ __print_funct_t svg_print_net_eicmp_stats(struct activity *a, int curr, int acti
 
 	if (action & F_MAIN) {
 		/* Check for min/max values */
-		save_extrema(0, 12, 0, (void *) a->buf[curr], (void *) a->buf[!curr],
+		save_extrema(a->gtypes_nr, (void *) a->buf[curr], (void *) a->buf[!curr],
 			     itv, spmin, spmax, g_fields);
 
 		/* ierr/s */
@@ -3193,7 +3332,7 @@ __print_funct_t svg_print_net_eicmp_stats(struct activity *a, int curr, int acti
 
 	if (action & F_END) {
 		draw_activity_graphs(a->g_nr, g_type, title, g_title, NULL, group,
-				     spmin, spmax, out, outsize, svg_p, record_hdr);
+				     spmin, spmax, out, outsize, svg_p, record_hdr, FALSE, a->id, 0);
 
 		/* Free remaining structures */
 		free_graphs(out, outsize, spmin, spmax);
@@ -3202,7 +3341,7 @@ __print_funct_t svg_print_net_eicmp_stats(struct activity *a, int curr, int acti
 
 /*
  ***************************************************************************
- * Display TCPv4 network statistics in SVG.
+ * Display TCPv4 traffic statistics in SVG.
  *
  * IN:
  * @a		Activity structure with statistics.
@@ -3212,7 +3351,7 @@ __print_funct_t svg_print_net_eicmp_stats(struct activity *a, int curr, int acti
  * 		flag indicating that a restart record has been previously
  * 		found (.@restart) and time used for the X axis origin
  * 		(@ust_time_ref).
- * @itv		Interval of time in jiffies (only with F_MAIN action).
+ * @itv		Interval of time in 1/100th of a second (only with F_MAIN action).
  * @record_hdr	Pointer on record header of current stats sample.
  ***************************************************************************
  */
@@ -3224,7 +3363,7 @@ __print_funct_t svg_print_net_tcp_stats(struct activity *a, int curr, int action
 		*sntp = (struct stats_net_tcp *) a->buf[!curr];
 	int group[] = {2, 2};
 	int g_type[] = {SVG_LINE_GRAPH, SVG_LINE_GRAPH};
-	char *title[] = {"TCPv4 network statistics (1)", "TCPv4 network statistics (2)"};
+	char *title[] = {"TCPv4 traffic statistics (1)", "TCPv4 traffic statistics (2)"};
 	char *g_title[] = {"active/s", "passive/s",
 			   "iseg/s", "oseg/s"};
 	int g_fields[] = {0, 1, 2, 3};
@@ -3242,7 +3381,7 @@ __print_funct_t svg_print_net_tcp_stats(struct activity *a, int curr, int action
 
 	if (action & F_MAIN) {
 		/* Check for min/max values */
-		save_extrema(0, 4, 0, (void *) a->buf[curr], (void *) a->buf[!curr],
+		save_extrema(a->gtypes_nr, (void *) a->buf[curr], (void *) a->buf[!curr],
 			     itv, spmin, spmax, g_fields);
 
 		/* active/s */
@@ -3265,7 +3404,7 @@ __print_funct_t svg_print_net_tcp_stats(struct activity *a, int curr, int action
 
 	if (action & F_END) {
 		draw_activity_graphs(a->g_nr, g_type, title, g_title, NULL, group,
-				     spmin, spmax, out, outsize, svg_p, record_hdr);
+				     spmin, spmax, out, outsize, svg_p, record_hdr, FALSE, a->id, 0);
 
 		/* Free remaining structures */
 		free_graphs(out, outsize, spmin, spmax);
@@ -3274,7 +3413,7 @@ __print_funct_t svg_print_net_tcp_stats(struct activity *a, int curr, int action
 
 /*
  ***************************************************************************
- * Display TCPv4 network errors statistics in SVG.
+ * Display TCPv4 traffic errors statistics in SVG.
  *
  * IN:
  * @a		Activity structure with statistics.
@@ -3284,7 +3423,7 @@ __print_funct_t svg_print_net_tcp_stats(struct activity *a, int curr, int action
  * 		flag indicating that a restart record has been previously
  * 		found (.@restart) and time used for the X axis origin
  * 		(@ust_time_ref).
- * @itv		Interval of time in jiffies (only with F_MAIN action).
+ * @itv		Interval of time in 1/100th of a second (only with F_MAIN action).
  * @record_hdr	Pointer on record header of current stats sample.
  ***************************************************************************
  */
@@ -3296,7 +3435,7 @@ __print_funct_t svg_print_net_etcp_stats(struct activity *a, int curr, int actio
 		*snetp = (struct stats_net_etcp *) a->buf[!curr];
 	int group[] = {2, 3};
 	int g_type[] = {SVG_LINE_GRAPH, SVG_LINE_GRAPH};
-	char *title[] = {"TCPv4 network errors statistics (1)", "TCPv4 network errors statistics (2)"};
+	char *title[] = {"TCPv4 traffic errors statistics (1)", "TCPv4 traffic errors statistics (2)"};
 	char *g_title[] = {"atmptf/s", "estres/s",
 			   "retrans/s", "isegerr/s", "orsts/s"};
 	int g_fields[] = {0, 1, 2, 3, 4};
@@ -3314,7 +3453,7 @@ __print_funct_t svg_print_net_etcp_stats(struct activity *a, int curr, int actio
 
 	if (action & F_MAIN) {
 		/* Check for min/max values */
-		save_extrema(0, 5, 0, (void *) a->buf[curr], (void *) a->buf[!curr],
+		save_extrema(a->gtypes_nr, (void *) a->buf[curr], (void *) a->buf[!curr],
 			     itv, spmin, spmax, g_fields);
 
 		/* atmptf/s */
@@ -3341,7 +3480,7 @@ __print_funct_t svg_print_net_etcp_stats(struct activity *a, int curr, int actio
 
 	if (action & F_END) {
 		draw_activity_graphs(a->g_nr, g_type, title, g_title, NULL, group,
-				     spmin, spmax, out, outsize, svg_p, record_hdr);
+				     spmin, spmax, out, outsize, svg_p, record_hdr, FALSE, a->id, 0);
 
 		/* Free remaining structures */
 		free_graphs(out, outsize, spmin, spmax);
@@ -3350,7 +3489,7 @@ __print_funct_t svg_print_net_etcp_stats(struct activity *a, int curr, int actio
 
 /*
  ***************************************************************************
- * Display UDPv4 network statistics in SVG.
+ * Display UDPv4 traffic statistics in SVG.
  *
  * IN:
  * @a		Activity structure with statistics.
@@ -3360,7 +3499,7 @@ __print_funct_t svg_print_net_etcp_stats(struct activity *a, int curr, int actio
  * 		flag indicating that a restart record has been previously
  * 		found (.@restart) and time used for the X axis origin
  * 		(@ust_time_ref).
- * @itv		Interval of time in jiffies (only with F_MAIN action).
+ * @itv		Interval of time in 1/100th of a second (only with F_MAIN action).
  * @record_hdr	Pointer on record header of current stats sample.
  ***************************************************************************
  */
@@ -3372,7 +3511,7 @@ __print_funct_t svg_print_net_udp_stats(struct activity *a, int curr, int action
 		*snup = (struct stats_net_udp *) a->buf[!curr];
 	int group[] = {2, 2};
 	int g_type[] = {SVG_LINE_GRAPH, SVG_LINE_GRAPH};
-	char *title[] = {"UDPv4 network statistics (1)", "UDPv4 network statistics (2)"};
+	char *title[] = {"UDPv4 traffic statistics (1)", "UDPv4 traffic statistics (2)"};
 	char *g_title[] = {"idgm/s", "odgm/s",
 			   "noport/s", "idgmerr/s"};
 	int g_fields[] = {0, 1, 2, 3};
@@ -3390,7 +3529,7 @@ __print_funct_t svg_print_net_udp_stats(struct activity *a, int curr, int action
 
 	if (action & F_MAIN) {
 		/* Check for min/max values */
-		save_extrema(0, 4, 0, (void *) a->buf[curr], (void *) a->buf[!curr],
+		save_extrema(a->gtypes_nr, (void *) a->buf[curr], (void *) a->buf[!curr],
 			     itv, spmin, spmax, g_fields);
 
 		/* idgm/s */
@@ -3413,7 +3552,7 @@ __print_funct_t svg_print_net_udp_stats(struct activity *a, int curr, int action
 
 	if (action & F_END) {
 		draw_activity_graphs(a->g_nr, g_type, title, g_title, NULL, group,
-				     spmin, spmax, out, outsize, svg_p, record_hdr);
+				     spmin, spmax, out, outsize, svg_p, record_hdr, FALSE, a->id, 0);
 
 		/* Free remaining structures */
 		free_graphs(out, outsize, spmin, spmax);
@@ -3422,7 +3561,7 @@ __print_funct_t svg_print_net_udp_stats(struct activity *a, int curr, int action
 
 /*
  ***************************************************************************
- * Display IPV6 network socket statistics in SVG.
+ * Display IPV6 socket statistics in SVG.
  *
  * IN:
  * @a		Activity structure with statistics.
@@ -3432,7 +3571,7 @@ __print_funct_t svg_print_net_udp_stats(struct activity *a, int curr, int action
  * 		flag indicating that a restart record has been previously
  * 		found (.@restart) and time used for the X axis origin
  * 		(@ust_time_ref).
- * @itv		Interval of time in jiffies (only with F_MAIN action).
+ * @itv		Interval of time in 1/100th of a second (only with F_MAIN action).
  * @record_hdr	Pointer on record header of current stats sample.
  ***************************************************************************
  */
@@ -3443,7 +3582,7 @@ __print_funct_t svg_print_net_sock6_stats(struct activity *a, int curr, int acti
 		*snsc = (struct stats_net_sock6 *) a->buf[curr];
 	int group[] = {4};
 	int g_type[] = {SVG_LINE_GRAPH};
-	char *title[] = {"IPv6 network sockets"};
+	char *title[] = {"IPv6 sockets statistics"};
 	char *g_title[] = {"~tcp6sck", "~udp6sck", "~raw6sck", "~ip6-frag"};
 	int g_fields[] = {0, 1, 2, 3};
 	static double *spmin, *spmax;
@@ -3460,29 +3599,29 @@ __print_funct_t svg_print_net_sock6_stats(struct activity *a, int curr, int acti
 
 	if (action & F_MAIN) {
 		/* Check for min/max values */
-		save_extrema(0, 0, 4, (void *) a->buf[curr], NULL,
+		save_extrema(a->gtypes_nr, (void *) a->buf[curr], NULL,
 			     itv, spmin, spmax, g_fields);
 		/* tcp6sck */
 		lniappend(record_hdr->ust_time - svg_p->ust_time_ref,
-			  (unsigned long) snsc->tcp6_inuse,
+			  (unsigned long long) snsc->tcp6_inuse,
 			  out, outsize, svg_p->restart);
 		/* udp6sck */
 		lniappend(record_hdr->ust_time - svg_p->ust_time_ref,
-			  (unsigned long) snsc->udp6_inuse,
+			  (unsigned long long) snsc->udp6_inuse,
 			  out + 1, outsize + 1, svg_p->restart);
 		/* raw6sck */
 		lniappend(record_hdr->ust_time - svg_p->ust_time_ref,
-			  (unsigned long) snsc->raw6_inuse,
+			  (unsigned long long) snsc->raw6_inuse,
 			  out + 2, outsize + 2, svg_p->restart);
 		/* ip6-frag */
 		lniappend(record_hdr->ust_time - svg_p->ust_time_ref,
-			  (unsigned long) snsc->frag6_inuse,
+			  (unsigned long long) snsc->frag6_inuse,
 			  out + 3, outsize + 3, svg_p->restart);
 	}
 
 	if (action & F_END) {
 		draw_activity_graphs(a->g_nr, g_type, title, g_title, NULL, group,
-				     spmin, spmax, out, outsize, svg_p, record_hdr);
+				     spmin, spmax, out, outsize, svg_p, record_hdr, FALSE, a->id, 0);
 
 		/* Free remaining structures */
 		free_graphs(out, outsize, spmin, spmax);
@@ -3491,7 +3630,7 @@ __print_funct_t svg_print_net_sock6_stats(struct activity *a, int curr, int acti
 
 /*
  ***************************************************************************
- * Display IPv6 network statistics in SVG.
+ * Display IPv6 traffic statistics in SVG.
  *
  * IN:
  * @a		Activity structure with statistics.
@@ -3501,7 +3640,7 @@ __print_funct_t svg_print_net_sock6_stats(struct activity *a, int curr, int acti
  * 		flag indicating that a restart record has been previously
  * 		found (.@restart) and time used for the X axis origin
  * 		(@ust_time_ref).
- * @itv		Interval of time in jiffies (only with F_MAIN action).
+ * @itv		Interval of time in 1/100th of a second (only with F_MAIN action).
  * @record_hdr	Pointer on record header of current stats sample.
  ***************************************************************************
  */
@@ -3514,8 +3653,8 @@ __print_funct_t svg_print_net_ip6_stats(struct activity *a, int curr, int action
 	int group[] = {4, 2, 2, 2};
 	int g_type[] = {SVG_LINE_GRAPH, SVG_LINE_GRAPH, SVG_LINE_GRAPH,
 			SVG_LINE_GRAPH};
-	char *title[] = {"IPv6 network statistics (1)", "IPv6 network statistics (2)",
-			 "IPv6 network statistics (3)", "IPv6 network statistics (4)"};
+	char *title[] = {"IPv6 traffic statistics (1)", "IPv6 traffic statistics (2)",
+			 "IPv6 traffic statistics (3)", "IPv6 traffic statistics (4)"};
 	char *g_title[] = {"irec6/s", "fwddgm6/s", "idel6/s", "orq6/s",
 			   "asmrq6/s", "asmok6/s",
 			   "imcpck6/s", "omcpck6/s",
@@ -3535,7 +3674,7 @@ __print_funct_t svg_print_net_ip6_stats(struct activity *a, int curr, int action
 
 	if (action & F_MAIN) {
 		/* Check for min/max values */
-		save_extrema(10, 0, 0, (void *) a->buf[curr], (void *) a->buf[!curr],
+		save_extrema(a->gtypes_nr, (void *) a->buf[curr], (void *) a->buf[!curr],
 			     itv, spmin, spmax, g_fields);
 
 		/* irec6/s */
@@ -3582,7 +3721,7 @@ __print_funct_t svg_print_net_ip6_stats(struct activity *a, int curr, int action
 
 	if (action & F_END) {
 		draw_activity_graphs(a->g_nr, g_type, title, g_title, NULL, group,
-				     spmin, spmax, out, outsize, svg_p, record_hdr);
+				     spmin, spmax, out, outsize, svg_p, record_hdr, FALSE, a->id, 0);
 
 		/* Free remaining structures */
 		free_graphs(out, outsize, spmin, spmax);
@@ -3591,7 +3730,7 @@ __print_funct_t svg_print_net_ip6_stats(struct activity *a, int curr, int action
 
 /*
  ***************************************************************************
- * Display IPv6 network errors statistics in SVG.
+ * Display IPv6 traffic errors statistics in SVG.
  *
  * IN:
  * @a		Activity structure with statistics.
@@ -3601,7 +3740,7 @@ __print_funct_t svg_print_net_ip6_stats(struct activity *a, int curr, int action
  * 		flag indicating that a restart record has been previously
  * 		found (.@restart) and time used for the X axis origin
  * 		(@ust_time_ref).
- * @itv		Interval of time in jiffies (only with F_MAIN action).
+ * @itv		Interval of time in 1/100th of a second (only with F_MAIN action).
  * @record_hdr	Pointer on record header of current stats sample.
  ***************************************************************************
  */
@@ -3614,9 +3753,9 @@ __print_funct_t svg_print_net_eip6_stats(struct activity *a, int curr, int actio
 	int group[] = {4, 2, 2, 3};
 	int g_type[] = {SVG_LINE_GRAPH, SVG_LINE_GRAPH, SVG_LINE_GRAPH,
 			SVG_LINE_GRAPH};
-	char *title[] = {"IPv6 network errors statistics (1)", "IPv6 network errors statistics (2)",
-			 "IPv6 network errors statistics (3)", "IPv6 network errors statistics (4)",
-			 "IPv6 network errors statistics (5)"};
+	char *title[] = {"IPv6 traffic errors statistics (1)", "IPv6 traffic errors statistics (2)",
+			 "IPv6 traffic errors statistics (3)", "IPv6 traffic errors statistics (4)",
+			 "IPv6 traffic errors statistics (5)"};
 	char *g_title[] = {"ihdrer6/s", "iadrer6/s", "iukwnp6/s", "i2big6/s",
 			   "idisc6/s", "odisc6/s",
 			   "inort6/s", "onort6/s",
@@ -3636,7 +3775,7 @@ __print_funct_t svg_print_net_eip6_stats(struct activity *a, int curr, int actio
 
 	if (action & F_MAIN) {
 		/* Check for min/max values */
-		save_extrema(11, 0, 0, (void *) a->buf[curr], (void *) a->buf[!curr],
+		save_extrema(a->gtypes_nr, (void *) a->buf[curr], (void *) a->buf[!curr],
 			     itv, spmin, spmax, g_fields);
 
 		/* ihdrer6/s */
@@ -3687,7 +3826,7 @@ __print_funct_t svg_print_net_eip6_stats(struct activity *a, int curr, int actio
 
 	if (action & F_END) {
 		draw_activity_graphs(a->g_nr, g_type, title, g_title, NULL, group,
-				     spmin, spmax, out, outsize, svg_p, record_hdr);
+				     spmin, spmax, out, outsize, svg_p, record_hdr, FALSE, a->id, 0);
 
 		/* Free remaining structures */
 		free_graphs(out, outsize, spmin, spmax);
@@ -3696,7 +3835,7 @@ __print_funct_t svg_print_net_eip6_stats(struct activity *a, int curr, int actio
 
 /*
  ***************************************************************************
- * Display ICMPv6 network statistics in SVG.
+ * Display ICMPv6 traffic statistics in SVG.
  *
  * IN:
  * @a		Activity structure with statistics.
@@ -3706,7 +3845,7 @@ __print_funct_t svg_print_net_eip6_stats(struct activity *a, int curr, int actio
  * 		flag indicating that a restart record has been previously
  * 		found (.@restart) and time used for the X axis origin
  * 		(@ust_time_ref).
- * @itv		Interval of time in jiffies (only with F_MAIN action).
+ * @itv		Interval of time in 1/100th of a second (only with F_MAIN action).
  * @record_hdr	Pointer on record header of current stats sample.
  ***************************************************************************
  */
@@ -3719,9 +3858,9 @@ __print_funct_t svg_print_net_icmp6_stats(struct activity *a, int curr, int acti
 	int group[] = {2, 3, 5, 3, 4};
 	int g_type[] = {SVG_LINE_GRAPH, SVG_LINE_GRAPH, SVG_LINE_GRAPH,
 			SVG_LINE_GRAPH, SVG_LINE_GRAPH};
-	char *title[] = {"ICMPv6 network statistics (1)", "ICMPv6 network statistics (2)",
-			 "ICMPv6 network statistics (3)", "ICMPv6 network statistics (4)",
-			 "ICMPv6 network statistics (5)"};
+	char *title[] = {"ICMPv6 traffic statistics (1)", "ICMPv6 traffic statistics (2)",
+			 "ICMPv6 traffic statistics (3)", "ICMPv6 traffic statistics (4)",
+			 "ICMPv6 traffic statistics (5)"};
 	char *g_title[] = {"imsg6/s", "omsg6/s",
 			   "iech6/s", "iechr6/s", "oechr6/s",
 			   "igmbq6/s", "igmbr6/s", "ogmbr6/s", "igmbrd6/s", "ogmbrd6/s",
@@ -3742,7 +3881,7 @@ __print_funct_t svg_print_net_icmp6_stats(struct activity *a, int curr, int acti
 
 	if (action & F_MAIN) {
 		/* Check for min/max values */
-		save_extrema(0, 17, 0, (void *) a->buf[curr], (void *) a->buf[!curr],
+		save_extrema(a->gtypes_nr, (void *) a->buf[curr], (void *) a->buf[!curr],
 			     itv, spmin, spmax, g_fields);
 
 		/* imsg6/s */
@@ -3799,7 +3938,7 @@ __print_funct_t svg_print_net_icmp6_stats(struct activity *a, int curr, int acti
 			 out + 12, outsize + 12, svg_p->restart);
 		/* inbsol6/s */
 		lnappend(record_hdr->ust_time - svg_p->ust_time_ref,
-			 S_VALUE(snip->InNeighborSolicits6,snic->InNeighborSolicits6, itv),
+			 S_VALUE(snip->InNeighborSolicits6, snic->InNeighborSolicits6, itv),
 			 out + 13, outsize + 13, svg_p->restart);
 		/* onbsol6/s */
 		lnappend(record_hdr->ust_time - svg_p->ust_time_ref,
@@ -3817,7 +3956,7 @@ __print_funct_t svg_print_net_icmp6_stats(struct activity *a, int curr, int acti
 
 	if (action & F_END) {
 		draw_activity_graphs(a->g_nr, g_type, title, g_title, NULL, group,
-				     spmin, spmax, out, outsize, svg_p, record_hdr);
+				     spmin, spmax, out, outsize, svg_p, record_hdr, FALSE, a->id, 0);
 
 		/* Free remaining structures */
 		free_graphs(out, outsize, spmin, spmax);
@@ -3826,7 +3965,7 @@ __print_funct_t svg_print_net_icmp6_stats(struct activity *a, int curr, int acti
 
 /*
  ***************************************************************************
- * Display ICMPv6 network errors statistics in SVG.
+ * Display ICMPv6 traffic errors statistics in SVG.
  *
  * IN:
  * @a		Activity structure with statistics.
@@ -3836,7 +3975,7 @@ __print_funct_t svg_print_net_icmp6_stats(struct activity *a, int curr, int acti
  * 		flag indicating that a restart record has been previously
  * 		found (.@restart) and time used for the X axis origin
  * 		(@ust_time_ref).
- * @itv		Interval of time in jiffies (only with F_MAIN action).
+ * @itv		Interval of time in 1/100th of a second (only with F_MAIN action).
  * @record_hdr	Pointer on record header of current stats sample.
  ***************************************************************************
  */
@@ -3849,9 +3988,9 @@ __print_funct_t svg_print_net_eicmp6_stats(struct activity *a, int curr, int act
 	int group[] = {1, 2, 2, 2, 2, 2};
 	int g_type[] = {SVG_LINE_GRAPH, SVG_LINE_GRAPH, SVG_LINE_GRAPH,
 			SVG_LINE_GRAPH, SVG_LINE_GRAPH, SVG_LINE_GRAPH};
-	char *title[] = {"ICMPv6 network errors statistics (1)", "ICMPv6 network errors statistics (2)",
-			 "ICMPv6 network errors statistics (3)", "ICMPv6 network errors statistics (4)",
-			 "ICMPv6 network errors statistics (5)", "ICMPv6 network errors statistics (6)"};
+	char *title[] = {"ICMPv6 traffic errors statistics (1)", "ICMPv6 traffic errors statistics (2)",
+			 "ICMPv6 traffic errors statistics (3)", "ICMPv6 traffic errors statistics (4)",
+			 "ICMPv6 traffic errors statistics (5)", "ICMPv6 traffic errors statistics (6)"};
 	char *g_title[] = {"ierr6/s",
 			   "idtunr6/s", "odtunr6/s",
 			   "itmex6/s", "otmex6/s",
@@ -3873,7 +4012,7 @@ __print_funct_t svg_print_net_eicmp6_stats(struct activity *a, int curr, int act
 
 	if (action & F_MAIN) {
 		/* Check for min/max values */
-		save_extrema(0, 11, 0, (void *) a->buf[curr], (void *) a->buf[!curr],
+		save_extrema(a->gtypes_nr, (void *) a->buf[curr], (void *) a->buf[!curr],
 			     itv, spmin, spmax, g_fields);
 
 		/* ierr6/s */
@@ -3924,7 +4063,7 @@ __print_funct_t svg_print_net_eicmp6_stats(struct activity *a, int curr, int act
 
 	if (action & F_END) {
 		draw_activity_graphs(a->g_nr, g_type, title, g_title, NULL, group,
-				     spmin, spmax, out, outsize, svg_p, record_hdr);
+				     spmin, spmax, out, outsize, svg_p, record_hdr, FALSE, a->id, 0);
 
 		/* Free remaining structures */
 		free_graphs(out, outsize, spmin, spmax);
@@ -3933,7 +4072,7 @@ __print_funct_t svg_print_net_eicmp6_stats(struct activity *a, int curr, int act
 
 /*
  ***************************************************************************
- * Display UDPv6 network statistics in SVG.
+ * Display UDPv6 traffic statistics in SVG.
  *
  * IN:
  * @a		Activity structure with statistics.
@@ -3943,7 +4082,7 @@ __print_funct_t svg_print_net_eicmp6_stats(struct activity *a, int curr, int act
  * 		flag indicating that a restart record has been previously
  * 		found (.@restart) and time used for the X axis origin
  * 		(@ust_time_ref).
- * @itv		Interval of time in jiffies (only with F_MAIN action).
+ * @itv		Interval of time in 1/100th of a second (only with F_MAIN action).
  * @record_hdr	Pointer on record header of current stats sample.
  ***************************************************************************
  */
@@ -3955,7 +4094,7 @@ __print_funct_t svg_print_net_udp6_stats(struct activity *a, int curr, int actio
 		*snup = (struct stats_net_udp6 *) a->buf[!curr];
 	int group[] = {2, 2};
 	int g_type[] = {SVG_LINE_GRAPH, SVG_LINE_GRAPH};
-	char *title[] = {"UDPv6 network statistics (1)", "UDPv6 network statistics (2)"};
+	char *title[] = {"UDPv6 traffic statistics (1)", "UDPv6 traffic statistics (2)"};
 	char *g_title[] = {"idgm6/s", "odgm6/s",
 			   "noport6/s", "idgmer6/s"};
 	int g_fields[] = {0, 1, 2, 3};
@@ -3973,7 +4112,7 @@ __print_funct_t svg_print_net_udp6_stats(struct activity *a, int curr, int actio
 
 	if (action & F_MAIN) {
 		/* Check for min/max values */
-		save_extrema(0, 4, 0, (void *) a->buf[curr], (void *) a->buf[!curr],
+		save_extrema(a->gtypes_nr, (void *) a->buf[curr], (void *) a->buf[!curr],
 			     itv, spmin, spmax, g_fields);
 
 		/* idgm6/s */
@@ -3996,7 +4135,7 @@ __print_funct_t svg_print_net_udp6_stats(struct activity *a, int curr, int actio
 
 	if (action & F_END) {
 		draw_activity_graphs(a->g_nr, g_type, title, g_title, NULL, group,
-				     spmin, spmax, out, outsize, svg_p, record_hdr);
+				     spmin, spmax, out, outsize, svg_p, record_hdr, FALSE, a->id, 0);
 
 		/* Free remaining structures */
 		free_graphs(out, outsize, spmin, spmax);
@@ -4015,7 +4154,7 @@ __print_funct_t svg_print_net_udp6_stats(struct activity *a, int curr, int actio
  * 		flag indicating that a restart record has been previously
  * 		found (.@restart) and time used for the X axis origin
  * 		(@ust_time_ref).
- * @itv		Interval of time in jiffies (unused here).
+ * @itv		Interval of time in 1/100th of a second (unused here).
  * @record_hdr	Pointer on record header of current stats sample.
  ***************************************************************************
  */
@@ -4025,7 +4164,7 @@ __print_funct_t svg_print_pwr_cpufreq_stats(struct activity *a, int curr, int ac
 	struct stats_pwr_cpufreq *spc, *spp;
 	int group[] = {1};
 	int g_type[] = {SVG_LINE_GRAPH};
-	char *title[] = {"CPU frequency"};
+	char *title[] = {"CPU clock frequency"};
 	char *g_title[] = {"MHz"};
 	static double *spmin, *spmax;
 	static char **out;
@@ -4038,20 +4177,25 @@ __print_funct_t svg_print_pwr_cpufreq_stats(struct activity *a, int curr, int ac
 		 * Allocate arrays that will contain the graphs data
 		 * and the min/max values.
 		 */
-		out = allocate_graph_lines(a->nr, &outsize, &spmin, &spmax);
+		out = allocate_graph_lines(a->item_list_sz, &outsize, &spmin, &spmax);
 	}
 
 	if (action & F_MAIN) {
 		/* For each CPU */
-		for (i = 0; (i < a->nr) && (i < a->bitmap->b_size + 1); i++) {
+		for (i = 0; (i < a->nr[curr]) && (i < a->bitmap->b_size + 1); i++) {
 
 			spc = (struct stats_pwr_cpufreq *) ((char *) a->buf[curr]  + i * a->msize);
-			spp = (struct stats_pwr_cpufreq *) ((char *) a->buf[!curr]  + i * a->msize);
+			spp = (struct stats_pwr_cpufreq *) ((char *) a->buf[!curr] + i * a->msize);
 
 			/* Should current CPU (including CPU "all") be displayed? */
 			if (!(a->bitmap->b_array[i >> 3] & (1 << (i & 0x07))))
 				/* No */
 				continue;
+
+			/*
+			 * Note: Don't skip offline CPU here as it is needed
+			 * to make the graph go though 0.
+			 */
 
 			/* MHz */
 			recappend(record_hdr->ust_time - svg_p->ust_time_ref,
@@ -4063,7 +4207,9 @@ __print_funct_t svg_print_pwr_cpufreq_stats(struct activity *a, int curr, int ac
 	}
 
 	if (action & F_END) {
-		for (i = 0; (i < a->nr) && (i < a->bitmap->b_size + 1); i++) {
+		int xid = 0;
+
+		for (i = 0; (i < a->item_list_sz) && (i < a->bitmap->b_size + 1); i++) {
 
 			/* Should current CPU (including CPU "all") be displayed? */
 			if (!(a->bitmap->b_array[i >> 3] & (1 << (i & 0x07))))
@@ -4075,13 +4221,23 @@ __print_funct_t svg_print_pwr_cpufreq_stats(struct activity *a, int curr, int ac
 				strcpy(item_name, "all");
 			}
 			else {
+				/*
+				 * If the maximum frequency reached by the CPU is 0, then
+				 * the CPU has been offline on the whole period.
+				 * => Don't display it.
+				 */
+				if (*(spmax + i) == 0)
+					continue;
+
 				sprintf(item_name, "%d", i - 1);
 			}
 
-			draw_activity_graphs(a->g_nr, g_type,
-					     title, g_title, item_name, group,
-					     spmin + i, spmax + i, out + i, outsize + i,
-					     svg_p, record_hdr);
+			if (draw_activity_graphs(a->g_nr, g_type,
+						 title, g_title, item_name, group,
+						 spmin + i, spmax + i, out + i, outsize + i,
+						 svg_p, record_hdr, i, a->id, xid)) {
+				xid++;
+			}
 		}
 
 		/* Free remaining structures */
@@ -4101,7 +4257,7 @@ __print_funct_t svg_print_pwr_cpufreq_stats(struct activity *a, int curr, int ac
  * 		flag indicating that a restart record has been previously
  * 		found (.@restart) and time used for the X axis origin
  * 		(@ust_time_ref).
- * @itv		Interval of time in jiffies (unused here).
+ * @itv		Interval of time in 1/100th of a second (unused here).
  * @record_hdr	Pointer on record header of current stats sample.
  ***************************************************************************
  */
@@ -4111,7 +4267,7 @@ __print_funct_t svg_print_pwr_fan_stats(struct activity *a, int curr, int action
 	struct stats_pwr_fan *spc, *spp;
 	int group[] = {1};
 	int g_type[] = {SVG_LINE_GRAPH};
-	char *title[] = {"Fan speed"};
+	char *title[] = {"Fans speed"};
 	char *g_title[] = {"~rpm"};
 	static double *spmin, *spmax;
 	static char **out;
@@ -4124,15 +4280,15 @@ __print_funct_t svg_print_pwr_fan_stats(struct activity *a, int curr, int action
 		 * Allocate arrays that will contain the graphs data
 		 * and the min/max values.
 		 */
-		out = allocate_graph_lines(a->nr, &outsize, &spmin, &spmax);
+		out = allocate_graph_lines(a->item_list_sz, &outsize, &spmin, &spmax);
 	}
 
 	if (action & F_MAIN) {
 		/* For each fan */
-		for (i = 0; i < a->nr; i++) {
+		for (i = 0; i < a->nr[curr]; i++) {
 
 			spc = (struct stats_pwr_fan *) ((char *) a->buf[curr]  + i * a->msize);
-			spp = (struct stats_pwr_fan *) ((char *) a->buf[!curr]  + i * a->msize);
+			spp = (struct stats_pwr_fan *) ((char *) a->buf[!curr] + i * a->msize);
 
 			/* rpm */
 			recappend(record_hdr->ust_time - svg_p->ust_time_ref,
@@ -4144,17 +4300,21 @@ __print_funct_t svg_print_pwr_fan_stats(struct activity *a, int curr, int action
 	}
 
 	if (action & F_END) {
-		for (i = 0; i < a->nr; i++) {
+		int xid = 0;
 
-			spc = (struct stats_pwr_fan *) ((char *) a->buf[curr]  + i * a->msize);
+		for (i = 0; i < a->item_list_sz; i++) {
+
+			spc = (struct stats_pwr_fan *) ((char *) a->buf[curr] + i * a->msize);
 
 			snprintf(item_name, MAX_SENSORS_DEV_LEN + 8, "%d: %s", i + 1, spc->device);
 			item_name[MAX_SENSORS_DEV_LEN + 7] = '\0';
 
-			draw_activity_graphs(a->g_nr, g_type,
-					     title, g_title, item_name, group,
-					     spmin + i, spmax + i, out + i, outsize + i,
-					     svg_p, record_hdr);
+			if (draw_activity_graphs(a->g_nr, g_type,
+						 title, g_title, item_name, group,
+						 spmin + i, spmax + i, out + i, outsize + i,
+						 svg_p, record_hdr, FALSE, a->id, xid)) {
+				xid++;
+			}
 		}
 
 		/* Free remaining structures */
@@ -4174,7 +4334,7 @@ __print_funct_t svg_print_pwr_fan_stats(struct activity *a, int curr, int action
  * 		flag indicating that a restart record has been previously
  * 		found (.@restart) and time used for the X axis origin
  * 		(@ust_time_ref).
- * @itv		Interval of time in jiffies (unused here).
+ * @itv		Interval of time in 1/100th of a second (unused here).
  * @record_hdr	Pointer on record header of current stats sample.
  ***************************************************************************
  */
@@ -4184,8 +4344,8 @@ __print_funct_t svg_print_pwr_temp_stats(struct activity *a, int curr, int actio
 	struct stats_pwr_temp *spc;
 	int group[] = {1, 1};
 	int g_type[] = {SVG_LINE_GRAPH, SVG_BAR_GRAPH};
-	char *title[] = {"Device temperature (1)",
-			 "Device temperature (2)"};
+	char *title[] = {"Devices temperature (1)",
+			 "Devices temperature (2)"};
 	char *g_title[] = {"~degC",
 			   "%temp"};
 	static double *spmin, *spmax;
@@ -4200,14 +4360,14 @@ __print_funct_t svg_print_pwr_temp_stats(struct activity *a, int curr, int actio
 		 * Allocate arrays that will contain the graphs data
 		 * and the min/max values.
 		 */
-		out = allocate_graph_lines(2 * a->nr, &outsize, &spmin, &spmax);
+		out = allocate_graph_lines(2 * a->item_list_sz, &outsize, &spmin, &spmax);
 	}
 
 	if (action & F_MAIN) {
-		/* For each temperature  sensor */
-		for (i = 0; i < a->nr; i++) {
+		/* For each temperature sensor */
+		for (i = 0; i < a->nr[curr]; i++) {
 
-			spc = (struct stats_pwr_temp *) ((char *) a->buf[curr]  + i * a->msize);
+			spc = (struct stats_pwr_temp *) ((char *) a->buf[curr] + i * a->msize);
 
 			/* Look for min/max values */
 			if (spc->temp < *(spmin + 2 * i)) {
@@ -4238,17 +4398,21 @@ __print_funct_t svg_print_pwr_temp_stats(struct activity *a, int curr, int actio
 	}
 
 	if (action & F_END) {
-		for (i = 0; i < a->nr; i++) {
+		int xid = 0;
 
-			spc = (struct stats_pwr_temp *) ((char *) a->buf[curr]  + i * a->msize);
+		for (i = 0; i < a->item_list_sz; i++) {
+
+			spc = (struct stats_pwr_temp *) ((char *) a->buf[curr] + i * a->msize);
 
 			snprintf(item_name, MAX_SENSORS_DEV_LEN + 8, "%d: %s", i + 1, spc->device);
 			item_name[MAX_SENSORS_DEV_LEN + 7] = '\0';
 
-			draw_activity_graphs(a->g_nr, g_type,
-					     title, g_title, item_name, group,
-					     spmin + 2 * i, spmax + 2 * i, out + 2 * i, outsize + 2 * i,
-					     svg_p, record_hdr);
+			if (draw_activity_graphs(a->g_nr, g_type,
+						 title, g_title, item_name, group,
+						 spmin + 2 * i, spmax + 2 * i, out + 2 * i, outsize + 2 * i,
+						 svg_p, record_hdr, FALSE, a->id, xid)) {
+				xid++;
+			}
 		}
 
 		/* Free remaining structures */
@@ -4268,7 +4432,7 @@ __print_funct_t svg_print_pwr_temp_stats(struct activity *a, int curr, int actio
  * 		flag indicating that a restart record has been previously
  * 		found (.@restart) and time used for the X axis origin
  * 		(@ust_time_ref).
- * @itv		Interval of time in jiffies (only with F_MAIN action).
+ * @itv		Interval of time in 1/100th of a second (only with F_MAIN action).
  * @record_hdr	Pointer on record header of current stats sample.
  ***************************************************************************
  */
@@ -4278,8 +4442,8 @@ __print_funct_t svg_print_pwr_in_stats(struct activity *a, int curr, int action,
 	struct stats_pwr_in *spc;
 	int group[] = {1, 1};
 	int g_type[] = {SVG_LINE_GRAPH, SVG_BAR_GRAPH};
-	char *title[] = {"Voltage inputs (1)",
-			 "Voltage inputs (2)"};
+	char *title[] = {"Voltage inputs statistics (1)",
+			 "Voltage inputs statistics (2)"};
 	char *g_title[] = {"inV",
 			   "%in"};
 	static double *spmin, *spmax;
@@ -4294,14 +4458,14 @@ __print_funct_t svg_print_pwr_in_stats(struct activity *a, int curr, int action,
 		 * Allocate arrays that will contain the graphs data
 		 * and the min/max values.
 		 */
-		out = allocate_graph_lines(2 * a->nr, &outsize, &spmin, &spmax);
+		out = allocate_graph_lines(2 * a->item_list_sz, &outsize, &spmin, &spmax);
 	}
 
 	if (action & F_MAIN) {
-		/* For each temperature  sensor */
-		for (i = 0; i < a->nr; i++) {
+		/* For each voltage input sensor */
+		for (i = 0; i < a->nr[curr]; i++) {
 
-			spc = (struct stats_pwr_in *) ((char *) a->buf[curr]  + i * a->msize);
+			spc = (struct stats_pwr_in *) ((char *) a->buf[curr] + i * a->msize);
 
 			/* Look for min/max values */
 			if (spc->in < *(spmin + 2 * i)) {
@@ -4332,17 +4496,21 @@ __print_funct_t svg_print_pwr_in_stats(struct activity *a, int curr, int action,
 	}
 
 	if (action & F_END) {
-		for (i = 0; i < a->nr; i++) {
+		int xid = 0;
+
+		for (i = 0; i < a->item_list_sz; i++) {
 
 			spc = (struct stats_pwr_in *) ((char *) a->buf[curr]  + i * a->msize);
 
 			snprintf(item_name, MAX_SENSORS_DEV_LEN + 8, "%d: %s", i + 1, spc->device);
 			item_name[MAX_SENSORS_DEV_LEN + 7] = '\0';
 
-			draw_activity_graphs(a->g_nr, g_type,
-					     title, g_title, item_name, group,
-					     spmin + 2 * i, spmax + 2 * i, out + 2 * i, outsize + 2 * i,
-					     svg_p, record_hdr);
+			if (draw_activity_graphs(a->g_nr, g_type,
+						 title, g_title, item_name, group,
+						 spmin + 2 * i, spmax + 2 * i, out + 2 * i, outsize + 2 * i,
+						 svg_p, record_hdr, FALSE, a->id, xid)) {
+				xid++;
+			}
 		}
 
 		/* Free remaining structures */
@@ -4362,7 +4530,7 @@ __print_funct_t svg_print_pwr_in_stats(struct activity *a, int curr, int action,
  * 		flag indicating that a restart record has been previously
  * 		found (.@restart) and time used for the X axis origin
  * 		(@ust_time_ref).
- * @itv		Interval of time in jiffies (only with F_MAIN action).
+ * @itv		Interval of time in 1/100th of a second (only with F_MAIN action).
  * @record_hdr	Pointer on record header of current stats sample.
  ***************************************************************************
  */
@@ -4378,6 +4546,7 @@ __print_funct_t svg_print_huge_stats(struct activity *a, int curr, int action, s
 	char *g_title[] = {"~kbhugfree", "~kbhugused",
 			   "%hugused"};
 	int g_fields[] = {0};
+	unsigned int local_types_nr[] = {1, 0, 0};
 	static double *spmin, *spmax;
 	static char **out;
 	static int *outsize;
@@ -4393,7 +4562,7 @@ __print_funct_t svg_print_huge_stats(struct activity *a, int curr, int action, s
 
 	if (action & F_MAIN) {
 		/* Check for min/max values */
-		save_extrema(0, 1, 0, (void *) a->buf[curr], NULL,
+		save_extrema(local_types_nr, (void *) a->buf[curr], NULL,
 			     itv, spmin, spmax, g_fields);
 
 		if (smc->tlhkb - smc->frhkb < *(spmin + 1)) {
@@ -4412,11 +4581,11 @@ __print_funct_t svg_print_huge_stats(struct activity *a, int curr, int action, s
 
 		/* kbhugfree */
 		lniappend(record_hdr->ust_time - svg_p->ust_time_ref,
-			  (unsigned long) smc->frhkb,
+			  (unsigned long long) smc->frhkb,
 			  out, outsize, svg_p->restart);
 		/* hugused */
 		lniappend(record_hdr->ust_time - svg_p->ust_time_ref,
-			  (unsigned long) smc->tlhkb - smc->frhkb,
+			  (unsigned long long) smc->tlhkb - smc->frhkb,
 			  out + 1, outsize + 1, svg_p->restart);
 		/* %hugused */
 		brappend(record_hdr->ust_time - svg_p->ust_time_ref,
@@ -4427,7 +4596,7 @@ __print_funct_t svg_print_huge_stats(struct activity *a, int curr, int action, s
 	if (action & F_END) {
 		draw_activity_graphs(a->g_nr, g_type,
 				     title, g_title, NULL, group,
-				     spmin, spmax, out, outsize, svg_p, record_hdr);
+				     spmin, spmax, out, outsize, svg_p, record_hdr, FALSE, a->id, 0);
 
 		/* Free remaining structures */
 		free_graphs(out, outsize, spmin, spmax);
@@ -4446,7 +4615,7 @@ __print_funct_t svg_print_huge_stats(struct activity *a, int curr, int action, s
  * 		flag indicating that a restart record has been previously
  * 		found (.@restart) and time used for the X axis origin
  * 		(@ust_time_ref).
- * @itv		Interval of time in jiffies (unused here).
+ * @itv		Interval of time in 1/100th of a second (unused here).
  * @record_hdr	Pointer on record header of current stats sample.
  ***************************************************************************
  */
@@ -4457,8 +4626,8 @@ __print_funct_t svg_print_filesystem_stats(struct activity *a, int curr, int act
 	int group[] = {2, 2, 2, 1};
 	int g_type[] = {SVG_LINE_GRAPH, SVG_BAR_GRAPH,
 			SVG_LINE_GRAPH, SVG_BAR_GRAPH};
-	char *title[] = {"Filesystem statistics (1)", "Filesystem statistics (2)",
-			 "Filesystem statistics (3)", "Filesystem statistics (4)"};
+	char *title[] = {"Filesystems statistics (1)", "Filesystems statistics (2)",
+			 "Filesystems statistics (3)", "Filesystems statistics (4)"};
 	char *g_title[] = {"~MBfsfree", "~MBfsused",
 			   "%ufsused", "%fsused",
 			   "Ifree/1000", "Iused/1000",
@@ -4466,7 +4635,7 @@ __print_funct_t svg_print_filesystem_stats(struct activity *a, int curr, int act
 	static double *spmin, *spmax;
 	static char **out;
 	static int *outsize;
-	char *item_name = NULL;
+	char *item_name;
 	double tval;
 	int i, k, pos, restart;
 
@@ -4478,40 +4647,50 @@ __print_funct_t svg_print_filesystem_stats(struct activity *a, int curr, int act
                  * out + 7 will contain the filesystem name,
 		 * out + 8 will contain the mount point.
 		 */
-		out = allocate_graph_lines(9 * a->nr, &outsize, &spmin, &spmax);
+		out = allocate_graph_lines(9 * a->item_list_sz, &outsize, &spmin, &spmax);
 	}
 
 	if (action & F_MAIN) {
 		/* For each filesystem structure */
-		for (i = 0; i < a->nr; i++) {
+		for (i = 0; i < a->nr[curr]; i++) {
 			sfc = (struct stats_filesystem *) ((char *) a->buf[curr] + i * a->msize);
 
-			if (!sfc->f_blocks)
-				/* Size of filesystem is zero: We are at the end of the list */
-				break;
+			if (a->item_list != NULL) {
+				/* A list of devices has been entered on the command line */
+				if (!search_list_item(a->item_list,
+						      DISPLAY_MOUNT(a->opt_flags) ? sfc->mountp : sfc->fs_name))
+					/* Device not found */
+					continue;
+			}
 
 			/* Look for corresponding graph */
-			for (k = 0; k < a->nr; k++) {
+			for (k = 0; k < a->item_list_sz; k++) {
 				item_name = *(out + k * 9 + 7);
 				if (!strcmp(sfc->fs_name, item_name))
 					/* Graph found! */
 					break;
 			}
 
-			if (k == a->nr) {
+			if (k == a->item_list_sz) {
 				/* Graph not found: Look for first free entry */
-				for (k = 0; k < a->nr; k++) {
+				for (k = 0; k < a->item_list_sz; k++) {
 					item_name = *(out + k * 9 + 7);
 					if (!strcmp(item_name, ""))
 						break;
 				}
-				if (k == a->nr)
-					/* No free graph entry: Graph for this item won't be drawn */
+				if (k == a->item_list_sz) {
+					/* No free graph entry: Ignore it (should never happen) */
+#ifdef DEBUG
+					fprintf(stderr, "%s: Name=%s\n",
+						__FUNCTION__, sfc->fs_name);
+#endif
 					continue;
+				}
 			}
 
 			pos = k * 9;
 
+			item_name = *(out + pos + 7);
 			if (!item_name[0]) {
 				/* Save filesystem name and mount point (if not already done) */
 				strncpy(item_name, sfc->fs_name, CHUNKSIZE);
@@ -4522,7 +4701,7 @@ __print_funct_t svg_print_filesystem_stats(struct activity *a, int curr, int act
 			}
 
 			restart = TRUE;
-			for (k = 0; k < a->nr; k++) {
+			for (k = 0; k < a->nr[!curr]; k++) {
 				sfp = (struct stats_filesystem *) ((char *) a->buf[!curr] + k * a->msize);
 				if (!strcmp(sfc->fs_name, sfp->fs_name)) {
 					/* Filesystem found in previous sample */
@@ -4630,8 +4809,9 @@ __print_funct_t svg_print_filesystem_stats(struct activity *a, int curr, int act
 	}
 
 	if (action & F_END) {
+		int xid = 0;
 
-		for (i = 0; i < a->nr; i++) {
+		for (i = 0; i < a->item_list_sz; i++) {
 
 			/* Check if there is something to display */
 			pos = i * 9;
@@ -4653,9 +4833,11 @@ __print_funct_t svg_print_filesystem_stats(struct activity *a, int curr, int act
 				item_name = *(out + pos + 7);
 			}
 
-			draw_activity_graphs(a->g_nr, g_type, title, g_title, item_name, group,
-					     spmin + pos, spmax + pos, out + pos, outsize + pos,
-					     svg_p, record_hdr);
+			if (draw_activity_graphs(a->g_nr, g_type, title, g_title, item_name, group,
+						 spmin + pos, spmax + pos, out + pos, outsize + pos,
+						 svg_p, record_hdr, FALSE, a->id, xid)) {
+				xid++;
+			}
 		}
 
 		/* Free remaining structures */
@@ -4675,7 +4857,7 @@ __print_funct_t svg_print_filesystem_stats(struct activity *a, int curr, int act
  * 		flag indicating that a restart record has been previously
  * 		found (.@restart) and time used for the X axis origin
  * 		(@ust_time_ref).
- * @itv		Interval of time in jiffies (only with F_MAIN action).
+ * @itv		Interval of time in 1/100th of a second (only with F_MAIN action).
  * @record_hdr	Pointer on record header of current stats sample.
  ***************************************************************************
  */
@@ -4693,29 +4875,102 @@ __print_funct_t svg_print_fchost_stats(struct activity *a, int curr, int action,
 	static char **out;
 	static int *outsize;
 	char *item_name;
-	int i, pos;
+	int i, j, j0, k, found, pos, restart, *unregistered;
 
 	if (action & F_BEGIN) {
 		/*
 		 * Allocate arrays (#0..3) that will contain the graphs data
 		 * and the min/max values.
 		 * Also allocate one additional array (#4) that will contain
-		 * FC HBA name.
+		 * FC HBA name (out + 4) and a positive value (TRUE) if the interface
+		 * has either still not been registered, or has been unregistered
+		 * (outsize + 4).
 		 */
-		out = allocate_graph_lines(4 * a->nr, &outsize, &spmin, &spmax);
+		out = allocate_graph_lines(5 * a->item_list_sz, &outsize, &spmin, &spmax);
 	}
 
 	if (action & F_MAIN) {
+		restart = svg_p->restart;
+		/*
+		 * Mark previously registered interfaces as now
+		 * possibly unregistered for all graphs.
+		 */
+		for (k = 0; k < a->item_list_sz; k++) {
+			unregistered = outsize + k * 5 + 4;
+			if (*unregistered == FALSE) {
+				*unregistered = MAYBE;
+			}
+		}
+
 		/* For each FC HBA */
-		for (i = 0; i < a->nr; i++) {
+		for (i = 0; i < a->nr[curr]; i++) {
 
-			sfcc = (struct stats_fchost *) ((char *) a->buf[curr] + i * a->msize);
-			if (!sfcc->fchost_name[0])
-				/* We are at the end of the list */
-				break;
+			found = FALSE;
 
-			sfcp = (struct stats_fchost *) ((char *) a->buf[!curr] + i * a->msize);
-			pos = i * 5;
+			if (a->nr[!curr] > 0) {
+				sfcc = (struct stats_fchost *) ((char *) a->buf[curr] + i * a->msize);
+
+				/* Look for corresponding graph */
+				for (k = 0; k < a->item_list_sz; k++) {
+					item_name = *(out + k * 5 + 4);
+					if (!strcmp(sfcc->fchost_name, item_name))
+						/* Graph found! */
+						break;
+				}
+				if (k == a->item_list_sz) {
+					/* Graph not found: Look for first free entry */
+					for (k = 0; k < a->item_list_sz; k++) {
+						item_name = *(out + k * 5 + 4);
+						if (!strcmp(item_name, ""))
+							break;
+					}
+					if (k == a->item_list_sz) {
+						/* No free graph entry: Ignore it (should never happen) */
+#ifdef DEBUG
+						fprintf(stderr, "%s: Name=%s\n",
+							__FUNCTION__, sfcc->fchost_name);
+#endif
+						continue;
+					}
+				}
+
+				pos = k * 5;
+				unregistered = outsize + pos + 4;
+
+				/* Look for corresponding structure in previous iteration */
+				j = i;
+
+				if (j >= a->nr[!curr]) {
+					j = a->nr[!curr] - 1;
+				}
+
+				j0 = j;
+
+				do {
+					sfcp = (struct stats_fchost *) ((char *) a->buf[!curr] + j * a->msize);
+					if (!strcmp(sfcc->fchost_name, sfcp->fchost_name)) {
+						found = TRUE;
+						break;
+					}
+					if (++j >= a->nr[!curr]) {
+						j = 0;
+					}
+				}
+				while (j != j0);
+			}
+
+			if (!found)
+				continue;
+
+			/*
+			 * If current interface was marked as previously unregistered,
+			 * then set restart variable to TRUE so that the graph will be
+			 * discontinuous, and mark it as now registered.
+			 */
+			if (*unregistered == TRUE) {
+				restart = TRUE;
+			}
+			*unregistered = FALSE;
 
 			item_name = *(out + pos + 4);
 			if (!item_name[0]) {
@@ -4725,30 +4980,38 @@ __print_funct_t svg_print_fchost_stats(struct activity *a, int curr, int action,
 			}
 
 			/* Look for min/max values */
-			save_extrema(0, 4, 0, (void *) sfcc, (void *) sfcp,
+			save_extrema(a->gtypes_nr, (void *) sfcc, (void *) sfcp,
 				itv, spmin + pos, spmax + pos, g_fields);
 
 			/* fch_rxf/s */
 			lnappend(record_hdr->ust_time - svg_p->ust_time_ref,
 				 S_VALUE(sfcp->f_rxframes, sfcc->f_rxframes, itv),
-				 out + pos, outsize + pos, svg_p->restart);
+				 out + pos, outsize + pos, restart);
 			/* fch_txf/s */
 			lnappend(record_hdr->ust_time - svg_p->ust_time_ref,
 				 S_VALUE(sfcp->f_txframes, sfcc->f_txframes, itv),
-				 out + pos + 1, outsize + pos + 1, svg_p->restart);
+				 out + pos + 1, outsize + pos + 1, restart);
 			/* fch_rxw/s */
 			lnappend(record_hdr->ust_time - svg_p->ust_time_ref,
 				 S_VALUE(sfcp->f_rxwords, sfcc->f_rxwords, itv),
-				 out + pos + 2, outsize + pos + 2, svg_p->restart);
+				 out + pos + 2, outsize + pos + 2, restart);
 			/* fch_txw/s */
 			lnappend(record_hdr->ust_time - svg_p->ust_time_ref,
 				 S_VALUE(sfcp->f_txwords, sfcc->f_txwords, itv),
-				 out + pos + 3, outsize + pos + 3, svg_p->restart);
+				 out + pos + 3, outsize + pos + 3, restart);
+		}
+
+		/* Mark interfaces not seen here as now unregistered */
+		for (k = 0; k < a->item_list_sz; k++) {
+			unregistered = outsize + k * 5 + 4;
+			if (*unregistered != FALSE) {
+				*unregistered = TRUE;
+			}
 		}
 	}
 
 	if (action & F_END) {
-		for (i = 0; i < a->nr; i++) {
+		for (i = 0; i < a->item_list_sz; i++) {
 
 			/* Check if there is something to display */
 			pos = i * 5;
@@ -4759,7 +5022,147 @@ __print_funct_t svg_print_fchost_stats(struct activity *a, int curr, int action,
 			draw_activity_graphs(a->g_nr, g_type,
 					     title, g_title, item_name, group,
 					     spmin + pos, spmax + pos, out + pos, outsize + pos,
-					     svg_p, record_hdr);
+					     svg_p, record_hdr, FALSE, a->id, i);
+		}
+
+		/* Free remaining structures */
+		free_graphs(out, outsize, spmin, spmax);
+	}
+}
+
+/*
+ ***************************************************************************
+ * Display softnet statistics in SVG.
+ *
+ * IN:
+ * @a		Activity structure with statistics.
+ * @curr	Index in array for current sample statistics.
+ * @action	Action expected from current function.
+ * @svg_p	SVG specific parameters: Current graph number (.@graph_no),
+ * 		flag indicating that a restart record has been previously
+ * 		found (.@restart) and time used for the X axis origin
+ * 		(@ust_time_ref).
+ * @itv		Interval of time in 1/100th of a second (only with F_MAIN action).
+ * @record_hdr	Pointer on record header of current stats sample.
+ ***************************************************************************
+ */
+__print_funct_t svg_print_softnet_stats(struct activity *a, int curr, int action, struct svg_parm *svg_p,
+					unsigned long long itv, struct record_header *record_hdr)
+{
+	struct stats_softnet *ssnc, *ssnp, ssnczero;
+	int group[] = {2, 3};
+	int g_type[] = {SVG_LINE_GRAPH, SVG_LINE_GRAPH};
+	char *title[] = {"Software-based network processing statistics (1)",
+			 "Software-based network processing statistics (2)"};
+	char *g_title[] = {"total/s", "dropd/s",
+			   "squeezd/s", "rx_rps/s", "flw_lim/s"};
+	int g_fields[] = {0, 1, 2, 3, 4};
+	static double *spmin, *spmax;
+	static char **out;
+	static int *outsize;
+	char item_name[16];
+	unsigned char offline_cpu_bitmap[BITMAP_SIZE(NR_CPUS)] = {0};
+	int i, pos, restart;
+
+	if (action & F_BEGIN) {
+		/*
+		 * Allocate arrays that will contain the graphs data
+		 * and the min/max values.
+		 */
+		out = allocate_graph_lines(5 * a->item_list_sz, &outsize, &spmin, &spmax);
+	}
+
+	if (action & F_MAIN) {
+		memset(&ssnczero, 0, STATS_SOFTNET_SIZE);
+
+		/* @nr[curr] cannot normally be greater than @nr_ini */
+		if (a->nr[curr] > a->nr_ini) {
+			a->nr_ini = a->nr[curr];
+		}
+
+		/* Compute statistics for CPU "all" */
+		get_global_soft_statistics(a, !curr, curr, flags, offline_cpu_bitmap);
+
+		/* For each CPU */
+		for (i = 0; (i < a->nr_ini) && (i < a->bitmap->b_size + 1); i++) {
+			restart = svg_p->restart;
+
+			/* Should current CPU (including CPU "all") be displayed? */
+			if (!(a->bitmap->b_array[i >> 3] & (1 << (i & 0x07))))
+				/* No */
+				continue;
+
+			ssnc = (struct stats_softnet *) ((char *) a->buf[curr]  + i * a->msize);
+			ssnp = (struct stats_softnet *) ((char *) a->buf[!curr] + i * a->msize);
+
+			/* Is current CPU marked offline? */
+			if (offline_cpu_bitmap[i >> 3] & (1 << (i & 0x07))) {
+				/*
+				 * Yes and it doesn't follow a RESTART record.
+				 * To add a discontinuity in graph, we simulate
+				 * a RESTART mark.
+				 */
+				restart = TRUE;
+				if (svg_p->restart) {
+					/*
+					 * CPU is offline and it follows a real
+					 * RESTART record. Ignore its current value
+					 * (no previous sample).
+					 */
+					ssnc = &ssnczero;
+				}
+			}
+			pos = i * 5;
+
+			/* Check for min/max values */
+			save_extrema(a->gtypes_nr, (void *) ssnc, (void *) ssnp,
+				     itv, spmin + pos, spmax + pos, g_fields);
+
+			/* total/s */
+			lnappend(record_hdr->ust_time - svg_p->ust_time_ref,
+				 S_VALUE(ssnp->processed, ssnc->processed, itv),
+				 out + pos, outsize + pos, restart);
+			/* dropd/s */
+			lnappend(record_hdr->ust_time - svg_p->ust_time_ref,
+				 S_VALUE(ssnp->dropped, ssnc->dropped, itv),
+				 out + pos + 1, outsize + pos + 1, restart);
+			/* squeezd/s */
+			lnappend(record_hdr->ust_time - svg_p->ust_time_ref,
+				 S_VALUE(ssnp->time_squeeze, ssnc->time_squeeze, itv),
+				 out + pos + 2, outsize + pos + 2, restart);
+			/* rx_rps/s */
+			lnappend(record_hdr->ust_time - svg_p->ust_time_ref,
+				 S_VALUE(ssnp->received_rps, ssnc->received_rps, itv),
+				 out + pos + 3, outsize + pos + 3, restart);
+			/* flw_lim/s */
+			lnappend(record_hdr->ust_time - svg_p->ust_time_ref,
+				 S_VALUE(ssnp->flow_limit, ssnc->flow_limit, itv),
+				 out + pos + 4, outsize + pos + 4, restart);
+		}
+	}
+
+	if (action & F_END) {
+		for (i = 0; (i < a->item_list_sz) && (i < a->bitmap->b_size + 1); i++) {
+
+			/* Should current CPU (including CPU "all") be displayed? */
+			if (!(a->bitmap->b_array[i >> 3] & (1 << (i & 0x07))))
+				/* No */
+				continue;
+
+			pos = i * 5;
+
+			if (!i) {
+				/* This is CPU "all" */
+				strcpy(item_name, "all");
+			}
+			else {
+				sprintf(item_name, "%d", i - 1);
+			}
+
+			draw_activity_graphs(a->g_nr, g_type,
+					     title, g_title, item_name, group,
+					     spmin + pos, spmax + pos, out + pos, outsize + pos,
+					     svg_p, record_hdr, FALSE, a->id, i);
 		}
 
 		/* Free remaining structures */

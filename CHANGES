@@ -1,28 +1,322 @@
 Changes:
 
-2017/01/11: Version 11.4.3 - Sebastien Godard (sysstat <at> orange.fr)
-	* sar: Better handle dynamically registered devices.
-	* Sort keywords definition in sar, sadc and mpstat manual pages.
-	* SVG: Change some colors to make graphs easier to distinguish.
-	* SVG: Init f_svg_print() function pointer to NULL.
-	* sar: Fix incorrect gcc warning in svg_stats.c.
-	* Small fix in iostat manual page.
-	* Cosmetic changes in source code.
+2018/12/14: Version 12.0.3 - Sebastien Godard (sysstat <at> orange.fr)
+	* sadf: Fix out of bound reads security issues (CVE-2018-19416 and
+	  CVE-2018-19517).
+	* sadf: Fix possible infinite loop.
+	* [Todd Walton]: Clarify sadc manual page and FAQ on using multiple -S keywords.
+	* Remove remap_struct() prototype from sa.h.
+	* [Steve Kay]: Use memcpy rather than strncpy, in order to avoid truncation
+	  warning.
+	* [Steve Kay]: Cosmetic fixes in configure file.
+	* [Anatoly Pugachev]: Fix comment in sar.c.
 
-2016/11/04: Version 11.4.2 - Sebastien Godard (sysstat <at> orange.fr)
-	* [Michal Sekletar]: sar: make buffers that hold timestamps
-	  bigger.
-	* [Shantanu Goel]: sar: /proc/vmstat fix for Linux 4.8.
-	* [Breno Leitao]: sar: Improve cpuinfo read for POWER architecture.
-	* sadf: Use a decimal point instead of a coma in JSON output.
+2018/10/13: Version 12.0.2 - Sebastien Godard (sysstat <at> orange.fr)
+	* sar: Fix timestamp format in report output.
+	* sar: Fortify remap_struct() function.
+	* sadf: SVG: Fix variable type used for huge pages kbhugfree metric.
+	* sar: Make sure header lines are always displayed in report for statistics.
+	* Makefile: Fix "unexpected operator" error on install.
+	* sar: Fix typo in manual page.
+	* Cosmetic fixes.
+
+2018/08/06: Version 12.0.1 - Sebastien Godard (sysstat <at> orange.fr)
+	* sar: Fix wrong size for stats_huge structure.
+
+2018/08/03: Version 12.0.0 - Sebastien Godard (sysstat <at> orange.fr)
+	* sadf: SVG: Remove id tag from individual graphs. Use activities
+	  identification numbers for id tags.
+	* sadf: SVG: Add new option "showtoc", which can be used to display
+	  the list of activities for which there are graphs ("table of
+	  contents").
+	* sadf: SVG: Improve output for softnet activity: Add a discontinuity in
+	  graph when corresponding CPU is marked offline.
+	* sadf: SVG: Improve function used to assess SVG canvas height.
+	* sadf: SVG: Fix core dumped on buffers reallocation.
+	* sar/sadf: Devices list management code refactoring.
+	* sadf: SVG: Display graphs for swap utilization in packed mode [11.6.5].
+	* sadf: SVG: Don't take into account activities with no graphs when
+	  calculating canvas height [11.6.5].
+	* sadf: SVG: Don't insert a gap in SVG output if an activity is not
+	  displayed [11.6.5].
+	* sadf: SVG: Fix possible negative value in graphs coordinates [11.6.5].
+	* sa_conv.c: Use write_all() function instead of write() to handle possible
+	  signal interruptions.
+	* spec file updated: No longer create a debug package.
+	* Remove many warnings from gcc v7/v8.
+	* README file updated.
+	* Manual pages updated.
+
+2018/06/01: Version 11.7.4 - Sebastien Godard (sysstat <at> orange.fr)
+	* sar/sadf: Add new option "--iface=": Allow the user to select the
+	  network interfaces to display.
+	* sar/sadf: Add new option "--dev=": Allow the user to select the
+	  block devices to display.
+	* sar/sadf: Add new option "--fs=": Allow the user to select the
+	  filesystems to display.
+	* Add new option "--dec=": Allow the user to choose the number of decimal
+	  places to be used by sysstat commands.
+	* Manual pages updated (sar, sadf, cifsiostat, iostat, mpstat, pidstat).
+	* sar: Change how used memory (kbmemused) is calculated to be
+	  consistent with free(1) and top(1)'s output [11.6.4] [11.4.10].
+	* pidstat: Fix incorrect thread names displayed with -t and -l options
+	  [11.6.4] [11.4.10].
+
+2018/04/06: Version 11.7.3 - Sebastien Godard (sysstat <at> orange.fr)
+	* sar: Fix possible crash happening when buffers needed to be
+	  reallocated to accomodate more devices.
+	* sar/sadf/mpstat: Compute global CPU statistics as the sum of individual
+	  CPU ones.
+	* mpstat: Compute statistics for node "all" as the sum of individual
+	  CPU statistics.
+	* sar: Add new "-z" option, which tells sar to omit output for any
+	  devices for which there was no activity during the sample period.
+	* sar/sadf: Now better take into account offline and online CPU when
+	  displaying softnet statistics.
+	* sadc: Shrink size of sadc binary file by compiling out unneeded
+	  functions.
+	* sadf: Change raw format output to be CSV compliant.
+	* sadf: Reorder some values displayed in debug mode/raw format.
+	* Add initial support for major numbers > 255.
+	* Update sysstat.ioconf devices list.
+	* mpstat: Remove option "-P ON". mpstat now displays only online CPU by
+	  default.
+	* sar and mpstat manual pages updated.
+	* pidstat: Report CPU usage for a process as the sum of all threads
+	  [11.6.3] [11.4.9].
+	* sar: Change condition used in workaround for CPU coming back online
+	  [11.6.3] [11.4.9].
+	* NLS updated: Various translations updated.
+
+2018/02/12: Version 11.7.2 - Sebastien Godard (sysstat <at> orange.fr)
+	* sadf: Rewrite function used to convert an old binary data file to
+	  the up-to-date format.
+	* sar: Display all items for USB and filesystems activities in the
+	  summary ending the report.
+	* sar: Don't read statistics twice when displaying average stats since
+	  system startup.
+	* sar: Update magic number for certain activities structures (should have
+	  been done in 11.7.1).
+	* sar: Display reports name in help message (sar --help).
+	* sadc: Enable the user to select which activities will be collected
+	  by their name.
+	* sar/sadc: Add DEBUG code.
+	* sadf: RAW: Enhance output.
+	* sadf: RAW: Rename "showhints" option to "debug".
+	* sadf: sadf -H now displays more details on file.
+	* sadf: SVG: Set minimum canvas height to 100 points.
+	* sadf: SVG: Display grid and graduations on the whole width of the graph
+	  [11.6.3] [11.4.9].
+	* sadf: SVG: Don't display graphs for offline CPU.
+	* iostat, cifsiostat: Display device name at the end of the line
+	  when option -h is used.
+	* iostat: Refresh device list properly [11.6.3] [11.4.9].
+	* Travis CI: Add new tests.
+	* Increase maximum number of interrupts that can be processed by sysstat
+	  commands (NR_IRQS).
+	* FAQ updated [11.6.3] [11.4.9].
+	* sadf and sar manual pages updated.
+	* NLS updated: Various translations updated.
+	* README file updated.
+	* Code cleaned and cosmetic fixes.
+
+2018/01/12: Version 11.7.1 - Sebastien Godard (sysstat <at> orange.fr)
+	* sar/sadc: New binary data file format, which is now more flexible
+	  and takes much less space on disk.
+	* sar/sadc: Dynamic structures allocation for all devices registered
+	  by the system.
+	* sar/sadf: Support for big-endian/little-endian format for binary
+	  data files.
+	* sar/sadc: Use 64-bit time values in binary data files.
+	* sar/sadc: Update statistics structures to keep with current kernels.
+	* sar/sadc: Update binary file's header data to deal with patchlevel
+	  and sublevel version numbers greater than 15.
+	* sadc: Save HZ value in data file header.
+	* sar/sadc: Don't assume CPU statistics are always saved in binary
+	  data files.
+	* sar/sadf: Don't display offline CPU.
+	* sadf: Conversion function (option -c) temporarily inhibited.
+	  It will work again with next sysstat version (11.7.2).
+	* sar: The option used to display a help message is now "--help".
+	* sar: Add new option -h to make sar's output easier to read by a
+	  human. This option moves device names (disks, network interfaces)
+	  at the end of the line. This option also sets options -p (pretty-
+	  print) and --human.
+	* sadf: RAW: Display number of items for each activity.
+	* sadf: Make option -H display all the activities present in file,
+	  whether known or unknown.
+	* All commands now use only /proc/uptime to compute system uptime.
+	  Also use a time interval expressed in seconds, not in jiffies.
+	* Makefile: Fix dependencies between files.
+	* Makefile: Remove old references to nfsiostat command.
+	* [Robert Luberda]: Fix sadc crash when really long lines are
+	  read from /etc/mtab [11.6.1] [11.4.7] [11.2.13].
+	* [JoungKyun Kim]: NLS updated: Add Korean translation [11.6.1].
+	* [Christian Ehrhardt]: Fix 00 byte after values when --human is
+	  not set [11.6.1].
+	* Fix invalid token in "iostat -y" JSON output [11.6.1].
+	* Workaround for offline CPU coming back online [11.6.2] [11.4.8]
+	  [11.2.14].
+	* sadf: Fix CSV output for TTY statistics [11.6.2] [11.4.8]
+	  [11.2.14].
+	* sadf: Remove duplicate % sign displayed in ppc mode [11.6.2].
+	* SVG: Display time as xx:00 instead of xxH when "oneday" option
+	  is used [11.6.2] [11.4.8].
+	* sar: Use ULLONG_MAX/2 to check if network device counters have
+	  overflown [11.6.2] [11.4.8] [11.2.14].
+	* Remove SCCSID strings in executable files to allow reproducible
+	  build [11.6.1] [11.4.7] [11.2.13].
+	* Remove unused parameters passed to functions [11.6.1] [11.4.7]
+	  [11.2.13].
+	* sadf: Don't use f_count2() function pointer [11.6.1] [11.4.7]
+	  [11.2.13].
+	* [Lukas Zapletal]: Update comment of SA_DIR in sysconfig file [11.6.1]
+	  [11.4.7] [11.2.13].
+	* NLS: Various translations updated.
+	* Various cosmetic fixes, typo fixes and documentation enhancements
+	  in source code.
+
+2017/08/14: Version 11.6.0 - Sebastien Godard (sysstat <at> orange.fr)
+	* pidstat: Add new option (-e) which can be used to pass a program
+	  to execute and make pidstat monitor it.
+	* pidstat: Add new option (-H) to display timestamps in seconds
+	  since the Epoch.
+	* pidstat manual page updated.
+	* Revert "ARM: Fix sadc crash because of unaligned memory accesses".
+	  The fix may cause segmentation faults in some cases [11.4.6]
+	  [11.2.12].
+	* Add BUG_REPORT template file.
+	* README file updated.
+	* Cosmetic changes in code.
+	* lsm file updated [11.4.6] [11.2.12].
+
+2017/07/05: Version 11.5.7 - Sebastien Godard (sysstat <at> orange.fr)
+	* iostat: Add new "-s" switch used to display a short (narrow)
+	  version of the report that should fit in 80 chars wide screens.
+	* iostat: Add new metrics to iostat's extended statistics report.
+	* iostat: Express requests average size in kB, not sectors.
+	* iostat: Make JSON output depend on options used.
+	* iostat: Remove trailing colon following "Device" field name.
+	* sar/sadf: Metrics from disks report previously expressed in
+	  sectors are now expressed in kB.
+	* Update DTD/XSD documents.
+	* SVG: Fix graphs for swap space utilization statistics.
+	* Display unit with areq-sz metric values when --human option used.
+	* Display a percent sign after values when --human option used.
+	* pidstat: Don't stop if /proc/#/schedstat files don't exist.
+	* Fix ressource leak (CID 144609) [11.4.5] [11.2.11].
+	* Cast variables to target type before use [11.4.5] [11.2.11].
+	* Fix buffer overflow when options -s or -e are used with sar
+	  (DEBIAN bug #863197) [11.4.5] [11.2.11].
+	* SVG: Define a max number of horizontal lines for the background
+	  grid [11.4.5].
+	* Change default colors to be usable on both dark and light
+	  terminal backgrounds [11.4.5] [11.2.11].
+	* Start collect and summary systemd services after sysstat.service
+	  [11.4.5] [11.2.11].
+	* Manual pages updated.
+	* CREDITS file updated.
+
+2017/05/10: Version 11.5.6 - Sebastien Godard (sysstat <at> orange.fr)
+	* mpstat: Provide CPU statistics based on NUMA node placement.
+	* SVG: Add new option: "showinfo".
+	* ARM: Fix sadc crash because of unaligned memory accesses [11.4.4]
+	  [11.2.10].
+	* Makefile: Fix test failures on big endian archs.
+	* rndr_stats.c: Simplify fix for warning given by
+	  gcc -Werror=format-security
+	* mpstat: Remove unneeded parameter from JSON functions.
+	* mpstat and sadf manual pages updated.
+	* [Robert Luberda]: isag: Add several enhancements and fixes.
+	* Fix typo in sadf manual page [11.4.4].
+
+2017/02/27: Version 11.5.5 - Sebastien Godard (sysstat <at> orange.fr)
+	* SVG: Allow multiple charts on a row (new option added: "packed").
+	* SVG: Add new option: "height=..."
+	* SVG: Properly terminate SVG file when no data have been found
+	  [11.4.4].
+	* SVG: Don't extend X axis beyond time end [11.4.4].
+	* Add new %wait field to pidstat CPU utilization.
+	* sadf: Fix insecure data handling (CID #139643).
+	* sadf: Small code cleanup.
+	* Fix comment in /etc/sysconfig/sysstat file [11.4.4] [11.2.10].
+	* Makefile: Add regression tests ("test" target).
+	* Hook up to Travis CI.
+	* README file completely rewritten.
+	* FAQ file converted to MarkDown format.
+	* Remove isag support.
+	* sadf and pisdstat manual pages updated.
+	* Remove nfsiostat from .gitignore file [11.4.4] [11.2.10].
+
+2017/01/11: Version 11.5.4 - Sebastien Godard (sysstat <at> orange.fr)
+	* sadf: Add new "raw" output format.
+	* sar: Remove memory statistics (option -R).
+	* SVG: Give actual canvas height at the end of SVG output.
+	* Make sar's -I option work again with sadf.
+	* sar: Better handle dynamically registered devices [11.4.3]
+	  [11.2.9].
+	* sar: Fix incorrect gcc warning in svg_stats.c [11.4.3].
+	* SVG: Init f_svg_print() function pointer to NULL [11.4.3].
+	* sadf and sar manual pages updated.
+	* README file updated (added Coverity Badge).
+	* NLS translations updated. Added new Friulian translation.
+	* Cosmetic fixes in source code.
+
+2016/12/06: Version 11.5.3 - Sebastien Godard (sysstat <at> orange.fr)
+	* sar: Add new metric "available free memory" to memory statistics.
+	* Update DTD and XSD documents to include new metric.
+	* sar/pidstat/iostat/tapestat/cifsiostat: Add new --human option to
+	  display values in human readable format.
+	* SVG: Add new option "showidle" to be used with sadf to display
+	  CPU idle state.
+	* sar/mpstat: Allow selection of a range of CPU or interrupts.
+	* Update mpstat, sar and sadf manual pages.
+	* iostat/mpstat: Fix "'LC_NUMERIC' undeclared" error message when
+	  compiling sysstat.
+	* Sort keywords definition in sar, sadc and mpstat manual pages
+	  [11.2.9] [11.4.3].
+	* SVG: Change some colors to make graphs easier to distinguish
+	  [11.4.3].
+	* Small fix in iostat manual page [11.2.9] [11.4.3].
+	* Cosmetic changes in source code [11.2.9] [11.4.3].
+	* Update lsm file contents.
+	* NLS updated.
+
+2016/11/04: Version 11.5.2 - Sebastien Godard (sysstat <at> orange.fr)
+	* sar: Add software-based network processing (softnet) statistics.
+	* sadf: Add output formats for softnet statistics.
+	* [Michal Sekletar]: sar: Make buffers that hold timestamps
+	  bigger [11.2.8] [11.4.2].
+	* [Shantanu Goel]: sar: /proc/vmstat fix for Linux 4.8 [11.2.8]
+	  [11.4.2].
+	* [Mike Winter]: pidstat: Use system constants for process name
+	  length and username length.
+	* [Breno Leitao]: sar: Improve cpuinfo read for POWER architecture
+	  [11.2.8] [11.4.2].
+	* Make various buffers size holding timestamps consistent.
+	* sadf: Use a decimal point instead of a coma in JSON output
+	  [11.2.8] [11.4.2].
+	* mpstat, iostat: Use a decimal point instead of a coma in JSON
+	  output.
 	* pidstat: Use either the short or the full command line when
-	  looking for a pattern with options -C or -G.
+	  looking for a pattern with options -C or -G [11.2.8] [11.4.2].
+	* sar manual page updated.
+	* NLS updated.
+	* CREDITS file updated.
 
-2016/09/23: Version 11.4.1 - Sebastien Godard (sysstat <at> orange.fr)
-	* sadf: Fix broken datafile conversion from old formats.
+2016/09/23: Version 11.5.1 - Sebastien Godard (sysstat <at> orange.fr)
+	* iostat: Add JSON output (option "-o JSON").
+	* mpstat: Add JSON output (option "-o JSON").
+	* sadf: Fix broken datafile conversion from old formats
+	  [11.2.7] [11.4.1].
 	* sadf: Fix fields list displayed by sadf -d for filesystem
-	  activity.
-	* pidstat: Don't omit kernel threads when using -l option.
+	  activity [11.2.7] [11.4.1].
+	* pidstat: Don't omit kernel threads when using -l option [11.2.7]
+	  [11.4.1].
+	* Reuse hdr_line string from struct activity to display activities
+	  title line.
+	* sadf: Remove sysstat-version from JSON output.
+	* iostat and mpstat manual pages updated.
 
 2016/08/15: Version 11.4.0 - Sebastien Godard (sysstat <at> orange.fr)
 	* sar: Workaround for I/O and transfer rates statistics which may

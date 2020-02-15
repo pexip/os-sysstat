@@ -30,8 +30,8 @@
 
 #include "version.h"
 #include "cifsiostat.h"
+#include "rd_stats.h"
 #include "count.h"
-#include "common.h"
 
 #ifdef USE_NLS
 #include <locale.h>
@@ -41,16 +41,19 @@
 #define _(string) (string)
 #endif
 
+#ifdef USE_SCCSID
 #define SCCSID "@(#)sysstat-" VERSION ": " __FILE__ " compiled " __DATE__ " " __TIME__
 char *sccsid(void) { return (SCCSID); }
+#endif
 
-unsigned long long uptime0[2] = {0, 0};
+unsigned long long uptime_cs[2] = {0, 0};
 struct cifs_stats *st_cifs[2];
 struct io_hdr_stats *st_hdr_cifs;
 
 int cifs_nr = 0;	/* Nb of CIFS mounted directories found */
 int cpu_nr = 0;		/* Nb of processors on the machine */
 int flags = 0;		/* Flag for common options and system state */
+int dplaces_nr = -1;	/* Number of decimal places */
 
 long interval = 0;
 char timestamp[TIMESTAMP_LEN];
@@ -72,10 +75,10 @@ void usage(char *progname)
 
 #ifdef DEBUG
 	fprintf(stderr, _("Options are:\n"
-			  "[ -h ] [ -k | -m ] [ -t ] [ -V ] [ --debuginfo ]\n"));
+			  "[ --dec={ 0 | 1 | 2 } ] [ --human ] [ -h ] [ -k | -m ] [ -t ] [ -V ] [ --debuginfo ]\n"));
 #else
 	fprintf(stderr, _("Options are:\n"
-			  "[ -h ] [ -k | -m ] [ -t ] [ -V ]\n"));
+			  "[ --dec={ 0 | 1 | 2 } ] [ --human ] [ -h ] [ -k | -m ] [ -t ] [ -V ]\n"));
 #endif
 	exit(1);
 }
@@ -396,7 +399,9 @@ void read_cifs_stat(int curr)
  */
 void write_cifs_stat_header(int *fctr)
 {
-	printf("Filesystem:           ");
+	if (!DISPLAY_HUMAN_READ(flags)) {
+		printf("Filesystem            ");
+	}
 	if (DISPLAY_KILOBYTES(flags)) {
 		printf("        rkB/s        wkB/s");
 		*fctr = 1024;
@@ -409,7 +414,11 @@ void write_cifs_stat_header(int *fctr)
 		printf("         rB/s         wB/s");
 		*fctr = 1;
 	}
-	printf("    rops/s    wops/s         fo/s         fc/s         fd/s\n");
+	printf("    rops/s    wops/s         fo/s         fc/s         fd/s");
+	if (DISPLAY_HUMAN_READ(flags)) {
+		printf(" Filesystem");
+	}
+	printf("\n");
 }
 
 /*
@@ -418,7 +427,7 @@ void write_cifs_stat_header(int *fctr)
  *
  * IN:
  * @curr	Index in array for current sample statistics.
- * @itv		Interval of time.
+ * @itv		Interval of time (in 1/100th of a second).
  * @fctr	Conversion factor.
  * @shi		Structures describing the CIFS filesystems.
  * @ioi		Current sample statistics.
@@ -429,25 +438,31 @@ void write_cifs_stat(int curr, unsigned long long itv, int fctr,
 		     struct io_hdr_stats *shi, struct cifs_stats *ioni,
 		     struct cifs_stats *ionj)
 {
-	if (DISPLAY_HUMAN_READ(flags)) {
-		cprintf_in(IS_STR, "%-22s\n", shi->name, 0);
-		printf("%22s", "");
-	}
-	else {
+	double rbytes, wbytes;
+
+	if (!DISPLAY_HUMAN_READ(flags)) {
 		cprintf_in(IS_STR, "%-22s", shi->name, 0);
 	}
 
 	/*       rB/s   wB/s   fo/s   fc/s   fd/s*/
-	cprintf_f(2, 12, 2,
-		  S_VALUE(ionj->rd_bytes, ioni->rd_bytes, itv) / fctr,
-		  S_VALUE(ionj->wr_bytes, ioni->wr_bytes, itv) / fctr);
-	cprintf_f(2, 9, 2,
+	rbytes = S_VALUE(ionj->rd_bytes, ioni->rd_bytes, itv);
+	wbytes = S_VALUE(ionj->wr_bytes, ioni->wr_bytes, itv);
+	if (!DISPLAY_UNIT(flags)) {
+		rbytes /= fctr;
+		wbytes /= fctr;
+	}
+	cprintf_f(DISPLAY_UNIT(flags) ? UNIT_BYTE : NO_UNIT, 2, 12, 2,
+		  rbytes, wbytes);
+	cprintf_f(NO_UNIT, 2, 9, 2,
 		  S_VALUE(ionj->rd_ops, ioni->rd_ops, itv),
 		  S_VALUE(ionj->wr_ops, ioni->wr_ops, itv));
-	cprintf_f(3, 12, 2,
+	cprintf_f(NO_UNIT, 3, 12, 2,
 		  S_VALUE(ionj->fopens, ioni->fopens, itv),
 		  S_VALUE(ionj->fcloses, ioni->fcloses, itv),
 		  S_VALUE(ionj->fdeletes, ioni->fdeletes, itv));
+	if (DISPLAY_HUMAN_READ(flags)) {
+		cprintf_in(IS_STR, " %s", shi->name, 0);
+	}
 	printf("\n");
 }
 
@@ -487,7 +502,7 @@ void write_stats(int curr, struct tm *rectime)
 	}
 
 	/* Interval of time, reduced to one processor */
-	itv = get_interval(uptime0[!curr], uptime0[curr]);
+	itv = get_interval(uptime_cs[!curr], uptime_cs[curr]);
 
 	shi = st_hdr_cifs;
 
@@ -534,12 +549,8 @@ void rw_io_stat_loop(long int count, struct tm *rectime)
 	setbuf(stdout, NULL);
 
 	do {
-		/* Read system uptime (reduced to one processor) */
-		uptime0[curr] = 0;
-		read_uptime(&(uptime0[curr]));
-		if (!uptime0[curr])
-			/* Cannot read system uptime (/proc/uptime doesn't exist) */
-			exit(2);
+		/* Read system uptime in 1/100th of a second */
+		read_uptime(&(uptime_cs[curr]));
 
 		/* Read CIFS stats */
 		read_cifs_stat(curr);
@@ -584,9 +595,6 @@ int main(int argc, char **argv)
 	/* Init color strings */
 	init_colors();
 
-	/* Get HZ */
-	get_HZ();
-
 	/* Process args... */
 	while (opt < argc) {
 
@@ -596,14 +604,29 @@ int main(int argc, char **argv)
 			opt++;
 		} else
 #endif
-		if (!strncmp(argv[opt], "-", 1)) {
+
+		if (!strcmp(argv[opt], "--human")) {
+			flags |= I_D_UNIT;
+			opt++;
+		}
+
+		else if (!strncmp(argv[opt], "--dec=", 6) && (strlen(argv[opt]) == 7)) {
+			/* Get number of decimal places */
+			dplaces_nr = atoi(argv[opt] + 6);
+			if ((dplaces_nr < 0) || (dplaces_nr > 2)) {
+				usage(argv[0]);
+			}
+			opt++;
+		}
+
+		else if (!strncmp(argv[opt], "-", 1)) {
 			for (i = 1; *(argv[opt] + i); i++) {
 
 				switch (*(argv[opt] + i)) {
 
 				case 'h':
-					/* Display an easy-to-read CIFS report */
-					flags |= I_D_HUMAN_READ;
+					/* Display an easy-to-read CIFS report. Also imply --human */
+					flags |= I_D_HUMAN_READ + I_D_UNIT;
 					break;
 
 				case 'k':
@@ -672,7 +695,8 @@ int main(int argc, char **argv)
 	/* Get system name, release number and hostname */
 	uname(&header);
 	if (print_gal_header(&rectime, header.sysname, header.release,
-			     header.nodename, header.machine, cpu_nr)) {
+			     header.nodename, header.machine, cpu_nr,
+			     PLAIN_OUTPUT)) {
 		flags |= I_D_ISO;
 	}
 	printf("\n");

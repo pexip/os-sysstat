@@ -8,7 +8,6 @@ sysstat
 crontab
 version.h
 sysconfig.h
-prealloc.h
 sysstat.sysconfig
 sysstat.service
 sysstat.crond
@@ -20,7 +19,6 @@ cron/sysstat-collect.service
 cron/sysstat-collect.timer
 cron/sysstat-summary.service
 cron/sysstat-summary.timer
-contrib/isag/isag
 man/sa1.8
 man/sa2.8
 man/sadc.8
@@ -29,8 +27,6 @@ man/sadf.1
 man/sar.1
 man/iostat.1
 man/cifsiostat.1
-man/nfsiostat.1
-man/nfsiostat-sysstat.1
 *.log
 config.status
 autom4te.cache/
@@ -48,9 +44,8 @@ iostat
 tapestat
 mpstat
 pidstat
-nfsiostat
-nfsiostat-sysstat
 cifsiostat
 core
 TAGS
 nls/*.gmo
+tests/*.tmp

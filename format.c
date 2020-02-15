@@ -1,6 +1,6 @@
 /*
  * format.c: Output format definitions for sadf and sar
- * (C) 2011-2016 by Sebastien GODARD (sysstat <at> orange.fr)
+ * (C) 2011-2018 by Sebastien GODARD (sysstat <at> orange.fr)
  *
  ***************************************************************************
  * This program is free software; you can redistribute it and/or modify it *
@@ -128,6 +128,19 @@ struct report_format svg_fmt = {
 };
 
 /*
+ * Raw output.
+ */
+struct report_format raw_fmt = {
+	.id		= F_RAW_OUTPUT,
+	.options	= FO_GROUPED_STATS + FO_LOCAL_TIME + FO_SEC_EPOCH,
+	.f_header	= NULL,
+	.f_statistics	= NULL,
+	.f_timestamp	= print_raw_timestamp,
+	.f_restart	= print_raw_restart,
+	.f_comment	= print_raw_comment
+};
+
+/*
  * Array of output formats.
  */
 struct report_format *fmt[NR_FMT] = {
@@ -137,7 +150,8 @@ struct report_format *fmt[NR_FMT] = {
 	&xml_fmt,
 	&json_fmt,
 	&conv_fmt,
-	&svg_fmt
+	&svg_fmt,
+	&raw_fmt
 };
 #endif
 

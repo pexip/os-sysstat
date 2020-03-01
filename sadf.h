@@ -1,6 +1,6 @@
 /*
  * sadf: System activity data formatter
- * (C) 1999-2016 by Sebastien Godard (sysstat <at> orange.fr)
+ * (C) 1999-2018 by Sebastien Godard (sysstat <at> orange.fr)
  */
 
 #ifndef _SADF_H
@@ -9,7 +9,7 @@
 #include "sa.h"
 
 /* DTD version for XML output */
-#define XML_DTD_VERSION	"3.1"
+#define XML_DTD_VERSION	"3.4"
 
 /* Various constants */
 #define DO_SAVE		0
@@ -17,7 +17,7 @@
 
 #define IGNORE_NOTHING		0
 #define IGNORE_RESTART		1
-#define DONT_READ_VOLATILE	2
+#define DONT_READ_CPU_NR	2
 #define IGNORE_COMMENT		4
 #define SET_TIMESTAMPS		8
 
@@ -28,7 +28,7 @@
  */
 
 /* Number of output formats */
-#define NR_FMT	7
+#define NR_FMT	8
 
 /* Output formats */
 #define F_DB_OUTPUT	1
@@ -38,6 +38,7 @@
 #define F_JSON_OUTPUT	5
 #define F_CONV_OUTPUT	6
 #define F_SVG_OUTPUT	7
+#define F_RAW_OUTPUT	8
 
 /* Format options */
 
@@ -124,24 +125,20 @@
 
 void convert_file
 	(char [], struct activity *[]);
-void xprintf
-	(int, const char *, ...);
-void xprintf0
-	(int, const char *, ...);
 
 /*
  * Prototypes used to display restart messages
  */
 __printf_funct_t print_db_restart
-	(int *, int, char *, char *, int, struct file_header *, unsigned int);
+	(int *, int, char *, char *, int, struct file_header *);
 __printf_funct_t print_ppc_restart
-	(int *, int, char *, char *, int, struct file_header *, unsigned int);
+	(int *, int, char *, char *, int, struct file_header *);
 __printf_funct_t print_xml_restart
-	(int *, int, char *, char *, int, struct file_header *, unsigned int);
+	(int *, int, char *, char *, int, struct file_header *);
 __printf_funct_t print_json_restart
-	(int *, int, char *, char *, int, struct file_header *, unsigned int);
-__printf_funct_t print_sar_restart
-	(int *, int, char *, char *, int, struct file_header *, unsigned int);
+	(int *, int, char *, char *, int, struct file_header *);
+__printf_funct_t print_raw_restart
+	(int *, int, char *, char *, int, struct file_header *);
 
 /*
  * Prototypes used to display comments
@@ -155,6 +152,8 @@ __printf_funct_t print_xml_comment
 __printf_funct_t print_json_comment
 	(int *, int, char *, char *, int, char *, struct file_header *);
 __printf_funct_t print_sar_comment
+	(int *, int, char *, char *, int, char *, struct file_header *);
+__printf_funct_t print_raw_comment
 	(int *, int, char *, char *, int, char *, struct file_header *);
 
 /*
@@ -176,21 +175,23 @@ __tm_funct_t print_xml_timestamp
 	(void *, int, char *, char *, unsigned long long, struct file_header *, unsigned int);
 __tm_funct_t print_json_timestamp
 	(void *, int, char *, char *, unsigned long long, struct file_header *, unsigned int);
+__tm_funct_t print_raw_timestamp
+	(void *, int, char *, char *, unsigned long long, struct file_header *, unsigned int);
 
 /*
  * Prototypes used to display the report header
  */
 __printf_funct_t print_xml_header
 	(void *, int, char *, struct file_magic *, struct file_header *,
-	 __nr_t, struct activity * [], unsigned int []);
+	 struct activity * [], unsigned int [], struct file_activity *);
 __printf_funct_t print_json_header
 	(void *, int, char *, struct file_magic *, struct file_header *,
-	 __nr_t, struct activity * [], unsigned int []);
+	 struct activity * [], unsigned int [], struct file_activity *);
 __printf_funct_t print_hdr_header
 	(void *, int, char *, struct file_magic *, struct file_header *,
-	 __nr_t, struct activity * [], unsigned int []);
+	 struct activity * [], unsigned int [], struct file_activity *);
 __printf_funct_t print_svg_header
 	(void *, int, char *, struct file_magic *, struct file_header *,
-	 __nr_t, struct activity * [], unsigned int []);
+	 struct activity * [], unsigned int [], struct file_activity *);
 
 #endif  /* _SADF_H */

@@ -1,6 +1,6 @@
 /*
  * sysstat: System performance tools for Linux
- * (C) 1999-2016 by Sebastien Godard (sysstat <at> orange.fr)
+ * (C) 1999-2018 by Sebastien Godard (sysstat <at> orange.fr)
  */
 
 #ifndef _COMMON_H
@@ -12,13 +12,12 @@
 #include <time.h>
 #include <sched.h>	/* For __CPU_SETSIZE */
 #include <limits.h>
+#include <stdlib.h>
 
 #ifdef HAVE_SYS_SYSMACROS_H
 /* Needed on some non-glibc environments */
 #include <sys/sysmacros.h>
 #endif
-
-#include "rd_stats.h"
 
 /*
  ***************************************************************************
@@ -29,7 +28,17 @@
 #define FALSE	0
 #define TRUE	1
 
+#define PLAIN_OUTPUT	0
+
 #define DISP_HDR	1
+
+/* Index in units array (see common.c) */
+#define NO_UNIT		-1
+#define UNIT_SECTOR	0
+#define UNIT_BYTE	1
+#define UNIT_KILOBYTE	2
+
+#define NR_UNITS	8
 
 /* Timestamp buffer length */
 #define TIMESTAMP_LEN	64
@@ -45,15 +54,17 @@
 #endif
 
 /* Maximum number of interrupts */
-#define NR_IRQS		1024
+#define NR_IRQS		4096
 
 /* Size of /proc/interrupts line, CPU data excluded */
 #define INTERRUPTS_LINE	128
 
 /* Keywords */
-#define K_ISO	"ISO"
-#define K_ALL	"ALL"
-#define K_UTC	"UTC"
+#define K_ISO		"ISO"
+#define K_ALL		"ALL"
+#define K_LOWERALL	"all"
+#define K_UTC		"UTC"
+#define K_JSON		"JSON"
 
 /* Files */
 #define STAT			"/proc/stat"
@@ -77,7 +88,7 @@
 #define SYSFS_PRODUCT		"product"
 #define SYSFS_FCHOST		"/sys/class/fc_host"
 
-#define MAX_FILE_LEN		256
+#define MAX_FILE_LEN		512
 #define MAX_PF_NAME		1024
 #define MAX_NAME_LEN		128
 
@@ -101,12 +112,18 @@
  ***************************************************************************
  */
 
+/*
+ * Macro used to define activity bitmap size.
+ * All those bitmaps have an additional bit used for global activity
+ * (eg. CPU "all" or total number of interrupts). That's why we do "(m) + 1".
+ */
+#define BITMAP_SIZE(m)	((((m) + 1) >> 3) + 1)
+
 /* Allocate and init structure */
 #define SREALLOC(S, TYPE, SIZE)	do {								 \
-   					TYPE *_p_;						 \
-				   	_p_ = S;						 \
-   				   	if (SIZE) {						 \
-   				      		if ((S = (TYPE *) realloc(S, (SIZE))) == NULL) { \
+					TYPE *_p_ = S;						 \
+					if ((SIZE) != 0) {					 \
+						if ((S = (TYPE *) realloc(S, (SIZE))) == NULL) { \
 				         		perror("realloc");			 \
 				         		exit(4);				 \
 				      		}						 \
@@ -125,14 +142,11 @@
 /*
  * Macros used to display statistics values.
  *
- * NB: Define SP_VALUE() to normalize to %;
- * HZ is 1024 on IA64 and % should be normalized to 100.
- * SP_VALUE_100() will not output value bigger than 100; this is needed for some
- * corner cases, should be used with care.
  */
-#define S_VALUE(m,n,p)		(((double) ((n) - (m))) / (p) * HZ)
+/* With S_VALUE macro, the interval of time (@p) is given in 1/100th of a second */
+#define S_VALUE(m,n,p)		(((double) ((n) - (m))) / (p) * 100)
+/* Define SP_VALUE() to normalize to % */
 #define SP_VALUE(m,n,p)		(((double) ((n) - (m))) / (p) * 100)
-#define SP_VALUE_100(m,n,p)	MINIMUM((((double) ((n) - (m))) / (p) * 100), 100.0)
 
 /*
  * Under very special circumstances, STDOUT may become unavailable.
@@ -151,7 +165,7 @@
 
 /* Number of ticks per second */
 #define HZ		hz
-extern unsigned int hz;
+extern unsigned long hz;
 
 /* Number of bit shifts to convert pages to kB */
 extern unsigned int kb_shift;
@@ -176,9 +190,9 @@ extern char persistent_name_type[MAX_FILE_LEN];
 #define C_BOLD_RED	"\e[31;1m"
 #define C_LIGHT_GREEN	"\e[32;22m"
 #define C_LIGHT_YELLOW	"\e[33;22m"
-#define C_BOLD_YELLOW	"\e[33;1m"
+#define C_BOLD_MAGENTA	"\e[35;1m"
 #define C_BOLD_BLUE	"\e[34;1m"
-#define C_LIGHT_CYAN	"\e[36;22m"
+#define C_LIGHT_BLUE	"\e[34;22m"
 #define C_NORMAL	"\e[0m"
 
 #define PERCENT_LIMIT_HIGH	75.0
@@ -211,42 +225,46 @@ struct ext_disk_stats {
  * Functions prototypes
  ***************************************************************************
  */
-
-void compute_ext_disk_stats
-	(struct stats_disk *, struct stats_disk *, unsigned long long,
-	 struct ext_disk_stats *);
-int count_bits
-	(void *, int);
-int count_csvalues
-	(int, char **);
-void cprintf_f
-	(int, int, int, ...);
-void cprintf_in
-	(int, char *, char *, int);
-void cprintf_pc
-	(int, int, int, ...);
-void cprintf_s
-	(int, char *, char *);
-void cprintf_u64
-	(int, int, ...);
-void cprintf_x
-	(int, int, ...);
-char *device_name
-	(char *);
+void print_version
+	(void);
 void get_HZ
 	(void);
-unsigned int get_devmap_major
-	(void);
-unsigned long long get_interval
-	(unsigned long long, unsigned long long);
 void get_kb_shift
 	(void);
 time_t get_localtime
 	(struct tm *, int);
 time_t get_time
 	(struct tm *, int);
-unsigned long long get_per_cpu_interval
-	(struct stats_cpu *, struct stats_cpu *);
+void init_nls
+	(void);
+int is_device
+	(char *, int);
+void sysstat_panic
+	(const char *, int);
+
+#ifndef SOURCE_SADC
+int count_bits
+	(void *, int);
+int count_csvalues
+	(int, char **);
+void cprintf_f
+	(int, int, int, int, ...);
+void cprintf_in
+	(int, char *, char *, int);
+void cprintf_pc
+	(int, int, int, int, ...);
+void cprintf_s
+	(int, char *, char *);
+void cprintf_u64
+	(int, int, int, ...);
+void cprintf_x
+	(int, int, ...);
+char *device_name
+	(char *);
+unsigned int get_devmap_major
+	(void);
+unsigned long long get_interval
+	(unsigned long long, unsigned long long);
 char *get_persistent_name_from_pretty
 	(char *);
 char *get_persistent_type_dir
@@ -259,21 +277,22 @@ int get_win_height
 	(void);
 void init_colors
 	(void);
-void init_nls
-	(void);
-int is_device
-	(char *, int);
 double ll_sp_value
 	(unsigned long long, unsigned long long, unsigned long long);
 int is_iso_time_fmt
 	(void);
+int parse_values
+	(char *, unsigned char[], int, const char *);
 int print_gal_header
-	(struct tm *, char *, char *, char *, char *, int);
-void print_version
-	(void);
+	(struct tm *, char *, char *, char *, char *, int, int);
+int set_report_date
+	(struct tm *, char[], int);
 char *strtolower
 	(char *);
-void sysstat_panic
-	(const char *, int);
+void xprintf
+	(int, const char *, ...);
+void xprintf0
+	(int, const char *, ...);
 
+#endif /* SOURCE_SADC undefined */
 #endif  /* _COMMON_H */

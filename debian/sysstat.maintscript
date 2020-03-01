@@ -1,0 +1,1 @@
+rm_conffile /etc/profile.d/sysstat.sh 11.7.3~ sysstat

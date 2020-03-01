@@ -1,16 +1,16 @@
-.TH CIFSIOSTAT 1 "OCTOBER 2015" Linux "Linux User's Manual" -*- nroff -*-
+.TH CIFSIOSTAT 1 "JULY 2018" Linux "Linux User's Manual" -*- nroff -*-
 .SH NAME
 cifsiostat \- Report CIFS statistics.
 .SH SYNOPSIS
 .ie 'yes'@WITH_DEBUG@' \{
-.B cifsiostat [ -h ] [ -k | -m ] [ -t ] [ -V ] [ --debuginfo ] [
+.B cifsiostat [ -h ] [ -k | -m ] [ -t ] [ -V ] [ --debuginfo ] [ --dec={ 0 | 1 | 2 } ] [ --human ] [
 .I interval
 .B [
 .I count
 .B ] ]
 .\}
 .el \{
-.B cifsiostat [ -h ] [ -k | -m ] [ -t ] [ -V ] [
+.B cifsiostat [ -h ] [ -k | -m ] [ -t ] [ -V ] [ --dec={ 0 | 1 | 2 } ] [ --human ] [
 .I interval
 .B [
 .I count
@@ -99,8 +99,16 @@ Indicate the number of deleted files per second.
 .IP --debuginfo
 Print debug output to stderr.
 .\}
+.IP "--dec={ 0 | 1 | 2 }"
+Specify the number of decimal places to use (0 to 2, default value is 2).
 .IP -h
 Make the CIFS report easier to read by a human.
+.B --human
+is enabled implicitly with this option.
+.IP --human
+Print sizes in human readable format (e.g. 1.0k, 1.2M, etc.)
+The units displayed with this option supersede any other default units (e.g.
+kilobytes, sectors...) associated with the metrics.
 .IP -k
 Display statistics in kilobytes per second.
 .IP -m
@@ -132,7 +140,7 @@ ranges of values.
 .IP S_COLORS_SGR
 Specify the colors and other attributes used to display statistics on the terminal.
 Its value is a colon-separated list of capabilities that defaults to
-.BR I=32;22:N=33;1:Z=33;22 .
+.BR I=32;22:N=34;1:Z=34;22 .
 Supported capabilities are:
 
 .RS
@@ -180,5 +188,7 @@ Maintained by Sebastien Godard (sysstat <at> orange.fr)
 .BR iostat (1),
 .BR tapestat (1),
 .BR nfsiostat (1)
+
+.I https://github.com/sysstat/sysstat
 
 .I http://pagesperso-orange.fr/sebastien.godard/

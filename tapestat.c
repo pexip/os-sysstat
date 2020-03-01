@@ -36,12 +36,19 @@
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <sys/utsname.h>
+
+#ifdef HAVE_SYS_PARAM_H
 #include <sys/param.h>
 #undef HZ /* sys/param.h defines HZ but needed for MAXPATHLEN */
+#endif
+#ifndef MAXPATHLEN
+#define MAXPATHLEN 256
+#endif
 
 #include "version.h"
 #include "tapestat.h"
 #include "common.h"
+#include "rd_stats.h"
 #include "count.h"
 
 #ifdef USE_NLS
@@ -52,8 +59,10 @@
 #define _(string) (string)
 #endif
 
+#ifdef USE_SCCSID
 #define SCCSID "@(#)sysstat-" VERSION ": " __FILE__ " compiled " __DATE__ " " __TIME__
 char *sccsid(void) { return (SCCSID); }
+#endif
 
 int cpu_nr = 0;		/* Nb of processors on the machine */
 int flags = 0;		/* Flag for common options and system state */
@@ -62,6 +71,9 @@ long interval = 0;
 char timestamp[TIMESTAMP_LEN];
 
 struct sigaction alrm_act;
+
+/* Number of decimal places */
+int dplaces_nr = -1;
 
 /*
  * For tape stats - it would be extremely rare for there to be a very large
@@ -89,7 +101,7 @@ void usage(char *progname)
 	fprintf(stderr, _("Usage: %s [ options ] [ <interval> [ <count> ] ]\n"),
 		progname);
 	fprintf(stderr, _("Options are:\n"
-			  "[ -k | -m ] [ -t ] [ -V ] [ -y ] [ -z ]\n"));
+			  "[ --human ] [ -k | -m ] [ -t ] [ -V ] [ -y ] [ -z ]\n"));
 	exit(1);
 }
 
@@ -363,7 +375,7 @@ void tape_write_headings(void)
 	} else {
 		printf("kB_read/s   kB_wrtn/s");
 	}
-	printf(" %%Rd %%Wr %%Oa    Rs/s    Ot/s\n");
+	printf("  %%Rd  %%Wr  %%Oa    Rs/s    Ot/s\n");
 }
 
 /*
@@ -440,17 +452,19 @@ void tape_write_stats(struct calc_stats *tape, int i)
 	sprintf(buffer, "st%i        ", i);
 	buffer[5] = 0;
 	cprintf_in(IS_STR, "%s", buffer, 0);
-	cprintf_u64(2, 7,
+	cprintf_u64(NO_UNIT, 2, 7,
 		    tape->reads_per_second,
 		    tape->writes_per_second);
-	cprintf_u64(2, 11,
-		    tape->kbytes_read_per_second / divisor,
-		    tape->kbytes_written_per_second / divisor);
-	cprintf_pc(3, 3, 0,
+	cprintf_u64(DISPLAY_UNIT(flags) ? UNIT_KILOBYTE : NO_UNIT, 2, 11,
+		    DISPLAY_UNIT(flags) ? tape->kbytes_read_per_second
+					: tape->kbytes_read_per_second / divisor,
+		    DISPLAY_UNIT(flags) ? tape->kbytes_written_per_second
+					: tape->kbytes_written_per_second / divisor);
+	cprintf_pc(DISPLAY_UNIT(flags), 3, 4, 0,
 		   (double) tape->read_pct_wait,
 		   (double) tape->write_pct_wait,
 		   (double) tape->all_pct_wait);
-	cprintf_u64(2, 7,
+	cprintf_u64(NO_UNIT, 2, 7,
 		    tape->resids_per_second,
 		    tape->other_per_second);
 	printf("\n");
@@ -601,12 +615,15 @@ int main(int argc, char **argv)
 	/* Init color strings */
 	init_colors();
 
-	/* Get HZ */
-	get_HZ();
-
 	/* Process args... */
 	while (opt < argc) {
-			if (!strncmp(argv[opt], "-", 1)) {
+
+		if (!strcmp(argv[opt], "--human")) {
+			flags |= T_D_UNIT;
+			opt++;
+		}
+
+		else if (!strncmp(argv[opt], "-", 1)) {
 			for (i = 1; *(argv[opt] + i); i++) {
 
 				switch (*(argv[opt] + i)) {
@@ -686,7 +703,8 @@ int main(int argc, char **argv)
 	/* Get system name, release number and hostname */
 	uname(&header);
 	if (print_gal_header(&rectime, header.sysname, header.release,
-			     header.nodename, header.machine, cpu_nr)) {
+			     header.nodename, header.machine, cpu_nr,
+			     PLAIN_OUTPUT)) {
 		flags |= T_D_ISO;
 	}
 	printf("\n");

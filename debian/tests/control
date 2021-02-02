@@ -1,0 +1,12 @@
+Tests: basic-test
+Depends: sysstat
+
+Test-Command: ./debian/tests/upstream-tests pristine-source amd64 arm64
+Depends: @builddeps@
+Features: test-name=upstream-tests-pristine-source
+Restrictions: allow-stderr, skippable
+
+Test-Command: ./debian/tests/upstream-tests with-debian-patches amd64 arm64
+Depends: @builddeps@
+Features: test-name=upstream-tests-with-debian-patches
+Restrictions: allow-stderr, skippable

@@ -1,6 +1,6 @@
 /*
  * json_stats.c: Funtions used by sadf to display statistics in JSON format.
- * (C) 1999-2018 by Sebastien GODARD (sysstat <at> orange.fr)
+ * (C) 1999-2020 by Sebastien GODARD (sysstat <at> orange.fr)
  *
  ***************************************************************************
  * This program is free software; you can redistribute it and/or modify it *
@@ -85,6 +85,34 @@ void json_markup_power_management(int tab, int action)
 	if (action == OPEN_JSON_MARKUP) {
 		/* Open markup */
 		xprintf(tab, "\"power-management\": {");
+	}
+	else {
+		/* Close markup */
+		printf("\n");
+		xprintf0(tab, "}");
+	}
+}
+
+/*
+ ***************************************************************************
+ * Open or close "psi" markup.
+ *
+ * IN:
+ * @tab		Number of tabulations.
+ * @action	Open or close action.
+ ***************************************************************************
+ */
+void json_markup_psi(int tab, int action)
+{
+	static int markup_state = CLOSE_JSON_MARKUP;
+
+	if (action == markup_state)
+		return;
+	markup_state = action;
+
+	if (action == OPEN_JSON_MARKUP) {
+		/* Open markup */
+		xprintf(tab, "\"psi\": {");
 	}
 	else {
 		/* Close markup */
@@ -435,7 +463,10 @@ __print_funct_t json_print_io_stats(struct activity *a, int curr, int tab,
 		 "\"bread\": %.2f}, "
 		 "\"io-writes\": {"
 		 "\"wtps\": %.2f, "
-		 "\"bwrtn\": %.2f}}",
+		 "\"bwrtn\": %.2f}, "
+		 "\"io-discard\": {"
+		 "\"dtps\": %.2f, "
+		 "\"bdscd\": %.2f}}",
 		 /*
 		  * If we get negative values, this is probably because
 		  * one or more devices/filesystems have been unmounted.
@@ -451,7 +482,11 @@ __print_funct_t json_print_io_stats(struct activity *a, int curr, int tab,
 		 sic->dk_drive_wio < sip->dk_drive_wio ? 0.0 :
 		 S_VALUE(sip->dk_drive_wio, sic->dk_drive_wio, itv),
 		 sic->dk_drive_wblk < sip->dk_drive_wblk ? 0.0 :
-		 S_VALUE(sip->dk_drive_wblk, sic->dk_drive_wblk, itv));
+		 S_VALUE(sip->dk_drive_wblk, sic->dk_drive_wblk, itv),
+		 sic->dk_drive_dio < sip->dk_drive_dio ? 0.0 :
+		 S_VALUE(sip->dk_drive_dio, sic->dk_drive_dio, itv),
+		 sic->dk_drive_dblk < sip->dk_drive_dblk ? 0.0 :
+		 S_VALUE(sip->dk_drive_dblk, sic->dk_drive_dblk, itv));
 }
 
 /*
@@ -727,7 +762,9 @@ __print_funct_t json_print_disk_stats(struct activity *a, int curr, int tab,
 		}
 
 		/* Get device name */
-		dev_name = get_sa_devname(sdc->major, sdc->minor, flags);
+		dev_name = get_device_name(sdc->major, sdc->minor, sdc->wwn, sdc->part_nr,
+					   DISPLAY_PRETTY(flags), DISPLAY_PERSIST_NAME_S(flags),
+					   USE_STABLE_ID(flags), NULL);
 
 		if (a->item_list != NULL) {
 			/* A list of devices has been entered on the command line */
@@ -748,29 +785,31 @@ __print_funct_t json_print_disk_stats(struct activity *a, int curr, int tab,
 			 "\"tps\": %.2f, "
 			 "\"rd_sec\": %.2f, "
 			 "\"wr_sec\": %.2f, "
+			 "\"dc_sec\": %.2f, "
 			 "\"rkB\": %.2f, "
 			 "\"wkB\": %.2f, "
+			 "\"dkB\": %.2f, "
 			 "\"avgrq-sz\": %.2f, "
 			 "\"areq-sz\": %.2f, "
 			 "\"avgqu-sz\": %.2f, "
 			 "\"aqu-sz\": %.2f, "
 			 "\"await\": %.2f, "
-			 "\"svctm\": %.2f, "
 			 "\"util-percent\": %.2f}",
 			 /* Confusion possible here between index and minor numbers */
 			 dev_name,
 			 S_VALUE(sdp->nr_ios, sdc->nr_ios, itv),
 			 S_VALUE(sdp->rd_sect, sdc->rd_sect, itv), /* Unit = sectors (for backward compatibility) */
 			 S_VALUE(sdp->wr_sect, sdc->wr_sect, itv),
+			 S_VALUE(sdp->dc_sect, sdc->dc_sect, itv),
 			 S_VALUE(sdp->rd_sect, sdc->rd_sect, itv) / 2,
 			 S_VALUE(sdp->wr_sect, sdc->wr_sect, itv) / 2,
+			 S_VALUE(sdp->dc_sect, sdc->dc_sect, itv) / 2,
 			 /* See iostat for explanations */
 			 xds.arqsz,	/* Unit = sectors (for backward compatibility) */
 			 xds.arqsz / 2,
 			 S_VALUE(sdp->rq_ticks, sdc->rq_ticks, itv) / 1000.0,	/* For backward compatibility */
 			 S_VALUE(sdp->rq_ticks, sdc->rq_ticks, itv) / 1000.0,
 			 xds.await,
-			 xds.svctm,
 			 xds.util / 10.0);
 	}
 
@@ -799,7 +838,7 @@ __print_funct_t json_print_net_dev_stats(struct activity *a, int curr, int tab,
 
 	memset(&sndzero, 0, STATS_NET_DEV_SIZE);
 
-	if (!IS_SELECTED(a->options) || (a->nr <= 0))
+	if (!IS_SELECTED(a->options) || (a->nr[curr] <= 0))
 		goto close_json_markup;
 
 	json_markup_network(tab, OPEN_JSON_MARKUP);
@@ -885,7 +924,7 @@ __print_funct_t json_print_net_edev_stats(struct activity *a, int curr, int tab,
 	struct stats_net_edev *snedc, *snedp, snedzero;
 	int sep = FALSE;
 
-	if (!IS_SELECTED(a->options) || (a->nr <= 0))
+	if (!IS_SELECTED(a->options) || (a->nr[curr] <= 0))
 		goto close_json_markup;
 
 	memset(&snedzero, 0, STATS_NET_EDEV_SIZE);
@@ -971,7 +1010,7 @@ __print_funct_t json_print_net_nfs_stats(struct activity *a, int curr, int tab,
 		*snnc = (struct stats_net_nfs *) a->buf[curr],
 		*snnp = (struct stats_net_nfs *) a->buf[!curr];
 
-	if (!IS_SELECTED(a->options) || (a->nr <= 0))
+	if (!IS_SELECTED(a->options) || (a->nr[curr] <= 0))
 		goto close_json_markup;
 
 	json_markup_network(tab, OPEN_JSON_MARKUP);
@@ -1016,7 +1055,7 @@ __print_funct_t json_print_net_nfsd_stats(struct activity *a, int curr, int tab,
 		*snndc = (struct stats_net_nfsd *) a->buf[curr],
 		*snndp = (struct stats_net_nfsd *) a->buf[!curr];
 
-	if (!IS_SELECTED(a->options) || (a->nr <= 0))
+	if (!IS_SELECTED(a->options) || (a->nr[curr] <= 0))
 		goto close_json_markup;
 
 	json_markup_network(tab, OPEN_JSON_MARKUP);
@@ -1070,7 +1109,7 @@ __print_funct_t json_print_net_sock_stats(struct activity *a, int curr, int tab,
 	struct stats_net_sock
 		*snsc = (struct stats_net_sock *) a->buf[curr];
 
-	if (!IS_SELECTED(a->options) || (a->nr <= 0))
+	if (!IS_SELECTED(a->options) || (a->nr[curr] <= 0))
 		goto close_json_markup;
 
 	json_markup_network(tab, OPEN_JSON_MARKUP);
@@ -1115,7 +1154,7 @@ __print_funct_t json_print_net_ip_stats(struct activity *a, int curr, int tab,
 		*snic = (struct stats_net_ip *) a->buf[curr],
 		*snip = (struct stats_net_ip *) a->buf[!curr];
 
-	if (!IS_SELECTED(a->options) || (a->nr <= 0))
+	if (!IS_SELECTED(a->options) || (a->nr[curr] <= 0))
 		goto close_json_markup;
 
 	json_markup_network(tab, OPEN_JSON_MARKUP);
@@ -1164,7 +1203,7 @@ __print_funct_t json_print_net_eip_stats(struct activity *a, int curr, int tab,
 		*sneic = (struct stats_net_eip *) a->buf[curr],
 		*sneip = (struct stats_net_eip *) a->buf[!curr];
 
-	if (!IS_SELECTED(a->options) || (a->nr <= 0))
+	if (!IS_SELECTED(a->options) || (a->nr[curr] <= 0))
 		goto close_json_markup;
 
 	json_markup_network(tab, OPEN_JSON_MARKUP);
@@ -1213,7 +1252,7 @@ __print_funct_t json_print_net_icmp_stats(struct activity *a, int curr, int tab,
 		*snic = (struct stats_net_icmp *) a->buf[curr],
 		*snip = (struct stats_net_icmp *) a->buf[!curr];
 
-	if (!IS_SELECTED(a->options) || (a->nr <= 0))
+	if (!IS_SELECTED(a->options) || (a->nr[curr] <= 0))
 		goto close_json_markup;
 
 	json_markup_network(tab, OPEN_JSON_MARKUP);
@@ -1274,7 +1313,7 @@ __print_funct_t json_print_net_eicmp_stats(struct activity *a, int curr, int tab
 		*sneic = (struct stats_net_eicmp *) a->buf[curr],
 		*sneip = (struct stats_net_eicmp *) a->buf[!curr];
 
-	if (!IS_SELECTED(a->options) || (a->nr <= 0))
+	if (!IS_SELECTED(a->options) || (a->nr[curr] <= 0))
 		goto close_json_markup;
 
 	json_markup_network(tab, OPEN_JSON_MARKUP);
@@ -1331,7 +1370,7 @@ __print_funct_t json_print_net_tcp_stats(struct activity *a, int curr, int tab,
 		*sntc = (struct stats_net_tcp *) a->buf[curr],
 		*sntp = (struct stats_net_tcp *) a->buf[!curr];
 
-	if (!IS_SELECTED(a->options) || (a->nr <= 0))
+	if (!IS_SELECTED(a->options) || (a->nr[curr] <= 0))
 		goto close_json_markup;
 
 	json_markup_network(tab, OPEN_JSON_MARKUP);
@@ -1372,7 +1411,7 @@ __print_funct_t json_print_net_etcp_stats(struct activity *a, int curr, int tab,
 		*snetc = (struct stats_net_etcp *) a->buf[curr],
 		*snetp = (struct stats_net_etcp *) a->buf[!curr];
 
-	if (!IS_SELECTED(a->options) || (a->nr <= 0))
+	if (!IS_SELECTED(a->options) || (a->nr[curr] <= 0))
 		goto close_json_markup;
 
 	json_markup_network(tab, OPEN_JSON_MARKUP);
@@ -1415,7 +1454,7 @@ __print_funct_t json_print_net_udp_stats(struct activity *a, int curr, int tab,
 		*snuc = (struct stats_net_udp *) a->buf[curr],
 		*snup = (struct stats_net_udp *) a->buf[!curr];
 
-	if (!IS_SELECTED(a->options) || (a->nr <= 0))
+	if (!IS_SELECTED(a->options) || (a->nr[curr] <= 0))
 		goto close_json_markup;
 
 	json_markup_network(tab, OPEN_JSON_MARKUP);
@@ -1455,7 +1494,7 @@ __print_funct_t json_print_net_sock6_stats(struct activity *a, int curr, int tab
 	struct stats_net_sock6
 		*snsc = (struct stats_net_sock6 *) a->buf[curr];
 
-	if (!IS_SELECTED(a->options) || (a->nr <= 0))
+	if (!IS_SELECTED(a->options) || (a->nr[curr] <= 0))
 		goto close_json_markup;
 
 	json_markup_network(tab, OPEN_JSON_MARKUP);
@@ -1496,7 +1535,7 @@ __print_funct_t json_print_net_ip6_stats(struct activity *a, int curr, int tab,
 		*snic = (struct stats_net_ip6 *) a->buf[curr],
 		*snip = (struct stats_net_ip6 *) a->buf[!curr];
 
-	if (!IS_SELECTED(a->options) || (a->nr <= 0))
+	if (!IS_SELECTED(a->options) || (a->nr[curr] <= 0))
 		goto close_json_markup;
 
 	json_markup_network(tab, OPEN_JSON_MARKUP);
@@ -1549,7 +1588,7 @@ __print_funct_t json_print_net_eip6_stats(struct activity *a, int curr, int tab,
 		*sneic = (struct stats_net_eip6 *) a->buf[curr],
 		*sneip = (struct stats_net_eip6 *) a->buf[!curr];
 
-	if (!IS_SELECTED(a->options) || (a->nr <= 0))
+	if (!IS_SELECTED(a->options) || (a->nr[curr] <= 0))
 		goto close_json_markup;
 
 	json_markup_network(tab, OPEN_JSON_MARKUP);
@@ -1604,7 +1643,7 @@ __print_funct_t json_print_net_icmp6_stats(struct activity *a, int curr, int tab
 		*snic = (struct stats_net_icmp6 *) a->buf[curr],
 		*snip = (struct stats_net_icmp6 *) a->buf[!curr];
 
-	if (!IS_SELECTED(a->options) || (a->nr <= 0))
+	if (!IS_SELECTED(a->options) || (a->nr[curr] <= 0))
 		goto close_json_markup;
 
 	json_markup_network(tab, OPEN_JSON_MARKUP);
@@ -1671,7 +1710,7 @@ __print_funct_t json_print_net_eicmp6_stats(struct activity *a, int curr, int ta
 		*sneic = (struct stats_net_eicmp6 *) a->buf[curr],
 		*sneip = (struct stats_net_eicmp6 *) a->buf[!curr];
 
-	if (!IS_SELECTED(a->options) || (a->nr <= 0))
+	if (!IS_SELECTED(a->options) || (a->nr[curr] <= 0))
 		goto close_json_markup;
 
 	json_markup_network(tab, OPEN_JSON_MARKUP);
@@ -1726,7 +1765,7 @@ __print_funct_t json_print_net_udp6_stats(struct activity *a, int curr, int tab,
 		*snuc = (struct stats_net_udp6 *) a->buf[curr],
 		*snup = (struct stats_net_udp6 *) a->buf[!curr];
 
-	if (!IS_SELECTED(a->options) || (a->nr <= 0))
+	if (!IS_SELECTED(a->options) || (a->nr[curr] <= 0))
 		goto close_json_markup;
 
 	json_markup_network(tab, OPEN_JSON_MARKUP);
@@ -2000,12 +2039,15 @@ __print_funct_t json_print_huge_stats(struct activity *a, int curr, int tab,
 	xprintf0(tab, "\"hugepages\": {"
 		 "\"hugfree\": %llu, "
 		 "\"hugused\": %llu, "
-		 "\"hugused-percent\": %.2f}",
+		 "\"hugused-percent\": %.2f, "
+		 "\"hugrsvd\": %llu, "
+		 "\"hugsurp\": %llu}",
 		 smc->frhkb,
 		 smc->tlhkb - smc->frhkb,
 		 smc->tlhkb ?
-		 SP_VALUE(smc->frhkb, smc->tlhkb, smc->tlhkb) :
-		 0.0);
+		 SP_VALUE(smc->frhkb, smc->tlhkb, smc->tlhkb) : 0.0,
+		 smc->rsvdhkb,
+		 smc->surphkb);
 }
 
 /*
@@ -2165,16 +2207,19 @@ __print_funct_t json_print_filesystem_stats(struct activity *a, int curr, int ta
 	int i;
 	struct stats_filesystem *sfc;
 	int sep = FALSE;
+	char *dev_name;
 
 	xprintf(tab++, "\"filesystems\": [");
 
 	for (i = 0; i < a->nr[curr]; i++) {
 		sfc = (struct stats_filesystem *) ((char *) a->buf[curr] + i * a->msize);
 
+		/* Get name to display (persistent or standard fs name, or mount point) */
+		dev_name = get_fs_name_to_display(a, flags, sfc);
+
 		if (a->item_list != NULL) {
 			/* A list of devices has been entered on the command line */
-			if (!search_list_item(a->item_list,
-					      DISPLAY_MOUNT(a->opt_flags) ? sfc->mountp : sfc->fs_name))
+			if (!search_list_item(a->item_list, dev_name))
 				/* Device not found */
 				continue;
 		}
@@ -2193,7 +2238,7 @@ __print_funct_t json_print_filesystem_stats(struct activity *a, int curr, int ta
 			 "\"Iused\": %llu, "
 			 "\"%%Iused\": %.2f}",
 			 DISPLAY_MOUNT(a->opt_flags) ? "mountpoint" : "filesystem",
-			 DISPLAY_MOUNT(a->opt_flags) ? sfc->mountp : sfc->fs_name,
+			 dev_name,
 			 (double) sfc->f_bfree / 1024 / 1024,
 			 (double) (sfc->f_blocks - sfc->f_bfree) / 1024 / 1024,
 			 sfc->f_blocks ? SP_VALUE(sfc->f_bfree, sfc->f_blocks, sfc->f_blocks)
@@ -2225,11 +2270,13 @@ __print_funct_t json_print_fchost_stats(struct activity *a, int curr, int tab,
 					unsigned long long itv)
 {
 	int i, j, j0, found;
-	struct stats_fchost *sfcc, *sfcp;
+	struct stats_fchost *sfcc, *sfcp, sfczero;
 	int sep = FALSE;
 
 	if (!IS_SELECTED(a->options) || (a->nr[curr] <= 0))
 		goto close_json_markup;
+
+	memset(&sfczero, 0, sizeof(struct stats_fchost));
 
 	json_markup_network(tab, OPEN_JSON_MARKUP);
 	tab++;
@@ -2239,10 +2286,9 @@ __print_funct_t json_print_fchost_stats(struct activity *a, int curr, int tab,
 	for (i = 0; i < a->nr[curr]; i++) {
 
 		found = FALSE;
+		sfcc = (struct stats_fchost *) ((char *) a->buf[curr] + i * a->msize);
 
 		if (a->nr[!curr] > 0) {
-			sfcc = (struct stats_fchost *) ((char *) a->buf[curr] + i * a->msize);
-
 			/* Look for corresponding structure in previous iteration */
 			j = i;
 
@@ -2265,8 +2311,10 @@ __print_funct_t json_print_fchost_stats(struct activity *a, int curr, int tab,
 			while (j != j0);
 		}
 
-		if (!found)
-			continue;
+		if (!found) {
+			/* This is a newly registered host */
+			sfcp = &sfczero;
+		}
 
 		if (sep)
 			printf(",\n");
@@ -2391,5 +2439,144 @@ __print_funct_t json_print_softnet_stats(struct activity *a, int curr, int tab,
 close_json_markup:
 	if (CLOSE_MARKUP(a->options)) {
 		json_markup_network(tab, CLOSE_JSON_MARKUP);
+	}
+}
+
+/*
+ ***************************************************************************
+ * Display pressure-stall CPU statistics in JSON.
+ *
+ * IN:
+ * @a		Activity structure with statistics.
+ * @curr	Index in array for current sample statistics.
+ * @tab		Indentation in output.
+ * @itv		Interval of time in 1/100th of a second.
+ ***************************************************************************
+ */
+__print_funct_t json_print_psicpu_stats(struct activity *a, int curr, int tab,
+				        unsigned long long itv)
+{
+	struct stats_psi_cpu
+		*psic = (struct stats_psi_cpu *) a->buf[curr],
+		*psip = (struct stats_psi_cpu *) a->buf[!curr];
+
+	if (!IS_SELECTED(a->options))
+		goto close_json_markup;
+
+	json_markup_psi(tab, OPEN_JSON_MARKUP);
+	tab++;
+
+	xprintf0(tab, "\"psi-cpu\": {"
+		 "\"some_avg10\": %.2f, "
+		 "\"some_avg60\": %.2f, "
+		 "\"some_avg300\": %.2f, "
+		 "\"some_avg\": %.2f}",
+		 (double) psic->some_acpu_10  / 100,
+		 (double) psic->some_acpu_60  / 100,
+		 (double) psic->some_acpu_300 / 100,
+		 ((double) psic->some_cpu_total - psip->some_cpu_total) / (100 * itv));
+	tab--;
+
+close_json_markup:
+	if (CLOSE_MARKUP(a->options)) {
+		json_markup_psi(tab, CLOSE_JSON_MARKUP);
+	}
+}
+
+/*
+ ***************************************************************************
+ * Display pressure-stall I/O statistics in JSON.
+ *
+ * IN:
+ * @a		Activity structure with statistics.
+ * @curr	Index in array for current sample statistics.
+ * @tab		Indentation in output.
+ * @itv		Interval of time in 1/100th of a second.
+ ***************************************************************************
+ */
+__print_funct_t json_print_psiio_stats(struct activity *a, int curr, int tab,
+				       unsigned long long itv)
+{
+	struct stats_psi_io
+		*psic = (struct stats_psi_io *) a->buf[curr],
+		*psip = (struct stats_psi_io *) a->buf[!curr];
+
+	if (!IS_SELECTED(a->options))
+		goto close_json_markup;
+
+	json_markup_psi(tab, OPEN_JSON_MARKUP);
+	tab++;
+
+	xprintf0(tab, "\"psi-io\": {"
+		 "\"some_avg10\": %.2f, "
+		 "\"some_avg60\": %.2f, "
+		 "\"some_avg300\": %.2f, "
+		 "\"some_avg\": %.2f, "
+		 "\"full_avg10\": %.2f, "
+		 "\"full_avg60\": %.2f, "
+		 "\"full_avg300\": %.2f, "
+		 "\"full_avg\": %.2f}",
+		 (double) psic->some_aio_10  / 100,
+		 (double) psic->some_aio_60  / 100,
+		 (double) psic->some_aio_300 / 100,
+		 ((double) psic->some_io_total - psip->some_io_total) / (100 * itv),
+		 (double) psic->full_aio_10  / 100,
+		 (double) psic->full_aio_60  / 100,
+		 (double) psic->full_aio_300 / 100,
+		 ((double) psic->full_io_total - psip->full_io_total) / (100 * itv));
+	tab--;
+
+close_json_markup:
+	if (CLOSE_MARKUP(a->options)) {
+		json_markup_psi(tab, CLOSE_JSON_MARKUP);
+	}
+}
+
+/*
+ ***************************************************************************
+ * Display pressure-stall memory statistics in JSON.
+ *
+ * IN:
+ * @a		Activity structure with statistics.
+ * @curr	Index in array for current sample statistics.
+ * @tab		Indentation in output.
+ * @itv		Interval of time in 1/100th of a second.
+ ***************************************************************************
+ */
+__print_funct_t json_print_psimem_stats(struct activity *a, int curr, int tab,
+				        unsigned long long itv)
+{
+	struct stats_psi_mem
+		*psic = (struct stats_psi_mem *) a->buf[curr],
+		*psip = (struct stats_psi_mem *) a->buf[!curr];
+
+	if (!IS_SELECTED(a->options))
+		goto close_json_markup;
+
+	json_markup_psi(tab, OPEN_JSON_MARKUP);
+	tab++;
+
+	xprintf0(tab, "\"psi-mem\": {"
+		 "\"some_avg10\": %.2f, "
+		 "\"some_avg60\": %.2f, "
+		 "\"some_avg300\": %.2f, "
+		 "\"some_avg\": %.2f, "
+		 "\"full_avg10\": %.2f, "
+		 "\"full_avg60\": %.2f, "
+		 "\"full_avg300\": %.2f, "
+		 "\"full_avg\": %.2f}",
+		 (double) psic->some_amem_10  / 100,
+		 (double) psic->some_amem_60  / 100,
+		 (double) psic->some_amem_300 / 100,
+		 ((double) psic->some_mem_total - psip->some_mem_total) / (100 * itv),
+		 (double) psic->full_amem_10  / 100,
+		 (double) psic->full_amem_60  / 100,
+		 (double) psic->full_amem_300 / 100,
+		 ((double) psic->full_mem_total - psip->full_mem_total) / (100 * itv));
+	tab--;
+
+close_json_markup:
+	if (CLOSE_MARKUP(a->options)) {
+		json_markup_psi(tab, CLOSE_JSON_MARKUP);
 	}
 }

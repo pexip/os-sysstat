@@ -1,0 +1,64 @@
+#!/bin/bash
+# vim: sw=2:ts=2:sts=2:et
+
+set -ex
+
+# First argument is test_type: pristine-source or with-debian-patches.
+# Remaining arguments are names of arches on which that the test should
+# pass,  n other archs it will be marked as skippable
+readonly test_type="$1"
+shift
+
+readonly arch=$(dpkg-architecture -q DEB_HOST_ARCH)
+
+readonly tmpdir="${AUTOPKGTEST_TMP:-$(mktemp -d)}"
+trap "rm -rf $tmpdir" EXIT INT QUIT TERM
+
+
+cd  "$(readlink -e "$(dirname $0)/../..")"
+tar cf -  \
+	--exclude "*.bak" \
+	--exclude "*.gmo" \
+	--exclude "*.o" \
+	--exclude "*.so" \
+	--exclude "*.tmp" \
+	--exclude "*~"  \
+	--exclude ".debhelper*" \
+	--exclude ".git*" \
+  . | tar xvf - -C "$tmpdir"
+
+cd "$tmpdir"
+
+if [ "$test_type" = "pristine-source" ] ; then
+  dpkg-source --after-build --unapply-patches .
+elif [ "$test_type" = "with-debian-patches" ] ; then
+  dpkg-source --before-build .
+
+  # Revert change done by 04-configs.patch
+  echo 'SADC_OPTIONS="@COLLECT_ALL@ @SADC_OPT@"' >> sysstat.sysconfig.in
+
+  export CFLAGS=$(dpkg-buildflags --get CFLAGS)
+  export DFLAGS=$(dpkg-buildflags --get CPPFLAGS)
+  export LFLAGS=$(dpkg-buildflags --get LDFLAGS)
+
+  autoreconf -i -s
+else
+  echo "Unknown test type: $test_type" >&2
+  exit 1
+fi
+
+ln -svf sar sar.sysstat
+
+set -o pipefail
+! ./do_test 2>&1 | tee tests/do_test.log || exit 0
+
+cd "$tmpdir/tests"
+
+[ ! -d "$AUTOPKGTEST_ARTIFACTS" ] || \
+  tar cvzf "$AUTOPKGTEST_ARTIFACTS/output-files-$test_type-$arch.tgz" do_test.log out.*.tmp || :
+
+for non_skippable_arch in "$@"; do
+  [ "$arch" = "$non_skippable_arch" ] && exit 3
+done
+
+exit 77

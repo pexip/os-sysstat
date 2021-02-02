@@ -2,15 +2,16 @@ From: Robert Luberda <robert@debian.org>
 Date: Tue, 23 Mar 2010 22:04:47 +0100
 Subject: Fix paths in sa2 script
 
+Forwarded: not-needed
 ---
  sa2.in | 2 +-
  1 file changed, 1 insertion(+), 1 deletion(-)
 
 diff --git a/sa2.in b/sa2.in
-index 4dcf06c..b814e5a 100644
+index 14eeab5..c8e593c 100644
 --- a/sa2.in
 +++ b/sa2.in
-@@ -45,7 +45,7 @@ ENDIR=@bindir@
+@@ -61,7 +61,7 @@ fi
  cd ${ENDIR}
  if [ x${REPORTS} != xfalse ]
  then

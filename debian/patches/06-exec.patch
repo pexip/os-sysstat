@@ -10,10 +10,10 @@ Merge the following change from Ubuntu:
  1 file changed, 1 deletion(-)
 
 diff --git a/sar.c b/sar.c
-index 711e21b..41a3a61 100644
+index 5d36ebd..44672a5 100644
 --- a/sar.c
 +++ b/sar.c
-@@ -1629,7 +1629,6 @@ int main(int argc, char **argv)
+@@ -1701,7 +1701,6 @@ int main(int argc, char **argv)
  #ifdef DEBUG
  		fprintf(stderr, "%s: 2.sadc: %s\n", __FUNCTION__, SADC);
  #endif

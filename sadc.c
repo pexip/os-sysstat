@@ -1,6 +1,6 @@
 /*
  * sadc: system activity data collector
- * (C) 1999-2018 by Sebastien GODARD (sysstat <at> orange.fr)
+ * (C) 1999-2020 by Sebastien GODARD (sysstat <at> orange.fr)
  *
  ***************************************************************************
  * This program is free software; you can redistribute it and/or modify it *
@@ -22,6 +22,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <ctype.h>
 #include <unistd.h>
 #include <fcntl.h>
@@ -44,7 +45,7 @@
 #define _(string) (string)
 #endif
 
-#ifdef HAVE_SENSORS
+#if (defined(HAVE_SENSORS) && !defined(ARCH32)) || (defined(ARCH32) && defined(HAVE_SENSORS32))
 #include "sensors/sensors.h"
 #include "sensors/error.h"
 #endif
@@ -54,10 +55,16 @@
 char *sccsid(void) { return (SCCSID); }
 #endif
 
-long interval = 0;
-unsigned int flags = 0;
+#ifdef TEST
+extern time_t __unix_time;
+extern int __env;
+#endif
 
-int dis;
+extern char *tzname[2];
+
+long interval = -1;
+uint64_t flags = 0;
+
 int optz = 0;
 char timestamp[2][TIMESTAMP_LEN];
 
@@ -92,7 +99,7 @@ void usage(char *progname)
 		progname);
 
 	fprintf(stderr, _("Options are:\n"
-			  "[ -C <comment> ] [ -D ] [ -F ] [ -L ] [ -V ]\n"
+			  "[ -C <comment> ] [ -D ] [ -F ] [ -f ] [ -L ] [ -V ]\n"
 			  "[ -S { INT | DISK | IPV6 | POWER | SNMP | XDISK | ALL | XALL } ]\n"));
 	exit(1);
 }
@@ -195,6 +202,18 @@ void parse_sadc_S_option(char *argv[], int opt)
 				usage(argv[0]);
 			}
 		}
+		else if (!strncmp(p, "-A_", 3)) {
+			/* Unselect activity by name */
+			for (i = 0; i < NR_ACT; i++) {
+				if (!strcmp(p + 1, act[i]->name)) {
+					act[i]->options &= ~AO_COLLECTED;
+					break;
+				}
+			}
+			if (i == NR_ACT) {
+				usage(argv[0]);
+			}
+		}
 		else {
 			usage(argv[0]);
 		}
@@ -211,7 +230,7 @@ void parse_sadc_S_option(char *argv[], int opt)
  */
 void alarm_handler(int sig)
 {
-	alarm(interval);
+	__alarm(interval);
 }
 
 /*
@@ -285,9 +304,10 @@ void reset_stats(void)
 /*
  ***************************************************************************
  * Count activities items then allocate and init corresponding structures.
- * ALL activities are always counted (thus the number of CPU will always be
- * counted even if CPU activity is not collected), but ONLY those that will
- * be collected have allocated structures.
+ * Activities such as A_CPU with AO_ALWAYS_COUNTED flag set are always
+ * counted (thus the number of CPU will always be counted even if CPU
+ * activity is not collected), but ONLY those that will be collected have
+ * allocated structures.
  * This function is called when sadc is started, and when a file is rotated.
  * If a file is rotated and structures are reallocated with a larger size,
  * additional space is not initialized: It doesn't matter as reset_stats()
@@ -306,7 +326,8 @@ void sa_sys_init(void)
 
 	for (i = 0; i < NR_ACT; i++) {
 
-		if (HAS_COUNT_FUNCTION(act[i]->options)) {
+		if ((HAS_COUNT_FUNCTION(act[i]->options) && IS_COLLECTED(act[i]->options)) ||
+		    ALWAYS_COUNT_ITEMS(act[i]->options)) {
 			idx = act[i]->f_count_index;
 
 			/* Number of items is not a constant and should be calculated */
@@ -340,6 +361,19 @@ void sa_sys_init(void)
 		if (act[i]->nr_ini <= 0) {
 			/* No items found: Invalidate current activity */
 			act[i]->options &= ~AO_COLLECTED;
+		}
+
+		if (HAS_DETECT_FUNCTION(act[i]->options) && IS_COLLECTED(act[i]->options)) {
+			idx = act[i]->f_count_index;
+
+			/* Detect if files needed by activity exist */
+			if (f_count_results[idx] < 0) {
+				f_count_results[idx] = (f_count[idx])(act[i]);
+			}
+			if (f_count_results[idx] == 0) {
+				/* Files not present */
+				act[i]->options &= ~AO_COLLECTED;
+			}
 		}
 
 		/* Set default activity list */
@@ -485,26 +519,33 @@ void setup_file_hdr(int fd)
 	 * This is a new file (or stdout): Set sa_cpu_nr field to the number
 	 * of CPU of the machine (1 .. CPU_NR + 1). This is the number of CPU, whether
 	 * online or offline, when sadc was started.
-	 * All activities (including A_CPU) are counted in sa_sys_init(), even
-	 * if they are not collected.
+	 * A_CPU activity is always counted in sa_sys_init(), even if it's not collected.
 	 */
 	file_hdr.sa_cpu_nr = act[get_activity_position(act, A_CPU, EXIT_IF_NOT_FOUND)]->nr_ini;
 
 	/* Get system name, release number, hostname and machine architecture */
-	uname(&header);
-	strncpy(file_hdr.sa_sysname, header.sysname, UTSNAME_LEN);
-	file_hdr.sa_sysname[UTSNAME_LEN - 1]  = '\0';
-	strncpy(file_hdr.sa_nodename, header.nodename, UTSNAME_LEN);
-	file_hdr.sa_nodename[UTSNAME_LEN - 1] = '\0';
-	strncpy(file_hdr.sa_release, header.release, UTSNAME_LEN);
-	file_hdr.sa_release[UTSNAME_LEN - 1]  = '\0';
-	strncpy(file_hdr.sa_machine, header.machine, UTSNAME_LEN);
-	file_hdr.sa_machine[UTSNAME_LEN - 1]  = '\0';
+	__uname(&header);
+	strncpy(file_hdr.sa_sysname, header.sysname, sizeof(file_hdr.sa_sysname));
+	file_hdr.sa_sysname[sizeof(file_hdr.sa_sysname) - 1]  = '\0';
+	strncpy(file_hdr.sa_nodename, header.nodename, sizeof(file_hdr.sa_nodename));
+	file_hdr.sa_nodename[sizeof(file_hdr.sa_nodename) - 1] = '\0';
+	strncpy(file_hdr.sa_release, header.release, sizeof(file_hdr.sa_release));
+	file_hdr.sa_release[sizeof(file_hdr.sa_release) - 1]  = '\0';
+	strncpy(file_hdr.sa_machine, header.machine, sizeof(file_hdr.sa_machine));
+	file_hdr.sa_machine[sizeof(file_hdr.sa_machine) - 1]  = '\0';
+
+	/* Get timezone value and save it */
+	tzset();
+	strncpy(file_hdr.sa_tzname, tzname[0], TZNAME_LEN);
+	file_hdr.sa_tzname[TZNAME_LEN - 1] = '\0';
 
 	/* Write file header */
 	if (write_all(fd, &file_hdr, FILE_HEADER_SIZE) != FILE_HEADER_SIZE) {
 		p_write_error();
 	}
+
+	/* Reset file_activity structure (in case some unknown extra fields exist) */
+	memset(&file_act, 0, FILE_ACTIVITY_SIZE);
 
 	/* Write activity list */
 	for (i = 0; i < NR_ACT; i++) {
@@ -568,7 +609,7 @@ void write_new_cpu_nr(int ofd)
  *
  * IN:
  * @ofd		Output file descriptor.
- * @rtype	Record type to write (dummy or comment).
+ * @rtype	Record type to write (restart or comment).
  ***************************************************************************
  */
 void write_special_record(int ofd, int rtype)
@@ -580,7 +621,7 @@ void write_special_record(int ofd, int rtype)
 		ask_for_flock(ofd, FATAL);
 	}
 
-	/* Reset the structure (not compulsory, but a bit cleaner) */
+	/* Reset the structure (sane to do it, as other fields may be added in the future) */
 	memset(&record_hdr, 0, RECORD_HEADER_SIZE);
 
 	/* Set record type */
@@ -646,7 +687,7 @@ void write_stats(int ofd)
 			continue;
 
 		if (IS_COLLECTED(act[p]->options)) {
-			if (act[p]->f_count_index >= 0) {
+			if (HAS_COUNT_FUNCTION(act[p]->options) && (act[p]->f_count_index >= 0)) {
 				if (write_all(ofd, &(act[p]->_nr0), sizeof(__nr_t)) != sizeof(__nr_t)) {
 					p_write_error();
 				}
@@ -780,7 +821,7 @@ void open_ofile(int *ofd, char ofile[], int restart_mark)
 			return;
 		}
 #ifdef DEBUG
-		fprintf(stderr, "%s: Size read=%ld sysstat_magic=%x format_magic=%x header_size=%u header=%d,%d,%d\n",
+		fprintf(stderr, "%s: Size read=%zd sysstat_magic=%x format_magic=%x header_size=%u header=%d,%d,%d\n",
 			__FUNCTION__, sz, file_magic.sysstat_magic, file_magic.format_magic, file_magic.header_size,
 			file_magic.hdr_types_nr[0], file_magic.hdr_types_nr[1], file_magic.hdr_types_nr[2]);
 #endif
@@ -791,7 +832,7 @@ void open_ofile(int *ofd, char ofile[], int restart_mark)
 	/* Read file standard header */
 	if ((sz = read(*ofd, &file_hdr, FILE_HEADER_SIZE)) != FILE_HEADER_SIZE) {
 #ifdef DEBUG
-		fprintf(stderr, "%s: Size read=%ld\n",
+		fprintf(stderr, "%s: Size read=%zd\n",
 			__FUNCTION__, sz);
 #endif
 		goto append_error;
@@ -909,7 +950,7 @@ void open_ofile(int *ofd, char ofile[], int restart_mark)
 		}
 
 		if ((file_act[i].has_nr && (act[p]->f_count_index < 0)) ||
-		    (!file_act[i].has_nr && (act[p]->f_count_index >=0))) {
+		    (!file_act[i].has_nr && (act[p]->f_count_index >= 0) && HAS_COUNT_FUNCTION(act[p]->options))) {
 #ifdef DEBUG
 			fprintf(stderr, "%s: %s: has_nr=%d count_index=%d\n",
 				__FUNCTION__, act[p]->name, file_act[i].has_nr, act[p]->f_count_index);
@@ -942,8 +983,11 @@ void open_ofile(int *ofd, char ofile[], int restart_mark)
 		 * Since we are appending data to a file, set @nr_ini to the value of the file.
 		 * Stats saved in file will all be 0 for that activity if no items exist on
 		 * the machine.
+		 * NB: We must preserve the value read for A_CPU when a LINUX RESTART is inserted.
 		 */
-		act[p]->nr_ini = file_act[i].nr;
+		if (!ALWAYS_COUNT_ITEMS(act[p]->options) || !act[p]->nr_ini) {
+			act[p]->nr_ini = file_act[i].nr;
+		}
 
 		/*
 		 * Force number of sub-items to that of the file, and reallocate structures.
@@ -952,9 +996,11 @@ void open_ofile(int *ofd, char ofile[], int restart_mark)
 		 * we need to reallocate.
 		 */
 		act[p]->nr2 = file_act[i].nr2;
+		if (act[p]->nr_ini > act[p]->nr_allocated) {
+			act[p]->nr_allocated = act[p]->nr_ini;
+		}
 		SREALLOC(act[p]->_buf0, void,
-			 (size_t) act[p]->msize * (size_t) act[p]->nr_ini * (size_t) act[p]->nr2);
-		act[p]->nr_allocated = act[p]->nr_ini;
+			 (size_t) act[p]->msize * (size_t) act[p]->nr_allocated * (size_t) act[p]->nr2);
 
 		/* Save activity sequence */
 		id_seq[i] = file_act[i].id;
@@ -1013,7 +1059,7 @@ void rw_sa_stat_loop(long count, int stdfd, int ofd, char ofile[],
 		     char sa_dir[])
 {
 	int do_sa_rotat = 0;
-	unsigned int save_flags;
+	uint64_t save_flags;
 	char new_ofile[MAX_FILE_LEN] = "";
 	struct tm rectime = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, NULL};
 
@@ -1026,6 +1072,7 @@ void rw_sa_stat_loop(long count, int stdfd, int ofd, char ofile[],
 	do {
 		/* Init all structures */
 		reset_stats();
+		memset(&record_hdr, 0, RECORD_HEADER_SIZE);
 
 		/* Save time */
 		record_hdr.ust_time = (unsigned long long) get_time(&rectime, 0);
@@ -1097,6 +1144,13 @@ void rw_sa_stat_loop(long count, int stdfd, int ofd, char ofile[],
 
 		/* Flush data */
 		fflush(stdout);
+		if (FDATASYNC(flags)) {
+			/* If indicated, sync the data to media */
+			if (fdatasync(ofd) < 0) {
+				perror("fdatasync");
+				exit(4);
+			}
+		}
 
 		if (count > 0) {
 			count--;
@@ -1104,7 +1158,7 @@ void rw_sa_stat_loop(long count, int stdfd, int ofd, char ofile[],
 
 		if (count) {
 			/* Wait for a signal (probably SIGALRM or SIGINT) */
-			pause();
+			__pause();
 		}
 
 		if (sigint_caught)
@@ -1114,8 +1168,8 @@ void rw_sa_stat_loop(long count, int stdfd, int ofd, char ofile[],
 		/* Rotate activity file if necessary */
 		if (WANT_SA_ROTAT(flags)) {
 			/* The user specified '-' as the filename to use */
-			strncpy(new_ofile, sa_dir, MAX_FILE_LEN - 1);
-			new_ofile[MAX_FILE_LEN - 1] = '\0';
+			strncpy(new_ofile, sa_dir, sizeof(new_ofile) - 1);
+			new_ofile[sizeof(new_ofile) - 1] = '\0';
 			set_default_file(new_ofile, 0, USE_SA_YYYYMMDD(flags));
 
 			if (strcmp(ofile, new_ofile)) {
@@ -1143,6 +1197,10 @@ int main(int argc, char **argv)
 	int restart_mark;
 	long count = 0;
 
+#ifdef TEST
+	fprintf(stderr, "TEST MODE\n");
+#endif
+
 	/* Get HZ */
 	get_HZ();
 
@@ -1151,7 +1209,7 @@ int main(int argc, char **argv)
 
 	ofile[0] = sa_dir[0] = comment[0] = '\0';
 
-#ifdef HAVE_SENSORS
+#if (defined(HAVE_SENSORS) && !defined(ARCH32)) || (defined(ARCH32) && defined(HAVE_SENSORS32))
 	/* Initialize sensors, let it use the default cfg file */
 	int err = sensors_init(NULL);
 	if (err) {
@@ -1194,16 +1252,33 @@ int main(int argc, char **argv)
 			optz = 1;
 		}
 
+		else if (!strcmp(argv[opt], "-f")) {
+			flags |= S_F_FDATASYNC;
+		}
+
 		else if (!strcmp(argv[opt], "-C")) {
 			if (!argv[++opt]) {
 				usage(argv[0]);
 			}
-			strncpy(comment, argv[opt], MAX_COMMENT_LEN);
-			comment[MAX_COMMENT_LEN - 1] = '\0';
+			strncpy(comment, argv[opt], sizeof(comment));
+			comment[sizeof(comment) - 1] = '\0';
 			if (!strlen(comment)) {
 				usage(argv[0]);
 			}
 		}
+
+#ifdef TEST
+		else if (!strncmp(argv[opt], "--getenv", 8)) {
+			__env = TRUE;
+		}
+
+		else if (!strncmp(argv[opt], "--unix_time=", 12)) {
+			if (strspn(argv[opt] + 12, DIGITS) != strlen(argv[opt] + 12)) {
+				usage(argv[0]);
+			}
+			__unix_time = atoll(argv[opt] + 12);
+		}
+#endif
 
 		else if (strspn(argv[opt], DIGITS) != strlen(argv[opt])) {
 			if (ofile[0] || WANT_SA_ROTAT(flags)) {
@@ -1221,12 +1296,12 @@ int main(int argc, char **argv)
 			}
 			else {
 				/* Write data to file */
-				strncpy(ofile, argv[opt], MAX_FILE_LEN);
-				ofile[MAX_FILE_LEN - 1] = '\0';
+				strncpy(ofile, argv[opt], sizeof(ofile));
+				ofile[sizeof(ofile) - 1] = '\0';
 			}
 		}
 
-		else if (!interval) {
+		else if (interval < 0) {
 			/* Get interval */
 			interval = atol(argv[opt]);
 			if (interval < 1) {
@@ -1277,7 +1352,7 @@ int main(int argc, char **argv)
 	}
 
 	/*
-	 * If option -z used, write to STDOUT even if a filename
+	 * If option -Z used, write to STDOUT even if a filename
 	 * has been entered on the command line.
 	 */
 	if (optz) {
@@ -1298,7 +1373,7 @@ int main(int argc, char **argv)
 		print_collect_error();
 	}
 
-	if (!interval && !comment[0]) {
+	if ((interval < 0) && !comment[0]) {
 		/*
 		 * Interval (and count) not set, and no comment given
 		 * => We are going to insert a restart mark.
@@ -1319,7 +1394,7 @@ int main(int argc, char **argv)
 	open_ofile(&ofd, ofile, restart_mark);
 	open_stdout(&stdfd);
 
-	if (!interval) {
+	if (interval < 0) {
 		if (ofd >= 0) {
 			/*
 			 * Interval (and count) not set:
@@ -1347,12 +1422,12 @@ int main(int argc, char **argv)
 	memset(&alrm_act, 0, sizeof(alrm_act));
 	alrm_act.sa_handler = alarm_handler;
 	sigaction(SIGALRM, &alrm_act, NULL);
-	alarm(interval);
+	__alarm(interval);
 
 	/* Main loop */
 	rw_sa_stat_loop(count, stdfd, ofd, ofile, sa_dir);
 
-#ifdef HAVE_SENSORS
+#if (defined(HAVE_SENSORS) && !defined(ARCH32)) || (defined(ARCH32) && defined(HAVE_SENSORS32))
 	/* Cleanup sensors */
 	sensors_cleanup();
 #endif /* HAVE_SENSORS */

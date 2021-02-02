@@ -1,6 +1,6 @@
 /*
  * rndr_stats.h: Include file used to display system statistics in selected format.
- * (C) 1999-2018 by Sebastien Godard (sysstat <at> orange.fr)
+ * (C) 1999-2020 by Sebastien Godard (sysstat <at> orange.fr)
  */
 
 #ifndef _RNDR_STATS_H
@@ -123,6 +123,12 @@ __print_funct_t render_filesystem_stats
 __print_funct_t render_fchost_stats
 	(struct activity *, int, char *, int, unsigned long long);
 __print_funct_t render_softnet_stats
+	(struct activity *, int, char *, int, unsigned long long);
+__print_funct_t render_psicpu_stats
+	(struct activity *, int, char *, int, unsigned long long);
+__print_funct_t render_psiio_stats
+	(struct activity *, int, char *, int, unsigned long long);
+__print_funct_t render_psimem_stats
 	(struct activity *, int, char *, int, unsigned long long);
 
 #endif /* _RNDR_STATS_H */

@@ -5,5 +5,7 @@
 04-configs.patch
 06-exec.patch
 08-scripts.patch
-09-enable-colors.patch
-10-ignore-ut-failures.patch
+11-fix-spelling-typo.patch
+12-systat.service-documentation.patch
+13-irqstat-interpreter.patch
+14-simtest-run-all.patch

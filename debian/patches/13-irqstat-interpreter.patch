@@ -1,0 +1,22 @@
+From: Robert Luberda <robert@debian.org>
+Date: Sat, 30 Jan 2021 16:01:18 +0100
+Subject: Fix interpreter line of irqstat
+
+Make irqstat use '#!/usr/bin/python2' to fix the following lintian
+issue:
+
+ example-unusual-interpreter usr/share/doc/sysstat/examples/irqstat #!/usr/bin/python
+---
+ contrib/irqstat/irqstat | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/contrib/irqstat/irqstat b/contrib/irqstat/irqstat
+index 2efee7e..f58b1e1 100755
+--- a/contrib/irqstat/irqstat
++++ b/contrib/irqstat/irqstat
+@@ -1,4 +1,4 @@
+-#!/usr/bin/python
++#!/usr/bin/python2
+ 
+ """
+ A better way to watch /proc/interrupts, especially on large NUMA machines with

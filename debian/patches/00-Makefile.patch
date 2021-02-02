@@ -6,28 +6,34 @@ Don't regenerate pot file to prevent from unwanted changes in upstream sources.
 Don't install unneeded documentation files.
 Restore generation of isag.
 Support standard compiler flags like CPPFLAGS or LDFALGS.
+
+Forwarded: not-needed
 ---
- Makefile.in | 14 +++++++-------
- 1 file changed, 7 insertions(+), 7 deletions(-)
+ Makefile.in  | 10 ++++++----
+ configure.in |  2 ++
+ 2 files changed, 8 insertions(+), 4 deletions(-)
 
 diff --git a/Makefile.in b/Makefile.in
-index 333f6e2..8489839 100644
+index be4049c..63d56bb 100644
 --- a/Makefile.in
 +++ b/Makefile.in
-@@ -69,9 +69,9 @@ NLS_DIR = $(PREFIX)/share/locale
- SYSCONFIG_DIR = @SYSCONFIG_DIR@
- 
- # Compiler flags
--CFLAGS = @CFLAGS@ -Wall -Wstrict-prototypes -pipe -O2
--DFLAGS = @DFLAGS@
--LFLAGS = @STRIP@
-+CFLAGS = @CFLAGS@ -Wall -Wstrict-prototypes -pipe
-+DFLAGS = @DFLAGS@ @CPPFLAGS@
-+LFLAGS = @STRIP@ @LDFLAGS@
+@@ -102,6 +102,7 @@ CFLAGS += -Wall -Wstrict-prototypes -pipe -O2
+ ifndef DFLAGS
+ DFLAGS = @DFLAGS@
+ endif
++DFLAGS += @CPPFLAGS@
  DFLAGS += -DSA_DIR=\"$(SA_DIR)\" -DSADC_PATH=\"$(SADC_PATH)\"
- DFLAGS += $(DFSENSORS)
+ DFLAGS += $(DFSENSORS) $(DFSENSORS32)
+ DFLAGS += $(DFPCP)
+@@ -112,6 +113,7 @@ endif
+ ifndef LFLAGS
+ LFLAGS = @STRIP@
+ endif
++LFLAGS += @LDFLAGS@
  
-@@ -289,7 +289,7 @@ locales:
+ # Commands
+ ifndef MSGFMT
+@@ -465,7 +467,7 @@ locales:
  endif
  
  nls/sysstat.pot: $(wildcard *.c)
@@ -36,9 +42,9 @@ index 333f6e2..8489839 100644
  
  # Phony targets
  .PHONY: clean distclean install install_base install_all uninstall \
-@@ -381,12 +381,12 @@ endif
+@@ -556,12 +558,12 @@ endif
  	$(INSTALL_DATA) sysstat.ioconf $(DESTDIR)$(SYSCONFIG_DIR)
- 	$(INSTALL_DATA) sysstat.sysconfig $(DESTDIR)$(SYSCONFIG_DIR)/sysstat
+ 	$(INSTALL_DATA) sysstat.sysconfig $(DESTDIR)$(SYSCONFIG_DIR)/$(SYSCONFIG_FILE)
  ifeq ($(INSTALL_DOC),y)
 -	$(INSTALL_DATA) CHANGES $(DESTDIR)$(DOC_DIR)
 -	$(INSTALL_DATA) COPYING $(DESTDIR)$(DOC_DIR)
@@ -51,4 +57,24 @@ index 333f6e2..8489839 100644
 +#	$(INSTALL_DATA) *.lsm $(DESTDIR)$(DOC_DIR)
  endif
  
- install_all: install_base cron/crontab sysstat \
+ ifdef SYSTEMD_UNIT_DIR
+diff --git a/configure.in b/configure.in
+index d797c6f..abb2406 100644
+--- a/configure.in
++++ b/configure.in
+@@ -190,6 +190,7 @@ DFSENSORS32=""
+ HAVE_SENSORS32="n"
+ if test $SENSORS_SUPPORT = "y"; then
+ 	CFLAGS_SAVE=$CFLAGS
++	LDFLAGS_SAVE=$LDFLAGS
+ 	CFLAGS+=" -m32"
+ 	LDFLAGS=" -lsensors"
+ 	SENSORS=no
+@@ -201,6 +202,7 @@ if test $SENSORS_SUPPORT = "y"; then
+ 					[[sensors_cleanup();]])], SENSORS=yes; HAVE_SENSORS32="y"; DFSENSORS32="-DHAVE_SENSORS32", HAVE_SENSORS32="n"; SENSORS=no)
+ 	AC_MSG_RESULT($SENSORS)
+ 	CFLAGS=$CFLAGS_SAVE
++	LDFLAGS=$LDFLAGS_SAVE
+ fi
+ AC_SUBST(HAVE_SENSORS32)
+ AC_SUBST(LFSENSORS32)

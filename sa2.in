@@ -1,22 +1,35 @@
 #!/bin/sh
 # @SA_LIB_DIR@/sa2
-# (C) 1999-2018 Sebastien Godard (sysstat <at> orange.fr)
+# (C) 1999-2020 Sebastien Godard (sysstat <at> orange.fr)
 #
 #@(#) @PACKAGE_NAME@-@PACKAGE_VERSION@
 #@(#) sa2: Write a daily report
 #
 S_TIME_FORMAT=ISO ; export S_TIME_FORMAT
-umask 0022
 prefix=@prefix@
 exec_prefix=@exec_prefix@
 SA_DIR=@SA_DIR@
 SYSCONFIG_DIR=@SYSCONFIG_DIR@
+SYSCONFIG_FILE=@SYSCONFIG_FILE@
 HISTORY=@HISTORY@
 COMPRESSAFTER=@COMPRESSAFTER@
 ZIP="@ZIP@"
+UMASK=0022
+ENDIR=@SAR_DIR@
+DELAY_RANGE=@DELAY_RANGE@
 
 # Read configuration file, overriding variables set above
-[ -r ${SYSCONFIG_DIR}/sysstat ] && . ${SYSCONFIG_DIR}/sysstat
+[ -r ${SYSCONFIG_DIR}/${SYSCONFIG_FILE} ] && . ${SYSCONFIG_DIR}/${SYSCONFIG_FILE}
+
+umask ${UMASK}
+
+# Wait for a random delay if requested
+if [ ${DELAY_RANGE} -gt 0 ]
+then
+	RANDOM=$$
+	DELAY=$((${RANDOM}%${DELAY_RANGE}))
+	sleep ${DELAY}
+fi
 
 [ -d ${SA_DIR} ] || SA_DIR=@SA_DIR@
 
@@ -39,7 +52,10 @@ CURRENTRPT=sar${DATE}
 
 RPT=${SA_DIR}/${CURRENTRPT}
 DFILE=${SA_DIR}/${CURRENTFILE}
-ENDIR=@bindir@
+if [ -z "${ENDIR}" ];
+then
+       ENDIR=@bindir@
+fi
 
 [ -f "${DFILE}" ] || exit 0
 cd ${ENDIR}
@@ -58,7 +74,6 @@ UNCOMPRESSED_SAFILES_REGEX='/sar?[0-9]{2,8}$'
 
 find "${SA_DIR}" -type f -mtime +${COMPRESSAFTER} \
 	| egrep "${UNCOMPRESSED_SAFILES_REGEX}" \
-	| xargs   "${ZIP}" > /dev/null
+	| xargs -r "${ZIP}" > /dev/null
 
 exit 0
-

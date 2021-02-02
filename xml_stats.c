@@ -1,6 +1,6 @@
 /*
  * xml_stats.c: Funtions used by sadf to display statistics in XML.
- * (C) 1999-2018 by Sebastien GODARD (sysstat <at> orange.fr)
+ * (C) 1999-2020 by Sebastien GODARD (sysstat <at> orange.fr)
  *
  ***************************************************************************
  * This program is free software; you can redistribute it and/or modify it *
@@ -88,6 +88,33 @@ void xml_markup_power_management(int tab, int action)
 	else {
 		/* Close markup */
 		xprintf(tab, "</power-management>");
+	}
+}
+
+/*
+ ***************************************************************************
+ * Open or close <psi> markup.
+ *
+ * IN:
+ * @tab		Number of tabulations.
+ * @action	Open or close action.
+ ***************************************************************************
+ */
+void xml_markup_psi(int tab, int action)
+{
+	static int markup_state = CLOSE_XML_MARKUP;
+
+	if (action == markup_state)
+		return;
+	markup_state = action;
+
+	if (action == OPEN_XML_MARKUP) {
+		/* Open markup */
+		xprintf(tab, "<psi per=\"second\">");
+	}
+	else {
+		/* Close markup */
+		xprintf(tab, "</psi>");
 	}
 }
 
@@ -435,6 +462,12 @@ __print_funct_t xml_print_io_stats(struct activity *a, int curr, int tab,
 		sic->dk_drive_wblk < sip->dk_drive_wblk ? 0.0 :
 		S_VALUE(sip->dk_drive_wblk, sic->dk_drive_wblk, itv));
 
+	xprintf(tab, "<io-discard dtps=\"%.2f\" bdscd=\"%.2f\"/>",
+		sic->dk_drive_dio < sip->dk_drive_dio ? 0.0 :
+		S_VALUE(sip->dk_drive_dio, sic->dk_drive_dio, itv),
+		sic->dk_drive_dblk < sip->dk_drive_dblk ? 0.0 :
+		S_VALUE(sip->dk_drive_dblk, sic->dk_drive_dblk, itv));
+
 	xprintf(--tab, "</io>");
 }
 
@@ -456,7 +489,7 @@ __print_funct_t xml_print_memory_stats(struct activity *a, int curr, int tab,
 		*smc = (struct stats_memory *) a->buf[curr];
 	unsigned long long nousedmem;
 
-	xprintf(tab, "<memory per=\"second\" unit=\"kB\">");
+	xprintf(tab, "<memory unit=\"kB\">");
 
 	if (DISPLAY_MEMORY(a->opt_flags)) {
 
@@ -712,7 +745,9 @@ __print_funct_t xml_print_disk_stats(struct activity *a, int curr, int tab,
 		}
 
 		/* Get device name */
-		dev_name = get_sa_devname(sdc->major, sdc->minor, flags);
+		dev_name = get_device_name(sdc->major, sdc->minor, sdc->wwn, sdc->part_nr,
+					   DISPLAY_PRETTY(flags), DISPLAY_PERSIST_NAME_S(flags),
+					   USE_STABLE_ID(flags), NULL);
 
 		if (a->item_list != NULL) {
 			/* A list of devices has been entered on the command line */
@@ -728,29 +763,31 @@ __print_funct_t xml_print_disk_stats(struct activity *a, int curr, int tab,
 			"tps=\"%.2f\" "
 			"rd_sec=\"%.2f\" "
 			"wr_sec=\"%.2f\" "
+			"dc_sec=\"%.2f\" "
 			"rkB=\"%.2f\" "
 			"wkB=\"%.2f\" "
+			"dkB=\"%.2f\" "
 			"avgrq-sz=\"%.2f\" "
 			"areq-sz=\"%.2f\" "
 			"avgqu-sz=\"%.2f\" "
 			"aqu-sz=\"%.2f\" "
 			"await=\"%.2f\" "
-			"svctm=\"%.2f\" "
 			"util-percent=\"%.2f\"/>",
 			/* Confusion possible here between index and minor numbers */
 			dev_name,
 			S_VALUE(sdp->nr_ios, sdc->nr_ios, itv),
 			S_VALUE(sdp->rd_sect, sdc->rd_sect, itv), /* Unit = sectors (for backward compatibility) */
 			S_VALUE(sdp->wr_sect, sdc->wr_sect, itv),
+			S_VALUE(sdp->dc_sect, sdc->dc_sect, itv),
 			S_VALUE(sdp->rd_sect, sdc->rd_sect, itv) / 2,
 			S_VALUE(sdp->wr_sect, sdc->wr_sect, itv) / 2,
+			S_VALUE(sdp->dc_sect, sdc->dc_sect, itv) / 2,
 			/* See iostat for explanations */
 			xds.arqsz,	/* Unit = sectors (for backward compatibility) */
 			xds.arqsz / 2,
 			S_VALUE(sdp->rq_ticks, sdc->rq_ticks, itv) / 1000.0,	/* For backward compatibility */
 			S_VALUE(sdp->rq_ticks, sdc->rq_ticks, itv) / 1000.0,
 			xds.await,
-			xds.svctm,
 			xds.util / 10.0);
 	}
 
@@ -775,7 +812,7 @@ __print_funct_t xml_print_net_dev_stats(struct activity *a, int curr, int tab,
 	struct stats_net_dev *sndc, *sndp, sndzero;
 	double rxkb, txkb, ifutil;
 
-	if (!IS_SELECTED(a->options) || (a->nr <= 0))
+	if (!IS_SELECTED(a->options) || (a->nr[curr] <= 0))
 		goto close_xml_markup;
 
 	memset(&sndzero, 0, STATS_NET_DEV_SIZE);
@@ -851,7 +888,7 @@ __print_funct_t xml_print_net_edev_stats(struct activity *a, int curr, int tab,
 	int i, j;
 	struct stats_net_edev *snedc, *snedp, snedzero;
 
-	if (!IS_SELECTED(a->options) || (a->nr <= 0))
+	if (!IS_SELECTED(a->options) || (a->nr[curr] <= 0))
 		goto close_xml_markup;
 
 	memset(&snedzero, 0, STATS_NET_EDEV_SIZE);
@@ -926,7 +963,7 @@ __print_funct_t xml_print_net_nfs_stats(struct activity *a, int curr, int tab,
 		*snnc = (struct stats_net_nfs *) a->buf[curr],
 		*snnp = (struct stats_net_nfs *) a->buf[!curr];
 
-	if (!IS_SELECTED(a->options) || (a->nr <= 0))
+	if (!IS_SELECTED(a->options) || (a->nr[curr] <= 0))
 		goto close_xml_markup;
 
 	xml_markup_network(tab, OPEN_XML_MARKUP);
@@ -971,7 +1008,7 @@ __print_funct_t xml_print_net_nfsd_stats(struct activity *a, int curr, int tab,
 		*snndc = (struct stats_net_nfsd *) a->buf[curr],
 		*snndp = (struct stats_net_nfsd *) a->buf[!curr];
 
-	if (!IS_SELECTED(a->options) || (a->nr <= 0))
+	if (!IS_SELECTED(a->options) || (a->nr[curr] <= 0))
 		goto close_xml_markup;
 
 	xml_markup_network(tab, OPEN_XML_MARKUP);
@@ -1025,7 +1062,7 @@ __print_funct_t xml_print_net_sock_stats(struct activity *a, int curr, int tab,
 	struct stats_net_sock
 		*snsc = (struct stats_net_sock *) a->buf[curr];
 
-	if (!IS_SELECTED(a->options) || (a->nr <= 0))
+	if (!IS_SELECTED(a->options) || (a->nr[curr] <= 0))
 		goto close_xml_markup;
 
 	xml_markup_network(tab, OPEN_XML_MARKUP);
@@ -1070,7 +1107,7 @@ __print_funct_t xml_print_net_ip_stats(struct activity *a, int curr, int tab,
 		*snic = (struct stats_net_ip *) a->buf[curr],
 		*snip = (struct stats_net_ip *) a->buf[!curr];
 
-	if (!IS_SELECTED(a->options) || (a->nr <= 0))
+	if (!IS_SELECTED(a->options) || (a->nr[curr] <= 0))
 		goto close_xml_markup;
 
 	xml_markup_network(tab, OPEN_XML_MARKUP);
@@ -1119,7 +1156,7 @@ __print_funct_t xml_print_net_eip_stats(struct activity *a, int curr, int tab,
 		*sneic = (struct stats_net_eip *) a->buf[curr],
 		*sneip = (struct stats_net_eip *) a->buf[!curr];
 
-	if (!IS_SELECTED(a->options) || (a->nr <= 0))
+	if (!IS_SELECTED(a->options) || (a->nr[curr] <= 0))
 		goto close_xml_markup;
 
 	xml_markup_network(tab, OPEN_XML_MARKUP);
@@ -1168,7 +1205,7 @@ __print_funct_t xml_print_net_icmp_stats(struct activity *a, int curr, int tab,
 		*snic = (struct stats_net_icmp *) a->buf[curr],
 		*snip = (struct stats_net_icmp *) a->buf[!curr];
 
-	if (!IS_SELECTED(a->options) || (a->nr <= 0))
+	if (!IS_SELECTED(a->options) || (a->nr[curr] <= 0))
 		goto close_xml_markup;
 
 	xml_markup_network(tab, OPEN_XML_MARKUP);
@@ -1229,7 +1266,7 @@ __print_funct_t xml_print_net_eicmp_stats(struct activity *a, int curr, int tab,
 		*sneic = (struct stats_net_eicmp *) a->buf[curr],
 		*sneip = (struct stats_net_eicmp *) a->buf[!curr];
 
-	if (!IS_SELECTED(a->options) || (a->nr <= 0))
+	if (!IS_SELECTED(a->options) || (a->nr[curr] <= 0))
 		goto close_xml_markup;
 
 	xml_markup_network(tab, OPEN_XML_MARKUP);
@@ -1286,7 +1323,7 @@ __print_funct_t xml_print_net_tcp_stats(struct activity *a, int curr, int tab,
 		*sntc = (struct stats_net_tcp *) a->buf[curr],
 		*sntp = (struct stats_net_tcp *) a->buf[!curr];
 
-	if (!IS_SELECTED(a->options) || (a->nr <= 0))
+	if (!IS_SELECTED(a->options) || (a->nr[curr] <= 0))
 		goto close_xml_markup;
 
 	xml_markup_network(tab, OPEN_XML_MARKUP);
@@ -1327,7 +1364,7 @@ __print_funct_t xml_print_net_etcp_stats(struct activity *a, int curr, int tab,
 		*snetc = (struct stats_net_etcp *) a->buf[curr],
 		*snetp = (struct stats_net_etcp *) a->buf[!curr];
 
-	if (!IS_SELECTED(a->options) || (a->nr <= 0))
+	if (!IS_SELECTED(a->options) || (a->nr[curr] <= 0))
 		goto close_xml_markup;
 
 	xml_markup_network(tab, OPEN_XML_MARKUP);
@@ -1370,7 +1407,7 @@ __print_funct_t xml_print_net_udp_stats(struct activity *a, int curr, int tab,
 		*snuc = (struct stats_net_udp *) a->buf[curr],
 		*snup = (struct stats_net_udp *) a->buf[!curr];
 
-	if (!IS_SELECTED(a->options) || (a->nr <= 0))
+	if (!IS_SELECTED(a->options) || (a->nr[curr] <= 0))
 		goto close_xml_markup;
 
 	xml_markup_network(tab, OPEN_XML_MARKUP);
@@ -1410,7 +1447,7 @@ __print_funct_t xml_print_net_sock6_stats(struct activity *a, int curr, int tab,
 	struct stats_net_sock6
 		*snsc = (struct stats_net_sock6 *) a->buf[curr];
 
-	if (!IS_SELECTED(a->options) || (a->nr <= 0))
+	if (!IS_SELECTED(a->options) || (a->nr[curr] <= 0))
 		goto close_xml_markup;
 
 	xml_markup_network(tab, OPEN_XML_MARKUP);
@@ -1451,7 +1488,7 @@ __print_funct_t xml_print_net_ip6_stats(struct activity *a, int curr, int tab,
 		*snic = (struct stats_net_ip6 *) a->buf[curr],
 		*snip = (struct stats_net_ip6 *) a->buf[!curr];
 
-	if (!IS_SELECTED(a->options) || (a->nr <= 0))
+	if (!IS_SELECTED(a->options) || (a->nr[curr] <= 0))
 		goto close_xml_markup;
 
 	xml_markup_network(tab, OPEN_XML_MARKUP);
@@ -1504,7 +1541,7 @@ __print_funct_t xml_print_net_eip6_stats(struct activity *a, int curr, int tab,
 		*sneic = (struct stats_net_eip6 *) a->buf[curr],
 		*sneip = (struct stats_net_eip6 *) a->buf[!curr];
 
-	if (!IS_SELECTED(a->options) || (a->nr <= 0))
+	if (!IS_SELECTED(a->options) || (a->nr[curr] <= 0))
 		goto close_xml_markup;
 
 	xml_markup_network(tab, OPEN_XML_MARKUP);
@@ -1559,7 +1596,7 @@ __print_funct_t xml_print_net_icmp6_stats(struct activity *a, int curr, int tab,
 		*snic = (struct stats_net_icmp6 *) a->buf[curr],
 		*snip = (struct stats_net_icmp6 *) a->buf[!curr];
 
-	if (!IS_SELECTED(a->options) || (a->nr <= 0))
+	if (!IS_SELECTED(a->options) || (a->nr[curr] <= 0))
 		goto close_xml_markup;
 
 	xml_markup_network(tab, OPEN_XML_MARKUP);
@@ -1626,7 +1663,7 @@ __print_funct_t xml_print_net_eicmp6_stats(struct activity *a, int curr, int tab
 		*sneic = (struct stats_net_eicmp6 *) a->buf[curr],
 		*sneip = (struct stats_net_eicmp6 *) a->buf[!curr];
 
-	if (!IS_SELECTED(a->options) || (a->nr <= 0))
+	if (!IS_SELECTED(a->options) || (a->nr[curr] <= 0))
 		goto close_xml_markup;
 
 	xml_markup_network(tab, OPEN_XML_MARKUP);
@@ -1681,7 +1718,7 @@ __print_funct_t xml_print_net_udp6_stats(struct activity *a, int curr, int tab,
 		*snuc = (struct stats_net_udp6 *) a->buf[curr],
 		*snup = (struct stats_net_udp6 *) a->buf[!curr];
 
-	if (!IS_SELECTED(a->options) || (a->nr <= 0))
+	if (!IS_SELECTED(a->options) || (a->nr[curr] <= 0))
 		goto close_xml_markup;
 
 	xml_markup_network(tab, OPEN_XML_MARKUP);
@@ -1924,10 +1961,16 @@ __print_funct_t xml_print_huge_stats(struct activity *a, int curr, int tab,
 	xprintf(tab, "<hugused>%llu</hugused>",
 		smc->tlhkb - smc->frhkb);
 
-	xprintf(tab--, "<hugused-percent>%.2f</hugused-percent>",
+	xprintf(tab, "<hugused-percent>%.2f</hugused-percent>",
 		smc->tlhkb ?
 		SP_VALUE(smc->frhkb, smc->tlhkb, smc->tlhkb) :
 		0.0);
+
+	xprintf(tab, "<hugrsvd>%llu</hugrsvd>",
+		smc->rsvdhkb);
+
+	xprintf(tab--, "<hugsurp>%llu</hugsurp>",
+		smc->surphkb);
 
 	xprintf(tab, "</hugepages>");
 }
@@ -2070,17 +2113,19 @@ __print_funct_t xml_print_filesystem_stats(struct activity *a, int curr, int tab
 {
 	int i;
 	struct stats_filesystem *sfc;
+	char *dev_name;
 
 	xprintf(tab++, "<filesystems>");
 
 	for (i = 0; i < a->nr[curr]; i++) {
-
 		sfc = (struct stats_filesystem *) ((char *) a->buf[curr] + i * a->msize);
+
+		/* Get name to display (persistent or standard fs name, or mount point) */
+		dev_name = get_fs_name_to_display(a, flags, sfc);
 
 		if (a->item_list != NULL) {
 			/* A list of devices has been entered on the command line */
-			if (!search_list_item(a->item_list,
-					      DISPLAY_MOUNT(a->opt_flags) ? sfc->mountp : sfc->fs_name))
+			if (!search_list_item(a->item_list, dev_name))
 				/* Device not found */
 				continue;
 		}
@@ -2094,7 +2139,7 @@ __print_funct_t xml_print_filesystem_stats(struct activity *a, int curr, int tab
 			"Iused=\"%llu\" "
 			"Iused-percent=\"%.2f\"/>",
 			DISPLAY_MOUNT(a->opt_flags) ? "mountp" : "fsname",
-			DISPLAY_MOUNT(a->opt_flags) ? sfc->mountp : sfc->fs_name,
+			dev_name,
 			(double) sfc->f_bfree / 1024 / 1024,
 			(double) (sfc->f_blocks - sfc->f_bfree) / 1024 / 1024,
 			/* f_blocks is not zero. But test it anyway ;-) */
@@ -2126,10 +2171,12 @@ __print_funct_t xml_print_fchost_stats(struct activity *a, int curr, int tab,
 				       unsigned long long itv)
 {
 	int i, j, j0, found;
-	struct stats_fchost *sfcc, *sfcp;
+	struct stats_fchost *sfcc, *sfcp, sfczero;
 
 	if (!IS_SELECTED(a->options) || (a->nr[curr] <= 0))
 		goto close_xml_markup;
+
+	memset(&sfczero, 0, sizeof(struct stats_fchost));
 
 	xml_markup_network(tab, OPEN_XML_MARKUP);
 	tab++;
@@ -2137,10 +2184,9 @@ __print_funct_t xml_print_fchost_stats(struct activity *a, int curr, int tab,
 	for (i = 0; i < a->nr[curr]; i++) {
 
 		found = FALSE;
+		sfcc = (struct stats_fchost *) ((char *) a->buf[curr] + i * a->msize);
 
 		if (a->nr[!curr] > 0) {
-			sfcc = (struct stats_fchost *) ((char *) a->buf[curr] + i * a->msize);
-
 			/* Look for corresponding structure in previous iteration */
 			j = i;
 
@@ -2163,8 +2209,10 @@ __print_funct_t xml_print_fchost_stats(struct activity *a, int curr, int tab,
 			while (j != j0);
 		}
 
-		if (!found)
-			continue;
+		if (!found) {
+			/* This is a newly registered host */
+			sfcp = &sfczero;
+		}
 
 		xprintf(tab, "<fchost name=\"%s\" "
 			"fch_rxf=\"%.2f\" "
@@ -2175,7 +2223,7 @@ __print_funct_t xml_print_fchost_stats(struct activity *a, int curr, int tab,
 			S_VALUE(sfcp->f_rxframes, sfcc->f_rxframes, itv),
 			S_VALUE(sfcp->f_txframes, sfcc->f_txframes, itv),
 			S_VALUE(sfcp->f_rxwords,  sfcc->f_rxwords,  itv),
-			S_VALUE(sfcp->f_txwords,  sfcc->f_rxwords,  itv));
+			S_VALUE(sfcp->f_txwords,  sfcc->f_txwords,  itv));
 	}
 	tab--;
 
@@ -2256,5 +2304,144 @@ __print_funct_t xml_print_softnet_stats(struct activity *a, int curr, int tab,
 close_xml_markup:
 	if (CLOSE_MARKUP(a->options)) {
 		xml_markup_network(tab, CLOSE_XML_MARKUP);
+	}
+}
+
+/*
+ ***************************************************************************
+ * Display pressure-stall CPU statistics in XML.
+ *
+ * IN:
+ * @a		Activity structure with statistics.
+ * @curr	Index in array for current sample statistics.
+ * @tab		Indentation in XML output.
+ * @itv		Interval of time in 1/100th of a second.
+ ***************************************************************************
+ */
+__print_funct_t xml_print_psicpu_stats(struct activity *a, int curr, int tab,
+				       unsigned long long itv)
+{
+	struct stats_psi_cpu
+		*psic = (struct stats_psi_cpu *) a->buf[curr],
+		*psip = (struct stats_psi_cpu *) a->buf[!curr];
+
+	if (!IS_SELECTED(a->options))
+		goto close_xml_markup;
+
+	xml_markup_psi(tab, OPEN_XML_MARKUP);
+	tab++;
+
+	xprintf(tab, "<psi-cpu "
+		"some_avg10=\"%.2f\" "
+		"some_avg60=\"%.2f\" "
+		"some_avg300=\"%.2f\" "
+		"some_avg=\"%.2f\"/>",
+		(double) psic->some_acpu_10  / 100,
+		(double) psic->some_acpu_60  / 100,
+		(double) psic->some_acpu_300 / 100,
+		((double) psic->some_cpu_total - psip->some_cpu_total) / (100 * itv));
+	tab--;
+
+close_xml_markup:
+	if (CLOSE_MARKUP(a->options)) {
+		xml_markup_psi(tab, CLOSE_XML_MARKUP);
+	}
+}
+
+/*
+ ***************************************************************************
+ * Display pressure-stall I/O statistics in XML.
+ *
+ * IN:
+ * @a		Activity structure with statistics.
+ * @curr	Index in array for current sample statistics.
+ * @tab		Indentation in XML output.
+ * @itv		Interval of time in 1/100th of a second.
+ ***************************************************************************
+ */
+__print_funct_t xml_print_psiio_stats(struct activity *a, int curr, int tab,
+				      unsigned long long itv)
+{
+	struct stats_psi_io
+		*psic = (struct stats_psi_io *) a->buf[curr],
+		*psip = (struct stats_psi_io *) a->buf[!curr];
+
+	if (!IS_SELECTED(a->options))
+		goto close_xml_markup;
+
+	xml_markup_psi(tab, OPEN_XML_MARKUP);
+	tab++;
+
+	xprintf(tab, "<psi-io "
+		"some_avg10=\"%.2f\" "
+		"some_avg60=\"%.2f\" "
+		"some_avg300=\"%.2f\" "
+		"some_avg=\"%.2f\" "
+		"full_avg10=\"%.2f\" "
+		"full_avg60=\"%.2f\" "
+		"full_avg300=\"%.2f\" "
+		"full_avg=\"%.2f\"/>",
+		(double) psic->some_aio_10  / 100,
+		(double) psic->some_aio_60  / 100,
+		(double) psic->some_aio_300 / 100,
+		((double) psic->some_io_total - psip->some_io_total) / (100 * itv),
+		(double) psic->full_aio_10  / 100,
+		(double) psic->full_aio_60  / 100,
+		(double) psic->full_aio_300 / 100,
+		((double) psic->full_io_total - psip->full_io_total) / (100 * itv));
+	tab--;
+
+close_xml_markup:
+	if (CLOSE_MARKUP(a->options)) {
+		xml_markup_psi(tab, CLOSE_XML_MARKUP);
+	}
+}
+
+/*
+ ***************************************************************************
+ * Display pressure-stall memory statistics in XML.
+ *
+ * IN:
+ * @a		Activity structure with statistics.
+ * @curr	Index in array for current sample statistics.
+ * @tab		Indentation in XML output.
+ * @itv		Interval of time in 1/100th of a second.
+ ***************************************************************************
+ */
+__print_funct_t xml_print_psimem_stats(struct activity *a, int curr, int tab,
+				       unsigned long long itv)
+{
+	struct stats_psi_mem
+		*psic = (struct stats_psi_mem *) a->buf[curr],
+		*psip = (struct stats_psi_mem *) a->buf[!curr];
+
+	if (!IS_SELECTED(a->options))
+		goto close_xml_markup;
+
+	xml_markup_psi(tab, OPEN_XML_MARKUP);
+	tab++;
+
+	xprintf(tab, "<psi-mem "
+		"some_avg10=\"%.2f\" "
+		"some_avg60=\"%.2f\" "
+		"some_avg300=\"%.2f\" "
+		"some_avg=\"%.2f\" "
+		"full_avg10=\"%.2f\" "
+		"full_avg60=\"%.2f\" "
+		"full_avg300=\"%.2f\" "
+		"full_avg=\"%.2f\"/>",
+		(double) psic->some_amem_10  / 100,
+		(double) psic->some_amem_60  / 100,
+		(double) psic->some_amem_300 / 100,
+		((double) psic->some_mem_total - psip->some_mem_total) / (100 * itv),
+		(double) psic->full_amem_10  / 100,
+		(double) psic->full_amem_60  / 100,
+		(double) psic->full_amem_300 / 100,
+		((double) psic->full_mem_total - psip->full_mem_total) / (100 * itv));
+	tab--;
+
+close_xml_markup:
+	if (CLOSE_MARKUP(a->options)) {
+		xml_markup_psi(tab, CLOSE_XML_MARKUP);
 	}
 }

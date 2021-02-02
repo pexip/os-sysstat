@@ -1,0 +1,96 @@
+#!/bin/sh
+# vim: sw=2:ts=2:sts=2:et
+
+set -e
+set -o nounset
+
+export LC_ALL=C
+
+readonly outfile="outfile"
+
+export PATH=/usr/lib/sysstat:/usr/bin:$PATH
+
+readonly tmpdir="${AUTOPKGTEST_TMP:-$(mktemp -d)}"
+trap "rm -rf $tmpdir" EXIT INT QUIT TERM
+
+cd "$tmpdir"
+exit_status=0
+
+
+error()
+{
+  echo "ERROR: $@" >&2
+  if [  -e "$outfile" ] ; then
+    echo "--- Contents of output file is ---"
+    cat "$outfile"
+    echo "--- end ---"
+  fi
+  exit_status=$(expr $exit_status + 1)
+}
+
+run()
+{
+  rm -f "$outfile"
+  echo
+  echo "Running $@"
+  "$@" > "$outfile" || { error "$1 command returned error code $?"; return 1; }
+  return 0
+}
+
+
+check_sadc_sar()
+{
+  if run sadc -S ALL 1 5 "sa.out" &&   run sar -f "sa.out"; then
+    local num_lines=$(wc -l < "$outfile")
+    local expected_num_lines=8 # 5 + 2 lines of header + "avarage"
+    test $num_lines -eq $expected_num_lines || \
+      error "sar command number of lines: actual: $num_lines, expected: $expected_num_lines"
+  fi
+}
+
+check_pidstat()
+{
+  if run pidstat -p "$$"; then
+    local search_regex="\s+$(id -u)\s+$$\s+"
+    grep -qE "$search_regex" "$outfile" || \
+      error "pidstat output does not match $search_regex"
+  fi
+}
+
+check_iostat()
+{
+  if run iostat -p ALL; then
+    # display Device, and the first line after it
+    local num_lines=$(sed -ne '/^Device/,/^[a-zA-Z0-9]/p' "$outfile"  | wc -l)
+    local expected_num_lines=2
+    # Temporary to check why iostat does not display any disks on CI boxes
+    if test $num_lines -ne $expected_num_lines; then
+      echo "Skipping test, output file is:"
+      cat "$outfile"
+      for f in /proc/stat /proc/diskstats /sys/block; do
+        echo "---"
+        ls -lA $f || :
+      done
+      return 0
+    fi
+
+    test $num_lines -eq $expected_num_lines || \
+      error "iostat command filtered by sed number of lines - " \
+            "actual: $num_lines, expected: $expected_num_lines"
+  fi
+}
+
+check_mpstat()
+{
+  if run mpstat -P ALL; then
+    local search_regex="^\s*\d?\d:\d\d:\d\d\s+all\s+"
+    grep -qP "$search_regex" "$outfile" || error "mpstat output does not match $search_regex"
+  fi
+}
+
+check_sadc_sar
+check_pidstat
+check_iostat
+check_mpstat
+
+exit "$exit_status"

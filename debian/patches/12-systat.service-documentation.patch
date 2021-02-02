@@ -1,0 +1,25 @@
+From: Robert Luberda <robert@debian.org>
+Date: Tue, 25 Aug 2020 10:31:53 +0200
+Subject: Provide documentation key for systat.service file
+
+---
+ sysstat.service.in | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/sysstat.service.in b/sysstat.service.in
+index bf9d9c6..361a93b 100644
+--- a/sysstat.service.in
++++ b/sysstat.service.in
+@@ -7,6 +7,7 @@
+ 
+ [Unit]
+ Description=Resets System Activity Logs
++Documentation=man:sa1(8) man:sadc(8) man:sar(1)
+ 
+ [Service]
+ Type=oneshot
+@@ -18,4 +19,3 @@ ExecStart=@SA_LIB_DIR@/sa1 --boot
+ WantedBy=multi-user.target
+ Also=sysstat-collect.timer
+ Also=sysstat-summary.timer
+-

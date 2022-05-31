@@ -1,10 +1,12 @@
 /*
  * mpstat: per-processor statistics
- * (C) 2000-2018 by Sebastien Godard (sysstat <at> orange.fr)
+ * (C) 2000-2020 by Sebastien Godard (sysstat <at> orange.fr)
  */
 
 #ifndef _MPSTAT_H
 #define _MPSTAT_H
+
+#include "common.h"
 
 /*
  ***************************************************************************
@@ -12,7 +14,9 @@
  ***************************************************************************
  */
 
-#define SOFTIRQS	"/proc/softirqs"
+#define SOFTIRQS	PRE "/proc/softirqs"
+#define PHYS_PACK_ID	"topology/physical_package_id"
+#define THREAD_SBL_LST	"topology/thread_siblings_list"
 
 /*
  ***************************************************************************
@@ -39,16 +43,21 @@
  */
 
 /* Indicate that option -P has been used */
-#define F_P_OPTION	0x01
-/* 0x02: unused */
+#define F_OPTION_P	0x01
+/* Indicate that option -A has been used */
+#define F_OPTION_A	0x02
 /* JSON output */
 #define F_JSON_OUTPUT	0x04
 /* Indicate that option -N has been used */
-#define F_N_OPTION	0x08
+#define F_OPTION_N	0x08
+/* Display topology */
+#define F_TOPOLOGY	0x10
 
-#define USE_P_OPTION(m)		(((m) & F_P_OPTION) == F_P_OPTION)
+#define USE_OPTION_P(m)		(((m) & F_OPTION_P) == F_OPTION_P)
+#define USE_OPTION_A(m)		(((m) & F_OPTION_A) == F_OPTION_A)
 #define DISPLAY_JSON_OUTPUT(m)	(((m) & F_JSON_OUTPUT) == F_JSON_OUTPUT)
-#define USE_N_OPTION(m)		(((m) & F_N_OPTION) == F_N_OPTION)
+#define USE_OPTION_N(m)		(((m) & F_OPTION_N) == F_OPTION_N)
+#define DISPLAY_TOPOLOGY(m)	(((m) & F_TOPOLOGY) == F_TOPOLOGY)
 
 #define K_SUM	"SUM"
 #define K_CPU	"CPU"
@@ -79,6 +88,11 @@
 struct stats_irqcpu {
 	unsigned int interrupt        __attribute__ ((aligned (4)));
 	char         irq_name[MAX_IRQ_LEN];
+};
+
+struct cpu_topology {
+	int phys_package_id;
+	int logical_core_id;
 };
 
 #define STATS_IRQCPU_SIZE      (sizeof(struct stats_irqcpu))

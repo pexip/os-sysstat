@@ -1,6 +1,6 @@
 #!/bin/sh
 #@(#) Configuration script for sysstat
-# (C) 2000-2014 Sebastien GODARD (sysstat <at> orange.fr)
+# (C) 2000-2020 Sebastien GODARD (sysstat <at> orange.fr)
 
 ASK="sh build/Ask.sh"
 
@@ -40,6 +40,12 @@ if [ "${SYSCONFIG_DIR}" != "" ]; then
 	SYSCONFIG_DIR="conf_dir=${SYSCONFIG_DIR} "
 fi
 
+# sysstat configuration file
+SYSCONFIG_FILE=`${ASK} 'sysstat configuration file:' "conf_file" "conf_file"`
+if [ "${SYSCONFIG_FILE}" != "" ]; then
+	SYSCONFIG_FILE="conf_file=${SYSCONFIG_FILE} "
+fi
+
 # Clean sa directory
 CLEAN_SA_DIR=`${ASK} 'Clean system activity directory? (y/n)' "--enable-clean-sa-dir" "clean-sa-dir"`
 if [ "${CLEAN_SA_DIR}" = "y" ]; then
@@ -67,10 +73,25 @@ else
 	echo "Parameter --disable-sensors is NOT set"
 fi
 
+# PCP support
+PCP=`${ASK} 'Disable PCP support? (y/n)' "--disable-pcp" "pcp"`
+if [ "${PCP}" = "y" ]; then
+	PCP="--disable-pcp "
+else
+	PCP=""
+	echo "Parameter --disable-pcp is NOT set"
+fi
+
 # Data history to keep by sa2
 HISTORY=`${ASK} 'Number of daily data files to keep:' "history" "history"`
 if [ "${HISTORY}" != "" ]; then
 	HISTORY="history=${HISTORY} "
+fi
+
+# Random delay before sa2 script generates its reports files
+DELAY_RANGE=`${ASK} 'Maximum delay in seconds to wait before sa2 script runs:' "delay_range" "delay_range"`
+if [ "${DELAY_RANGE}" != "" ]; then
+	DELAY_RANGE="delay_range=${DELAY_RANGE} "
 fi
 
 # Delay after which datafiles are to be compressed
@@ -108,6 +129,17 @@ then
 	CRON_OWNER=`${ASK} 'Crontab owner:' "cron_owner" "cron_owner"`
 	if [ "${CRON_OWNER}" != "" ]; then
 		CRON="${CRON}cron_owner=${CRON_OWNER} "
+	fi
+fi
+
+if [ "${CRON}" != "" ];
+then
+	USE_CROND=`${ASK} 'Use standard cron daemon? (y/n)' "--enable-use-crond" "use-crond"`
+	if [ "${USE_CROND}" = "y" ]; then
+		USE_CROND="--enable-use-crond "
+	else
+		USE_CROND=""
+		echo "Parameter --enable-use-crond is NOT set"
 	fi
 fi
 
@@ -159,12 +191,12 @@ then
 fi
 
 # Compress manual pages
-COMPRESSMANPG=`${ASK} 'Compress manual pages? (y/n)' "--enable-compress-manpg" "compress-manpg"`
+COMPRESSMANPG=`${ASK} 'Do not compress manual pages? (y/n)' "--disable-compress-manpg" "compress-manpg"`
 if [ "${COMPRESSMANPG}" = "y" ]; then
-	COMPRESSMANPG="--enable-compress-manpg "
+	COMPRESSMANPG="--disable-compress-manpg "
 else
 	COMPRESSMANPG=""
-	echo "Parameter --enable-compress-manpg is NOT set"
+	echo "Parameter --disable-compress-manpg is NOT set"
 fi
 
 # Install documentation
@@ -195,17 +227,18 @@ else
 fi
 
 echo
-echo -n "./configure ${PREFIX}${SA_LIB_DIR}${SA_DIR}${SYSCONFIG_DIR}${CLEAN_SA_DIR}${NLS} \
-${HISTORY}${COMPRESSAFTER}${MAN}${IGNORE_FILE_ATTR}${CRON}${RCDIR}"
+echo -n "./configure ${PREFIX}${SA_LIB_DIR}${SA_DIR}${SYSCONFIG_DIR}${SYSCONFIG_FILE} \
+${CLEAN_SA_DIR}${NLS}${HISTORY}${DELAY_RANGE}${COMPRESSAFTER}${MAN}${IGNORE_FILE_ATTR} \
+${CRON}${USE_CROND}${RCDIR}"
 if [ "${SADC_OPT}" != "" ];
 then
 	echo -n "sadc_options=\"${SADC_OPT}\""
 fi
-echo "${COMPRESSMANPG}${INSTALL_DOC}${DEBUGINFO}${SENSORS}${STRIP}${COPY_ONLY}"
+echo "${COMPRESSMANPG}${INSTALL_DOC}${DEBUGINFO}${SENSORS}${PCP}${STRIP}${COPY_ONLY}"
 echo
 
-./configure ${PREFIX}${SA_LIB_DIR}${SA_DIR}${SYSCONFIG_DIR}${CLEAN_SA_DIR}${NLS} \
-${HISTORY}${COMPRESSAFTER}${MAN}${IGNORE_FILE_ATTR}${CRON}${RCDIR} \
+./configure ${PREFIX}${SA_LIB_DIR}${SA_DIR}${SYSCONFIG_DIR}${SYSCONFIG_FILE} \
+${CLEAN_SA_DIR}${NLS} \
+${HISTORY}${DELAY_RANGE}${COMPRESSAFTER}${MAN}${IGNORE_FILE_ATTR}${CRON}${USE_CROND}${RCDIR} \
 sadc_options="${SADC_OPT}" ${COMPRESSMANPG}${INSTALL_DOC}${DEBUGINFO}${SENSORS} \
-${STRIP}${COPY_ONLY}
-
+${PCP}${STRIP}${COPY_ONLY}

@@ -1,6 +1,6 @@
 /*
  * rd_stats.c: Read system statistics
- * (C) 1999-2018 by Sebastien GODARD (sysstat <at> orange.fr)
+ * (C) 1999-2020 by Sebastien GODARD (sysstat <at> orange.fr)
  *
  ***************************************************************************
  * This program is free software; you can redistribute it and/or modify it *
@@ -40,6 +40,14 @@
 #else
 #define _(string) (string)
 #endif
+
+/* Generic PSI structure */
+struct stats_psi {
+	unsigned long long total;
+	unsigned long	   avg10;
+	unsigned long	   avg60;
+	unsigned long	   avg300;
+};
 
 /*
  ***************************************************************************
@@ -369,20 +377,17 @@ void read_uptime(unsigned long long *uptime)
 void compute_ext_disk_stats(struct stats_disk *sdc, struct stats_disk *sdp,
 			    unsigned long long itv, struct ext_disk_stats *xds)
 {
-	double tput
-		= ((double) (sdc->nr_ios - sdp->nr_ios)) * 100 / itv;
-
 	xds->util  = S_VALUE(sdp->tot_ticks, sdc->tot_ticks, itv);
-	xds->svctm = tput ? xds->util / tput : 0.0;
 	/*
 	 * Kernel gives ticks already in milliseconds for all platforms
 	 * => no need for further scaling.
+	 * Origin (unmerged) flush operations are counted as writes.
 	 */
 	xds->await = (sdc->nr_ios - sdp->nr_ios) ?
-		((sdc->rd_ticks - sdp->rd_ticks) + (sdc->wr_ticks - sdp->wr_ticks)) /
+		((sdc->rd_ticks - sdp->rd_ticks) + (sdc->wr_ticks - sdp->wr_ticks) + (sdc->dc_ticks - sdp->dc_ticks)) /
 		((double) (sdc->nr_ios - sdp->nr_ios)) : 0.0;
 	xds->arqsz = (sdc->nr_ios - sdp->nr_ios) ?
-		((sdc->rd_sect - sdp->rd_sect) + (sdc->wr_sect - sdp->wr_sect)) /
+		((sdc->rd_sect - sdp->rd_sect) + (sdc->wr_sect - sdp->wr_sect) + (sdc->dc_sect - sdp->dc_sect)) /
 		((double) (sdc->nr_ios - sdp->nr_ios)) : 0.0;
 }
 
@@ -435,11 +440,25 @@ unsigned long long get_per_cpu_interval(struct stats_cpu *scc,
 	 * value was greater than ULLONG_MAX - 0x7ffff (the counter probably
 	 * overflew).
 	 */
+	if ((scc->cpu_iowait < scp->cpu_iowait) && (scp->cpu_iowait < (ULLONG_MAX - 0x7ffff))) {
+		/*
+		 * The iowait value reported by the kernel can also decrement as
+		 * a result of inaccurate iowait tracking. Waiting on IO can be
+		 * first accounted as iowait but then instead as idle.
+		 * Therefore if the idle value during the same period did not
+		 * decrease then consider this is a problem with the iowait
+		 * reporting and correct the previous value according to the new
+		 * reading. Otherwise, treat this as CPU coming back online.
+		 */
+		if ((scc->cpu_idle > scp->cpu_idle) || (scp->cpu_idle >= (ULLONG_MAX - 0x7ffff))) {
+			scp->cpu_iowait = scc->cpu_iowait;
+		}
+		else {
+			scp->cpu_iowait = 0;
+		}
+	}
 	if ((scc->cpu_idle < scp->cpu_idle) && (scp->cpu_idle < (ULLONG_MAX - 0x7ffff))) {
 		scp->cpu_idle = 0;
-	}
-	if ((scc->cpu_iowait < scp->cpu_iowait) && (scp->cpu_iowait < (ULLONG_MAX - 0x7ffff))) {
-		scp->cpu_iowait = 0;
 	}
 
 	/*
@@ -726,27 +745,42 @@ __nr_t read_diskstats_io(struct stats_io *st_io)
 	char line[1024];
 	char dev_name[MAX_NAME_LEN];
 	unsigned int major, minor;
-	unsigned long rd_ios, wr_ios, rd_sec, wr_sec;
+	unsigned long rd_ios, wr_ios, dc_ios;
+	unsigned long rd_sec, wr_sec, dc_sec;
 
 	if ((fp = fopen(DISKSTATS, "r")) == NULL)
 		return 0;
 
 	while (fgets(line, sizeof(line), fp) != NULL) {
 
-		if (sscanf(line, "%u %u %s %lu %*u %lu %*u %lu %*u %lu",
-			   &major, &minor, dev_name,
-			   &rd_ios, &rd_sec, &wr_ios, &wr_sec) == 7) {
+		/* Discard I/O stats may be not available */
+		dc_ios = dc_sec = 0;
 
-			if (is_device(dev_name, IGNORE_VIRTUAL_DEVICES)) {
+		if (sscanf(line,
+			   "%u %u %s "
+			   "%lu %*u %lu %*u "
+			   "%lu %*u %lu %*u "
+			   "%*u %*u %*u "
+			   "%lu %*u %lu",
+			   &major, &minor, dev_name,
+			   &rd_ios, &rd_sec,
+			   &wr_ios, &wr_sec,
+			   &dc_ios, &dc_sec) >= 7) {
+
+			if (is_device(SLASH_SYS, dev_name, IGNORE_VIRTUAL_DEVICES)) {
 				/*
 				 * OK: It's a (real) device and not a partition.
 				 * Note: Structure should have been initialized first!
 				 */
-				st_io->dk_drive      += (unsigned long long) rd_ios + (unsigned long long) wr_ios;
+				st_io->dk_drive      += (unsigned long long) rd_ios +
+							(unsigned long long) wr_ios +
+							(unsigned long long) dc_ios;
 				st_io->dk_drive_rio  += rd_ios;
 				st_io->dk_drive_rblk += rd_sec;
 				st_io->dk_drive_wio  += wr_ios;
 				st_io->dk_drive_wblk += wr_sec;
+				st_io->dk_drive_dio  += dc_ios;
+				st_io->dk_drive_dblk += dc_sec;
 			}
 		}
 	}
@@ -780,8 +814,9 @@ __nr_t read_diskstats_disk(struct stats_disk *st_disk, __nr_t nr_alloc,
 	char line[1024];
 	char dev_name[MAX_NAME_LEN];
 	struct stats_disk *st_disk_i;
-	unsigned int major, minor, rd_ticks, wr_ticks, tot_ticks, rq_ticks;
-	unsigned long rd_ios, wr_ios, rd_sec, wr_sec;
+	unsigned int major, minor, rd_ticks, wr_ticks, dc_ticks, tot_ticks, rq_ticks, part_nr;
+	unsigned long rd_ios, wr_ios, dc_ios, rd_sec, wr_sec, dc_sec;
+	unsigned long long wwn[2];
 	__nr_t dsk_read = 0;
 
 	if ((fp = fopen(DISKSTATS, "r")) == NULL)
@@ -789,16 +824,25 @@ __nr_t read_diskstats_disk(struct stats_disk *st_disk, __nr_t nr_alloc,
 
 	while (fgets(line, sizeof(line), fp) != NULL) {
 
-		if (sscanf(line, "%u %u %s %lu %*u %lu %u %lu %*u %lu"
-			   " %u %*u %u %u",
-			   &major, &minor, dev_name,
-			   &rd_ios, &rd_sec, &rd_ticks, &wr_ios, &wr_sec, &wr_ticks,
-			   &tot_ticks, &rq_ticks) == 11) {
+		/* Discard I/O stats may be not available */
+		dc_ios = dc_sec = dc_ticks = 0;
 
-			if (!rd_ios && !wr_ios)
+		if (sscanf(line,
+			   "%u %u %s "
+			   "%lu %*u %lu %u "
+			   "%lu %*u %lu %u "
+			   "%*u %u %u "
+			   "%lu %*u %lu %u",
+			   &major, &minor, dev_name,
+			   &rd_ios, &rd_sec, &rd_ticks,
+			   &wr_ios, &wr_sec, &wr_ticks,
+			   &tot_ticks, &rq_ticks,
+			   &dc_ios, &dc_sec, &dc_ticks) >= 11) {
+
+			if (!rd_ios && !wr_ios && !dc_ios)
 				/* Unused device: Ignore it */
 				continue;
-			if (read_part || is_device(dev_name, ACCEPT_VIRTUAL_DEVICES)) {
+			if (read_part || is_device(SLASH_SYS, dev_name, ACCEPT_VIRTUAL_DEVICES)) {
 
 				if (dsk_read + 1 > nr_alloc) {
 					dsk_read = -1;
@@ -808,13 +852,26 @@ __nr_t read_diskstats_disk(struct stats_disk *st_disk, __nr_t nr_alloc,
 				st_disk_i = st_disk + dsk_read++;
 				st_disk_i->major     = major;
 				st_disk_i->minor     = minor;
-				st_disk_i->nr_ios    = (unsigned long long) rd_ios + (unsigned long long) wr_ios;
+				st_disk_i->nr_ios    = (unsigned long long) rd_ios +
+						       (unsigned long long) wr_ios +
+						       (unsigned long long) dc_ios;
 				st_disk_i->rd_sect   = rd_sec;
 				st_disk_i->wr_sect   = wr_sec;
+				st_disk_i->dc_sect   = dc_sec;
 				st_disk_i->rd_ticks  = rd_ticks;
 				st_disk_i->wr_ticks  = wr_ticks;
+				st_disk_i->dc_ticks  = dc_ticks;
 				st_disk_i->tot_ticks = tot_ticks;
 				st_disk_i->rq_ticks  = rq_ticks;
+
+				if (get_wwnid_from_pretty(dev_name, wwn, &part_nr) < 0) {
+					st_disk_i->wwn[0] = 0ULL;
+				}
+				else {
+					st_disk_i->wwn[0] = wwn[0];
+					st_disk_i->wwn[1] = wwn[1];
+					st_disk_i->part_nr = part_nr;
+				}
 			}
 		}
 	}
@@ -1005,8 +1062,8 @@ __nr_t read_net_dev(struct stats_net_dev *st_net_dev, __nr_t nr_alloc)
 			}
 
 			st_net_dev_i = st_net_dev + dev_read++;
-			strncpy(iface, line, MINIMUM(pos, MAX_IFACE_LEN - 1));
-			iface[MINIMUM(pos, MAX_IFACE_LEN - 1)] = '\0';
+			strncpy(iface, line, MINIMUM(pos, sizeof(iface) - 1));
+			iface[MINIMUM(pos, sizeof(iface) - 1)] = '\0';
 			sscanf(iface, "%s", st_net_dev_i->interface); /* Skip heading spaces */
 			sscanf(line + pos + 1, "%llu %llu %*u %*u %*u %*u %llu %llu %llu %llu "
 			       "%*u %*u %*u %*u %*u %llu",
@@ -1128,8 +1185,8 @@ __nr_t read_net_edev(struct stats_net_edev *st_net_edev, __nr_t nr_alloc)
 			}
 
 			st_net_edev_i = st_net_edev + dev_read++;
-			strncpy(iface, line, MINIMUM(pos, MAX_IFACE_LEN - 1));
-			iface[MINIMUM(pos, MAX_IFACE_LEN - 1)] = '\0';
+			strncpy(iface, line, MINIMUM(pos, sizeof(iface) - 1));
+			iface[MINIMUM(pos, sizeof(iface) - 1)] = '\0';
 			sscanf(iface, "%s", st_net_edev_i->interface); /* Skip heading spaces */
 			sscanf(line + pos + 1, "%*u %*u %llu %llu %llu %llu %*u %*u %*u %*u "
 			       "%llu %llu %llu %llu %llu",
@@ -1521,6 +1578,7 @@ __nr_t read_net_eicmp(struct stats_net_eicmp *st_net_eicmp)
 {
 	FILE *fp;
 	char line[1024];
+	static char format[256] = "";
 	int sw = FALSE;
 
 	if ((fp = fopen(NET_SNMP, "r")) == NULL)
@@ -1530,8 +1588,7 @@ __nr_t read_net_eicmp(struct stats_net_eicmp *st_net_eicmp)
 
 		if (!strncmp(line, "Icmp:", 5)) {
 			if (sw) {
-				sscanf(line + 5, "%*u %lu %lu %lu %lu %lu %lu %*u %*u "
-				       "%*u %*u %*u %*u %*u %lu %lu %lu %lu %lu %lu",
+				sscanf(line + 5, format,
 				       &st_net_eicmp->InErrors,
 				       &st_net_eicmp->InDestUnreachs,
 				       &st_net_eicmp->InTimeExcds,
@@ -1548,6 +1605,25 @@ __nr_t read_net_eicmp(struct stats_net_eicmp *st_net_eicmp)
 				break;
 			}
 			else {
+				if (!strlen(format)) {
+					if (strstr(line, "InCsumErrors")) {
+						/*
+						 * New format: InCsumErrors field exists at position #3.
+						 * Capture: 2,4,5,6,7,8,16,17,18,19,20,21
+						 */
+						strcpy(format, "%*u %lu %*u %lu %lu %lu %lu %lu %*u %*u "
+							       "%*u %*u %*u %*u %*u %lu %lu %lu %lu %lu %lu");
+					}
+					else {
+						/*
+						 * Old format: InCsumErrors field doesn't exist.
+						 * Capture: 2,3,4,5,6,7,15,16,17,18,19,20
+						 */
+						strcpy(format, "%*u %lu %lu %lu %lu %lu %lu %*u %*u "
+							       "%*u %*u %*u %*u %*u %lu %lu %lu %lu %lu %lu");
+
+					}
+				}
 				sw = TRUE;
 			}
 		}
@@ -2153,6 +2229,14 @@ __nr_t read_meminfo_huge(struct stats_huge *st_huge)
 			/* Read the number of free huge pages */
 			sscanf(line + 15, "%llu", &st_huge->frhkb);
 		}
+		else if (!strncmp(line, "HugePages_Rsvd:", 15)) {
+			/* Read the number of reserved huge pages */
+			sscanf(line + 15, "%llu", &st_huge->rsvdhkb);
+		}
+		else if (!strncmp(line, "HugePages_Surp:", 15)) {
+			/* Read the number of surplus huge pages */
+			sscanf(line + 15, "%llu", &st_huge->surphkb);
+		}
 		else if (!strncmp(line, "Hugepagesize:", 13)) {
 			/* Read the default size of a huge page in kB */
 			sscanf(line + 13, "%lu", &szhkb);
@@ -2164,6 +2248,9 @@ __nr_t read_meminfo_huge(struct stats_huge *st_huge)
 	/* We want huge pages stats in kB and not expressed in a number of pages */
 	st_huge->tlhkb *= szhkb;
 	st_huge->frhkb *= szhkb;
+	st_huge->rsvdhkb *= szhkb;
+	st_huge->surphkb *= szhkb;
+
 	return 1;
 }
 
@@ -2429,9 +2516,9 @@ __nr_t read_bus_usb_dev(struct stats_pwr_usb *st_pwr_usb, __nr_t nr_alloc)
 __nr_t read_filesystem(struct stats_filesystem *st_filesystem, __nr_t nr_alloc)
 {
 	FILE *fp;
-	char line[512], fs_name[128], mountp[256];
-	int skip = 0, skip_next = 0;
-	char *pos = 0;
+	char line[512], fs_name[MAX_FS_LEN], mountp[256], type[128];
+	int skip = 0, skip_next = 0, fs;
+	char *pos = 0, *pos2 = 0;
 	__nr_t fs_read = 0;
 	struct stats_filesystem *st_filesystem_i;
 	struct statvfs buf;
@@ -2456,16 +2543,30 @@ __nr_t read_filesystem(struct stats_filesystem *st_filesystem, __nr_t nr_alloc)
 			if (pos == NULL)
 				continue;
 
+			/*
+			 * Find second field separator position,
+			 * read filesystem type,
+			 * if filesystem type is autofs, skip it
+			*/
+			pos2 = strchr(pos + 1, ' ');
+			if (pos2 == NULL)
+				continue;
+
+			sscanf(pos2 + 1, "%127s", type);
+			if(strcmp(type, "autofs") == 0)
+				continue;
+
 			/* Read current filesystem name */
 			sscanf(line, "%127s", fs_name);
 			/*
 			 * And now read the corresponding mount point.
-			 * Read fs name and mount point in two distinct operations.
+			 * Read fs name and mount point in two distinct operations,
+			 * using '@pos + 1' position value for the mount point.
 			 * Indeed, if fs name length is greater than 127 chars,
-			 * previous scanf() will read only the first 127 chars, and
-			 * mount point name will be read using the remaining chars
-			 * from the fs name. This will result in a bogus name
-			 * and following statvfs() function will always fail.
+			 * previous scanf() would read only the first 127 chars, and
+			 * mount point name would be read using the remaining chars
+			 * from the fs name. This would result in a bogus name
+			 * and following statvfs() function would always fail.
 			 */
 			sscanf(pos + 1, "%255s", mountp);
 
@@ -2476,7 +2577,19 @@ __nr_t read_filesystem(struct stats_filesystem *st_filesystem, __nr_t nr_alloc)
 			 * It's important to have read the whole mount point name
 			 * for statvfs() to work properly (see above).
 			 */
-			if ((statvfs(mountp, &buf) < 0) || (!buf.f_blocks))
+			if ((__statvfs(mountp, &buf) < 0) || (!buf.f_blocks))
+				continue;
+
+			/* Check if it's a duplicate entry */
+			fs = fs_read - 1;
+			while (fs >= 0) {
+				st_filesystem_i = st_filesystem + fs;
+				if (!strcmp(st_filesystem_i->fs_name, fs_name))
+					break;
+				fs--;
+			}
+			if (fs >= 0)
+				/* Duplicate entry found! Ignore current entry */
 				continue;
 
 			if (fs_read + 1 > nr_alloc) {
@@ -2490,10 +2603,10 @@ __nr_t read_filesystem(struct stats_filesystem *st_filesystem, __nr_t nr_alloc)
 			st_filesystem_i->f_bavail = (unsigned long long) buf.f_bavail * (unsigned long long) buf.f_frsize;
 			st_filesystem_i->f_files  = (unsigned long long) buf.f_files;
 			st_filesystem_i->f_ffree  = (unsigned long long) buf.f_ffree;
-			strncpy(st_filesystem_i->fs_name, fs_name, MAX_FS_LEN);
-			st_filesystem_i->fs_name[MAX_FS_LEN - 1] = '\0';
-			strncpy(st_filesystem_i->mountp, mountp, MAX_FS_LEN);
-			st_filesystem_i->mountp[MAX_FS_LEN - 1] = '\0';
+			strncpy(st_filesystem_i->fs_name, fs_name, sizeof(st_filesystem_i->fs_name));
+			st_filesystem_i->fs_name[sizeof(st_filesystem_i->fs_name) - 1] = '\0';
+			strncpy(st_filesystem_i->mountp, mountp, sizeof(st_filesystem_i->mountp));
+			st_filesystem_i->mountp[sizeof(st_filesystem_i->mountp) - 1] = '\0';
 		}
 	}
 
@@ -2529,14 +2642,14 @@ __nr_t read_fchost(struct stats_fchost *st_fc, __nr_t nr_alloc)
 	unsigned long rx_frames, tx_frames, rx_words, tx_words;
 
 	/* Each host, if present, will have its own hostX entry within SYSFS_FCHOST */
-	if ((dir = opendir(SYSFS_FCHOST)) == NULL)
+	if ((dir = __opendir(SYSFS_FCHOST)) == NULL)
 		return 0; /* No FC hosts */
 
 	/*
 	 * Read each of the counters via sysfs, where they are
 	 * returned as hex values (e.g. 0x72400).
 	 */
-	while ((drd = readdir(dir)) != NULL) {
+	while ((drd = __readdir(dir)) != NULL) {
 		rx_frames = tx_frames = rx_words = tx_words = 0;
 
 		if (!strncmp(drd->d_name, "host", 4)) {
@@ -2587,12 +2700,12 @@ __nr_t read_fchost(struct stats_fchost *st_fc, __nr_t nr_alloc)
 			st_fc_i->f_txframes = tx_frames;
 			st_fc_i->f_rxwords  = rx_words;
 			st_fc_i->f_txwords  = tx_words;
-			memcpy(st_fc_i->fchost_name, drd->d_name, MAX_FCH_LEN);
-			st_fc_i->fchost_name[MAX_FCH_LEN - 1] = '\0';
+			memcpy(st_fc_i->fchost_name, drd->d_name, sizeof(st_fc_i->fchost_name));
+			st_fc_i->fchost_name[sizeof(st_fc_i->fchost_name) - 1] = '\0';
 		}
 	}
 
-	closedir(dir);
+	__closedir(dir);
 	return fch_read;
 }
 
@@ -2611,6 +2724,7 @@ __nr_t read_fchost(struct stats_fchost *st_fc, __nr_t nr_alloc)
  *
  * RETURNS:
  * 1 if stats have been sucessfully read, or 0 otherwise.
+ * Returns -1 if the buffer was too small and needs to be reallocated.
  ***************************************************************************
  */
 int read_softnet(struct stats_softnet *st_softnet, __nr_t nr_alloc,
@@ -2619,21 +2733,27 @@ int read_softnet(struct stats_softnet *st_softnet, __nr_t nr_alloc,
 	FILE *fp;
 	struct stats_softnet *st_softnet_i;
 	char line[1024];
-	int cpu;
+	int cpu = 1, rc = 1;
 
 	/* Open /proc/net/softnet_stat file */
 	if ((fp = fopen(NET_SOFTNET, "r")) == NULL)
 		return 0;
 
-	for (cpu = 1; cpu < nr_alloc; cpu++) {
-		if (!(online_cpu_bitmap[(cpu - 1) >> 3] & (1 << ((cpu - 1) & 0x07))))
-			/* CPU is offline */
-			continue;
+	while (fgets(line, sizeof(line), fp) != NULL) {
 
-		if (fgets(line, sizeof(line), fp) == NULL)
+		while ((!(online_cpu_bitmap[(cpu - 1) >> 3] & (1 << ((cpu - 1) & 0x07)))) && (cpu <= NR_CPUS + 1)) {
+			cpu++;
+		}
+		if (cpu > NR_CPUS + 1)
+			/* Should never happen */
+			return 0;
+
+		if (cpu + 1 > nr_alloc) {
+			rc = -1;
 			break;
+		}
 
-		st_softnet_i = st_softnet + cpu;
+		st_softnet_i = st_softnet + cpu++;
 		sscanf(line, "%x %x %x %*x %*x %*x %*x %*x %*x %x %x",
 		       &st_softnet_i->processed,
 		       &st_softnet_i->dropped,
@@ -2643,6 +2763,166 @@ int read_softnet(struct stats_softnet *st_softnet, __nr_t nr_alloc,
 	}
 
 	fclose(fp);
+	return rc;
+}
+
+/*
+ ***************************************************************************
+ * Read pressure-stall information from a file located in /proc/pressure
+ * directory.
+ *
+ * IN:
+ * @st_psi	Structure where stats will be saved.
+ * @filename	File located in /proc/pressure directory to read.
+ * @token	"some" or "full". Indicate which line shall be read in file.
+ *
+ * OUT:
+ * @st_psi	Structure with statistics.
+ *
+ * RETURNS:
+ * 1 on success, 0 otherwise.
+ ***************************************************************************
+ */
+int read_psi_stub(struct stats_psi *st_psi, char *filename, char *token)
+{
+	FILE *fp;
+	char line[8192];
+	unsigned long psi_tmp[3];
+	int rc = 0, len;
+
+	if ((fp = fopen(filename, "r")) == NULL)
+		return 0;
+
+	len = strlen(token);
+	while (fgets(line, sizeof(line), fp) != NULL) {
+
+		if (!strncmp(line, token, len)) {
+			/* Read stats */
+			rc = sscanf(line + len + 1, "avg10=%lu.%lu avg60=%lu.%lu avg300=%lu.%lu total=%llu",
+				    &psi_tmp[0], &st_psi->avg10,
+				    &psi_tmp[1], &st_psi->avg60,
+				    &psi_tmp[2], &st_psi->avg300,
+				    &st_psi->total);
+		}
+	}
+
+	fclose(fp);
+
+	if (rc < 7)
+		return 0;
+
+	st_psi->avg10  += psi_tmp[0] * 100;
+	st_psi->avg60  += psi_tmp[1] * 100;
+	st_psi->avg300 += psi_tmp[2] * 100;
+
+	return 1;
+}
+
+/*
+ ***************************************************************************
+ * Read pressure-stall CPU information.
+ *
+ * IN:
+ * @st_psi_cpu	Structure where stats will be saved.
+ *
+ * OUT:
+ * @st_psi_cpu	Structure with statistics.
+ *
+ * RETURNS:
+ * 1 on success, 0 otherwise.
+ ***************************************************************************
+ */
+__nr_t read_psicpu(struct stats_psi_cpu *st_psi_cpu)
+{
+	struct stats_psi st_psi;
+
+	/* Read CPU stats */
+	if (!read_psi_stub(&st_psi, PSI_CPU, "some"))
+		return 0;
+
+	st_psi_cpu->some_acpu_10   = st_psi.avg10;
+	st_psi_cpu->some_acpu_60   = st_psi.avg60;
+	st_psi_cpu->some_acpu_300  = st_psi.avg300;
+	st_psi_cpu->some_cpu_total = st_psi.total;
+
+	return 1;
+}
+
+/*
+ ***************************************************************************
+ * Read pressure-stall I/O information.
+ *
+ * IN:
+ * @st_psi_io	Structure where stats will be saved.
+ *
+ * OUT:
+ * @st_psi_io	Structure with statistics.
+ *
+ * RETURNS:
+ * 1 on success, 0 otherwise.
+ ***************************************************************************
+ */
+__nr_t read_psiio(struct stats_psi_io *st_psi_io)
+{
+	struct stats_psi st_psi;
+
+	/* Read I/O "some" stats */
+	if (!read_psi_stub(&st_psi, PSI_IO, "some"))
+		return 0;
+
+	st_psi_io->some_aio_10   = st_psi.avg10;
+	st_psi_io->some_aio_60   = st_psi.avg60;
+	st_psi_io->some_aio_300  = st_psi.avg300;
+	st_psi_io->some_io_total = st_psi.total;
+
+	/* Read I/O "full" stats */
+	if (!read_psi_stub(&st_psi, PSI_IO, "full"))
+		return 0;
+
+	st_psi_io->full_aio_10   = st_psi.avg10;
+	st_psi_io->full_aio_60   = st_psi.avg60;
+	st_psi_io->full_aio_300  = st_psi.avg300;
+	st_psi_io->full_io_total = st_psi.total;
+
+	return 1;
+}
+
+/*
+ ***************************************************************************
+ * Read pressure-stall memory information.
+ *
+ * IN:
+ * @st_psi_mem	Structure where stats will be saved.
+ *
+ * OUT:
+ * @st_psi_mem	Structure with statistics.
+ *
+ * RETURNS:
+ * 1 on success, 0 otherwise.
+ ***************************************************************************
+ */
+__nr_t read_psimem(struct stats_psi_mem *st_psi_mem)
+{
+	struct stats_psi st_psi;
+
+	/* Read memory "some" stats */
+	if (!read_psi_stub(&st_psi, PSI_MEM, "some"))
+		return 0;
+
+	st_psi_mem->some_amem_10   = st_psi.avg10;
+	st_psi_mem->some_amem_60   = st_psi.avg60;
+	st_psi_mem->some_amem_300  = st_psi.avg300;
+	st_psi_mem->some_mem_total = st_psi.total;
+
+	/* Read memory "full" stats */
+	if (!read_psi_stub(&st_psi, PSI_MEM, "full"))
+		return 0;
+
+	st_psi_mem->full_amem_10   = st_psi.avg10;
+	st_psi_mem->full_amem_60   = st_psi.avg60;
+	st_psi_mem->full_amem_300  = st_psi.avg300;
+	st_psi_mem->full_mem_total = st_psi.total;
+
 	return 1;
 }
 

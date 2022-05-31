@@ -1,6 +1,6 @@
 /*
  * sar and sadf common routines.
- * (C) 1999-2018 by Sebastien GODARD (sysstat <at> orange.fr)
+ * (C) 1999-2020 by Sebastien GODARD (sysstat <at> orange.fr)
  *
  ***************************************************************************
  * This program is free software; you can redistribute it and/or modify it *
@@ -28,6 +28,7 @@
 #include <unistd.h>	/* For STDOUT_FILENO, among others */
 #include <dirent.h>
 #include <fcntl.h>
+#include <limits.h>
 #include <libgen.h>
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -52,6 +53,7 @@ extern unsigned int dm_major;
 unsigned int hdr_types_nr[] = {FILE_HEADER_ULL_NR, FILE_HEADER_UL_NR, FILE_HEADER_U_NR};
 unsigned int act_types_nr[] = {FILE_ACTIVITY_ULL_NR, FILE_ACTIVITY_UL_NR, FILE_ACTIVITY_U_NR};
 unsigned int rec_types_nr[] = {RECORD_HEADER_ULL_NR, RECORD_HEADER_UL_NR, RECORD_HEADER_U_NR};
+unsigned int extra_desc_types_nr[] = {EXTRA_DESC_ULL_NR, EXTRA_DESC_UL_NR, EXTRA_DESC_U_NR};
 unsigned int nr_types_nr[]  = {0, 0, 1};
 
 /*
@@ -143,28 +145,30 @@ void guess_sa_name(char *sa_dir, struct tm *rectime, int *sa_name)
 	char filename[MAX_FILE_LEN];
 	struct stat sb;
 	time_t sa_mtime;
+	long nsec;
 
 	/* Use saDD by default */
 	*sa_name = 0;
 
 	/* Look for saYYYYMMDD */
-	snprintf(filename, MAX_FILE_LEN,
+	snprintf(filename, sizeof(filename),
 		 "%s/sa%04d%02d%02d", sa_dir,
 		 rectime->tm_year + 1900,
 		 rectime->tm_mon + 1,
 		 rectime->tm_mday);
-	filename[MAX_FILE_LEN - 1] = '\0';
+	filename[sizeof(filename) - 1] = '\0';
 
 	if (stat(filename, &sb) < 0)
 		/* Cannot find or access saYYYYMMDD, so use saDD */
 		return;
 	sa_mtime = sb.st_mtime;
+	nsec = sb.st_mtim.tv_nsec;
 
 	/* Look for saDD */
-	snprintf(filename, MAX_FILE_LEN,
+	snprintf(filename, sizeof(filename),
 		 "%s/sa%02d", sa_dir,
 		 rectime->tm_mday);
-	filename[MAX_FILE_LEN - 1] = '\0';
+	filename[sizeof(filename) - 1] = '\0';
 
 	if (stat(filename, &sb) < 0) {
 		/* Cannot find or access saDD, so use saYYYYMMDD */
@@ -172,7 +176,8 @@ void guess_sa_name(char *sa_dir, struct tm *rectime, int *sa_name)
 		return;
 	}
 
-	if (sa_mtime > sb.st_mtime) {
+	if ((sa_mtime > sb.st_mtime) ||
+	    ((sa_mtime == sb.st_mtime) && (nsec > sb.st_mtim.tv_nsec))) {
 		/* saYYYYMMDD is more recent than saDD, so use it */
 		*sa_name = 1;
 	}
@@ -207,12 +212,12 @@ int set_default_file(char *datafile, int d_off, int sa_name)
 
 	/* Set directory where daily data files will be saved */
 	if (datafile[0]) {
-		strncpy(sa_dir, datafile, MAX_FILE_LEN);
+		strncpy(sa_dir, datafile, sizeof(sa_dir));
 	}
 	else {
-		strncpy(sa_dir, SA_DIR, MAX_FILE_LEN);
+		strncpy(sa_dir, SA_DIR, sizeof(sa_dir));
 	}
-	sa_dir[MAX_FILE_LEN - 1] = '\0';
+	sa_dir[sizeof(sa_dir) - 1] = '\0';
 
 	get_time(&rectime, d_off);
 	if (sa_name < 0) {
@@ -239,6 +244,10 @@ int set_default_file(char *datafile, int d_off, int sa_name)
 	}
 	datafile[MAX_FILE_LEN - 1] = '\0';
 	default_file_used = TRUE;
+
+#ifdef DEBUG
+	fprintf(stderr, "%s: Datafile: %s\n", __FUNCTION__, datafile);
+#endif
 
 	return ((err < 0) || (err >= MAX_FILE_LEN));
 }
@@ -267,17 +276,13 @@ int set_default_file(char *datafile, int d_off, int sa_name)
  */
 int check_alt_sa_dir(char *datafile, int d_off, int sa_name)
 {
-	struct stat sb;
-
-	if (stat(datafile, &sb) == 0) {
-		if (S_ISDIR(sb.st_mode)) {
-			/*
-			 * This is a directory: So append
-			 * the default file name to it.
-			 */
-			set_default_file(datafile, d_off, sa_name);
-			return 1;
-		}
+	if (check_dir(datafile)) {
+		/*
+		 * This is a directory: So append
+		 * the default file name to it.
+		 */
+		set_default_file(datafile, d_off, sa_name);
+		return 1;
 	}
 
 	return 0;
@@ -521,82 +526,6 @@ void reallocate_all_buffers(struct activity *a, __nr_t nr_min)
 }
 
 /*
-  ***************************************************************************
-  * Try to get device real name from sysfs tree.
-  *
-  * IN:
-  * @major	Major number of the device.
-  * @minor	Minor number of the device.
-  *
-  * RETURNS:
-  * The name of the device, which may be the real name (as it appears in /dev)
-  * or NULL.
-  ***************************************************************************
-  */
-char *get_devname_from_sysfs(unsigned int major, unsigned int minor)
-{
-	static char link[32], target[PATH_MAX];
-	char *devname;
-	ssize_t r;
-
-	snprintf(link, 32, "%s/%u:%u", SYSFS_DEV_BLOCK, major, minor);
-
-	/* Get full path to device knowing its major and minor numbers */
-	r = readlink(link, target, PATH_MAX);
-	if (r <= 0 || r >= PATH_MAX) {
-		return (NULL);
-	}
-
-	target[r] = '\0';
-
-	/* Get device name */
-	devname = basename(target);
-	if (!devname || strnlen(devname, FILENAME_MAX) == 0) {
-		return (NULL);
-	}
-
-	return (devname);
-}
-
-/*
- ***************************************************************************
- * Get device real name if possible.
- * Warning: This routine may return a bad name on 2.4 kernels where
- * disk activities are read from /proc/stat.
- *
- * IN:
- * @major	Major number of the device.
- * @minor	Minor number of the device.
- * @pretty	TRUE if the real name of the device (as it appears in /dev)
- * 		should be returned.
- *
- * RETURNS:
- * The name of the device, which may be the real name (as it appears in /dev)
- * or a string with the following format devM-n.
- ***************************************************************************
- */
-char *get_devname(unsigned int major, unsigned int minor, int pretty)
-{
-	static char buf[32];
-	char *name;
-
-	snprintf(buf, 32, "dev%u-%u", major, minor);
-
-	if (!pretty)
-		return (buf);
-
-	name = get_devname_from_sysfs(major, minor);
-	if (name != NULL)
-		return (name);
-
-	name = ioc_name(major, minor);
-	if ((name != NULL) && strcmp(name, K_NODEV))
-		return (name);
-
-	return (buf);
-}
-
-/*
  ***************************************************************************
  * Check if we are close enough to desired interval.
  *
@@ -609,7 +538,7 @@ char *get_devname(unsigned int major, unsigned int minor, int pretty)
  * @interval	Interval of time.
  *
  * RETURNS:
- * 1 if we are actually close enough to desired interval, 0 otherwise.
+ * TRUE if we are actually close enough to desired interval, FALSE otherwise.
  ***************************************************************************
 */
 int next_slice(unsigned long long uptime_ref, unsigned long long uptime,
@@ -633,6 +562,10 @@ int next_slice(unsigned long long uptime_ref, unsigned long long uptime,
 	}
 
 	last_uptime = uptime;
+
+	if (interval == 1)
+		/* Smallest time interval: Always close enough to desired interval */
+		return TRUE;
 
 	/*
 	 * A few notes about the "algorithm" used here to display selected entries
@@ -699,22 +632,34 @@ int decode_timestamp(char timestamp[], struct tstamp *tse)
  * IN:
  * @rectime	Date and time for current sample.
  * @tse		Timestamp used as reference.
+ * @cross_day	TRUE if a new day has been started.
  *
  * RETURNS:
  * A positive value if @rectime is greater than @tse,
  * a negative one otherwise.
  ***************************************************************************
  */
-int datecmp(struct tm *rectime, struct tstamp *tse)
+int datecmp(struct tm *rectime, struct tstamp *tse, int cross_day)
 {
-	if (rectime->tm_hour == tse->tm_hour) {
+	int tm_hour = rectime->tm_hour;
+
+	if (cross_day) {
+		/*
+		 * This is necessary if we want to properly handle something like:
+		 * sar -s time_start -e time_end with
+		 * time_start(day D) > time_end(day D+1)
+		 */
+		tm_hour += 24;
+	}
+
+	if (tm_hour == tse->tm_hour) {
 		if (rectime->tm_min == tse->tm_min)
 			return (rectime->tm_sec - tse->tm_sec);
 		else
 			return (rectime->tm_min - tse->tm_min);
 	}
 	else
-		return (rectime->tm_hour - tse->tm_hour);
+		return (tm_hour - tse->tm_hour);
 }
 
 /*
@@ -801,11 +746,9 @@ void get_itv_value(struct record_header *record_hdr_curr,
  * 		not the time, should be used by the caller.
  ***************************************************************************
  */
-void get_file_timestamp_struct(unsigned int flags, struct tm *rectime,
+void get_file_timestamp_struct(uint64_t flags, struct tm *rectime,
 			       struct file_header *file_hdr)
 {
-	struct tm *loc_t;
-
 	if (PRINT_TRUE_TIME(flags)) {
 		/* Get local time. This is just to fill fields with a default value. */
 		get_time(rectime, 0);
@@ -821,9 +764,7 @@ void get_file_timestamp_struct(unsigned int flags, struct tm *rectime,
 		mktime(rectime);
 	}
 	else {
-		if ((loc_t = localtime((const time_t *) &file_hdr->sa_ust_time)) != NULL) {
-			*rectime = *loc_t;
-		}
+		localtime_r((const time_t *) &file_hdr->sa_ust_time, rectime);
 	}
 }
 
@@ -839,7 +780,7 @@ void get_file_timestamp_struct(unsigned int flags, struct tm *rectime,
  * @rectime	Date and time from file header.
  ***************************************************************************
  */
-void print_report_hdr(unsigned int flags, struct tm *rectime,
+void print_report_hdr(uint64_t flags, struct tm *rectime,
 		      struct file_header *file_hdr)
 {
 
@@ -1047,7 +988,7 @@ int check_net_edev_reg(struct activity *a, int curr, int ref, int pos)
 
 /*
  ***************************************************************************
- * Disks may be registered dynamically (true in /proc/stat file).
+ * Disks may be registered dynamically (true in /proc/diskstats file).
  * This is what we try to guess here.
  *
  * IN:
@@ -1093,10 +1034,14 @@ int check_disk_reg(struct activity *a, int curr, int ref, int pos)
 			 * is that the disk has been unregistered and a new disk inserted.
 			 * If only one or two have decreased then the likelyhood
 			 * is that the counter has simply wrapped.
+			 * Don't take into account a counter if its previous value was 0
+			 * (this may be a read-only device, or a kernel that doesn't
+			 * support discard stats yet...)
 			 */
 			if ((sdc->nr_ios < sdp->nr_ios) &&
-			    (sdc->rd_sect < sdp->rd_sect) &&
-			    (sdc->wr_sect < sdp->wr_sect))
+			    (!sdp->rd_sect || (sdc->rd_sect < sdp->rd_sect)) &&
+			    (!sdp->wr_sect || (sdc->wr_sect < sdp->wr_sect)) &&
+			    (!sdp->dc_sect || (sdc->dc_sect < sdp->dc_sect)))
 				/* Same device registered again */
 				return -2;
 
@@ -1281,27 +1226,35 @@ void swap_struct(unsigned int types_nr[], void *ps, int is64bit)
  *		size of the structure *read from file*.
  * @g_size	Size of the structure expected by current sysstat version.
  * @b_size	Size of the buffer pointed by @ps.
+ *
+ * RETURNS:
+ * -1 if an error has been encountered, or 0 otherwise.
  ***************************************************************************
  */
-void remap_struct(unsigned int gtypes_nr[], unsigned int ftypes_nr[],
-		  void *ps, unsigned int f_size, unsigned int g_size, size_t b_size)
+int remap_struct(unsigned int gtypes_nr[], unsigned int ftypes_nr[],
+		 void *ps, unsigned int f_size, unsigned int g_size, size_t b_size)
 {
 	int d;
 	size_t n;
 
 	/* Sanity check */
 	if (MAP_SIZE(ftypes_nr) > f_size)
-		return;
+		return -1;
 
 	/* Remap [unsigned] long fields */
 	d = gtypes_nr[0] - ftypes_nr[0];
 	if (d) {
+		if (ftypes_nr[0] * ULL_ALIGNMENT_WIDTH < ftypes_nr[0])
+			/* Overflow */
+			return -1;
+
 		n = MINIMUM(f_size - ftypes_nr[0] * ULL_ALIGNMENT_WIDTH,
 			    g_size - gtypes_nr[0] * ULL_ALIGNMENT_WIDTH);
 		if ((ftypes_nr[0] * ULL_ALIGNMENT_WIDTH >= b_size) ||
 		    (gtypes_nr[0] * ULL_ALIGNMENT_WIDTH + n > b_size) ||
 		    (ftypes_nr[0] * ULL_ALIGNMENT_WIDTH + n > b_size))
-			return;
+			return -1;
+
 		memmove(((char *) ps) + gtypes_nr[0] * ULL_ALIGNMENT_WIDTH,
 			((char *) ps) + ftypes_nr[0] * ULL_ALIGNMENT_WIDTH, n);
 		if (d > 0) {
@@ -1312,6 +1265,11 @@ void remap_struct(unsigned int gtypes_nr[], unsigned int ftypes_nr[],
 	/* Remap [unsigned] int fields */
 	d = gtypes_nr[1] - ftypes_nr[1];
 	if (d) {
+		if (gtypes_nr[0] * ULL_ALIGNMENT_WIDTH +
+		    ftypes_nr[1] * UL_ALIGNMENT_WIDTH < ftypes_nr[1])
+			/* Overflow */
+			return -1;
+
 		n = MINIMUM(f_size - ftypes_nr[0] * ULL_ALIGNMENT_WIDTH
 				   - ftypes_nr[1] * UL_ALIGNMENT_WIDTH,
 			    g_size - gtypes_nr[0] * ULL_ALIGNMENT_WIDTH
@@ -1322,7 +1280,8 @@ void remap_struct(unsigned int gtypes_nr[], unsigned int ftypes_nr[],
 		     gtypes_nr[1] * UL_ALIGNMENT_WIDTH + n > b_size) ||
 		    (gtypes_nr[0] * ULL_ALIGNMENT_WIDTH +
 		     ftypes_nr[1] * UL_ALIGNMENT_WIDTH + n > b_size))
-			return;
+			return -1;
+
 		memmove(((char *) ps) + gtypes_nr[0] * ULL_ALIGNMENT_WIDTH
 				      + gtypes_nr[1] * UL_ALIGNMENT_WIDTH,
 			((char *) ps) + gtypes_nr[0] * ULL_ALIGNMENT_WIDTH
@@ -1336,6 +1295,12 @@ void remap_struct(unsigned int gtypes_nr[], unsigned int ftypes_nr[],
 	/* Remap possible fields (like strings of chars) following int fields */
 	d = gtypes_nr[2] - ftypes_nr[2];
 	if (d) {
+		if (gtypes_nr[0] * ULL_ALIGNMENT_WIDTH +
+		    gtypes_nr[1] * UL_ALIGNMENT_WIDTH +
+		    ftypes_nr[2] * U_ALIGNMENT_WIDTH < ftypes_nr[2])
+			/* Overflow */
+			return -1;
+
 		n = MINIMUM(f_size - ftypes_nr[0] * ULL_ALIGNMENT_WIDTH
 				   - ftypes_nr[1] * UL_ALIGNMENT_WIDTH
 				   - ftypes_nr[2] * U_ALIGNMENT_WIDTH,
@@ -1351,7 +1316,8 @@ void remap_struct(unsigned int gtypes_nr[], unsigned int ftypes_nr[],
 		    (gtypes_nr[0] * ULL_ALIGNMENT_WIDTH +
 		     gtypes_nr[1] * UL_ALIGNMENT_WIDTH +
 		     ftypes_nr[2] * U_ALIGNMENT_WIDTH + n > b_size))
-			return;
+			return -1;
+
 		memmove(((char *) ps) + gtypes_nr[0] * ULL_ALIGNMENT_WIDTH
 				      + gtypes_nr[1] * UL_ALIGNMENT_WIDTH
 				      + gtypes_nr[2] * U_ALIGNMENT_WIDTH,
@@ -1365,6 +1331,7 @@ void remap_struct(unsigned int gtypes_nr[], unsigned int ftypes_nr[],
 			       0, d * U_ALIGNMENT_WIDTH);
 		}
 	}
+	return 0;
 }
 
 /*
@@ -1377,12 +1344,16 @@ void remap_struct(unsigned int gtypes_nr[], unsigned int ftypes_nr[],
  * @size	Number of bytes to read.
  * @mode	If set to HARD_SIZE, indicate that an EOF should be considered
  * 		as an error.
+ * @oneof	Set to UEOF_CONT if an unexpected end of file should not make
+ *		sadf stop. Default behavior is to stop on unexpected EOF.
  *
  * RETURNS:
- * 1 if EOF has been reached, 0 otherwise.
+ * 1 if EOF has been reached,
+ * 2 if an unexpected EOF has been reached (and sadf was told to continue),
+ * 0 otherwise.
  ***************************************************************************
  */
-int sa_fread(int ifd, void *buffer, size_t size, int mode)
+int sa_fread(int ifd, void *buffer, size_t size, int mode, int oneof)
 {
 	ssize_t n;
 
@@ -1398,9 +1369,71 @@ int sa_fread(int ifd, void *buffer, size_t size, int mode)
 
 	if (n < size) {
 		fprintf(stderr, _("End of system activity file unexpected\n"));
+		if (oneof == UEOF_CONT)
+			return 2;
 		close(ifd);
 		exit(2);
 	}
+
+	return 0;
+}
+
+/*
+ ***************************************************************************
+ * Skip unknown extra structures present in file.
+ *
+ * IN:
+ * @ifd		System activity data file descriptor.
+ * @endian_mismatch
+ *		TRUE if file's data don't match current machine's endianness.
+ * @arch_64	TRUE if file's data come from a 64 bit machine.
+ *
+ * RETURNS:
+ * -1 on error, 0 otherwise.
+ ***************************************************************************
+ */
+int skip_extra_struct(int ifd, int endian_mismatch, int arch_64)
+{
+	int i;
+	struct extra_desc xtra_d;
+
+	do {
+		/* Read extra structure description */
+		sa_fread(ifd, &xtra_d, EXTRA_DESC_SIZE, HARD_SIZE, UEOF_STOP);
+
+		/*
+		 * We don't need to remap as the extra_desc structure won't change,
+		 * but we may need to normalize endianness anyway.
+		 */
+		if (endian_mismatch) {
+			swap_struct(extra_desc_types_nr, &xtra_d, arch_64);
+		}
+
+		/* Check values consistency */
+		if (MAP_SIZE(xtra_d.extra_types_nr) > xtra_d.extra_size) {
+#ifdef DEBUG
+			fprintf(stderr, "%s: extra_size=%u types=%d,%d,%d\n",
+				__FUNCTION__, xtra_d.extra_size,
+				xtra_d.extra_types_nr[0], xtra_d.extra_types_nr[1], xtra_d.extra_types_nr[2]);
+#endif
+			return -1;
+		}
+
+		if ((xtra_d.extra_nr > MAX_EXTRA_NR) || (xtra_d.extra_size > MAX_EXTRA_SIZE)) {
+#ifdef DEBUG
+			fprintf(stderr, "%s: extra_size=%u extra_nr=%u\n",
+				__FUNCTION__, xtra_d.extra_size, xtra_d.extra_size);
+#endif
+			return -1;
+		}
+
+		/* Ignore current unknown extra structures */
+		for (i = 0; i < xtra_d.extra_nr; i++) {
+			if (lseek(ifd, xtra_d.extra_size, SEEK_CUR) < xtra_d.extra_size)
+				return -1;
+		}
+	}
+	while (xtra_d.extra_next);
 
 	return 0;
 }
@@ -1419,32 +1452,60 @@ int sa_fread(int ifd, void *buffer, size_t size, int mode)
  * @endian_mismatch
  *		TRUE if data read from file don't match current machine's
  *		endianness.
+ * @oneof	Set to EOF_CONT if an unexpected end of file should not make
+ *		sadf stop. Default behavior is to stop on unexpected EOF.
  * @b_size	@buffer size.
+ * @flags	Flags for common options and system state.
  *
  * OUT:
  * @record_hdr	Record header for current sample.
  *
  * RETURNS:
- * 1 if EOF has been reached, 0 otherwise.
+ * 1 if EOF has been reached,
+ * 2 if an error has been encountered (e.g. unexpected EOF),
+ * 0 otherwise.
  ***************************************************************************
  */
 int read_record_hdr(int ifd, void *buffer, struct record_header *record_hdr,
 		    struct file_header *file_hdr, int arch_64, int endian_mismatch,
-		    size_t b_size)
+		    int oneof, size_t b_size, uint64_t flags)
 {
-	if (sa_fread(ifd, buffer, (size_t) file_hdr->rec_size, SOFT_SIZE))
-		/* End of sa data file */
-		return 1;
+	int rc;
 
-	/* Remap record header structure to that expected by current version */
-	remap_struct(rec_types_nr, file_hdr->rec_types_nr, buffer,
-		     file_hdr->rec_size, RECORD_HEADER_SIZE, b_size);
-	memcpy(record_hdr, buffer, RECORD_HEADER_SIZE);
+	do {
+		if ((rc = sa_fread(ifd, buffer, (size_t) file_hdr->rec_size, SOFT_SIZE, oneof)) != 0)
+			/* End of sa data file */
+			return rc;
 
-	/* Normalize endianness */
-	if (endian_mismatch) {
-		swap_struct(rec_types_nr, record_hdr, arch_64);
+		/* Remap record header structure to that expected by current version */
+		if (remap_struct(rec_types_nr, file_hdr->rec_types_nr, buffer,
+				 file_hdr->rec_size, RECORD_HEADER_SIZE, b_size) < 0)
+			return 2;
+		memcpy(record_hdr, buffer, RECORD_HEADER_SIZE);
+
+		/* Normalize endianness */
+		if (endian_mismatch) {
+			swap_struct(rec_types_nr, record_hdr, arch_64);
+		}
+
+		/* Raw output in debug mode */
+		if (DISPLAY_DEBUG_MODE(flags)) {
+			printf("# uptime_cs; %llu; ust_time; %llu; extra_next; %u; record_type; %d; HH:MM:SS; %02d:%02d:%02d\n",
+			       record_hdr->uptime_cs, record_hdr->ust_time,
+			       record_hdr->extra_next, record_hdr->record_type,
+			       record_hdr->hour, record_hdr->minute, record_hdr->second);
+		}
+
+		/*
+		 * Skip unknown extra structures if present.
+		 * This will be done later for R_COMMENT and R_RESTART records, as extra structures
+		 * are saved after the comment or the number of CPU.
+		 */
+		if ((record_hdr->record_type != R_COMMENT) && (record_hdr->record_type != R_RESTART) &&
+		    record_hdr->extra_next && (skip_extra_struct(ifd, endian_mismatch, arch_64) < 0))
+			return 2;
 	}
+	while ((record_hdr->record_type >= R_EXTRA_MIN) && (record_hdr->record_type <= R_EXTRA_MAX)) ;
 
 	return 0;
 }
@@ -1506,7 +1567,7 @@ __nr_t read_nr_value(int ifd, char *file, struct file_magic *file_magic,
 {
 	__nr_t value;
 
-	sa_fread(ifd, &value, sizeof(__nr_t), HARD_SIZE);
+	sa_fread(ifd, &value, sizeof(__nr_t), HARD_SIZE, UEOF_STOP);
 
 	/* Normalize endianness for file_activity structures */
 	if (endian_mismatch) {
@@ -1542,11 +1603,18 @@ __nr_t read_nr_value(int ifd, char *file, struct file_magic *file_magic,
  * @dfile	Name of system activity data file.
  * @file_magic	file_magic structure containing data read from file magic
  *		header.
+ * @oneof	Set to UEOF_CONT if an unexpected end of file should not make
+ *		sadf stop. Default behavior is to stop on unexpected EOF.
+ *
+ * RETURNS:
+ * 2 if an error has been encountered (e.g. unexpected EOF),
+ * 0 otherwise.
  ***************************************************************************
  */
-void read_file_stat_bunch(struct activity *act[], int curr, int ifd, int act_nr,
-			  struct file_activity *file_actlst, int endian_mismatch,
-			  int arch_64, char *dfile, struct file_magic *file_magic)
+int read_file_stat_bunch(struct activity *act[], int curr, int ifd, int act_nr,
+			 struct file_activity *file_actlst, int endian_mismatch,
+			 int arch_64, char *dfile, struct file_magic *file_magic,
+			 int oneof)
 {
 	int i, j, p;
 	struct file_activity *fal = file_actlst;
@@ -1582,6 +1650,8 @@ void read_file_stat_bunch(struct activity *act[], int curr, int ifd, int act_nr,
 				if (lseek(ifd, offset, SEEK_CUR) < offset) {
 					close(ifd);
 					perror("lseek");
+					if (oneof == UEOF_CONT)
+						return 2;
 					exit(2);
 				}
 			}
@@ -1618,8 +1688,10 @@ void read_file_stat_bunch(struct activity *act[], int curr, int ifd, int act_nr,
 		    (act[p]->msize > act[p]->fsize)) {
 
 			for (j = 0; j < (nr_value * act[p]->nr2); j++) {
-				sa_fread(ifd, (char *) act[p]->buf[curr] + j * act[p]->msize,
-					 (size_t) act[p]->fsize, HARD_SIZE);
+				if (sa_fread(ifd, (char *) act[p]->buf[curr] + j * act[p]->msize,
+					 (size_t) act[p]->fsize, HARD_SIZE, oneof) > 0)
+					/* Unexpected EOF */
+					return 2;
 			}
 		}
 		else if (nr_value > 0) {
@@ -1627,8 +1699,11 @@ void read_file_stat_bunch(struct activity *act[], int curr, int ifd, int act_nr,
 			 * Note: If msize was smaller than fsize,
 			 * then it has been set to fsize in check_file_actlst().
 			 */
-			sa_fread(ifd, act[p]->buf[curr],
-				 (size_t) act[p]->fsize * (size_t) nr_value * (size_t) act[p]->nr2, HARD_SIZE);
+			if (sa_fread(ifd, act[p]->buf[curr],
+				 (size_t) act[p]->fsize * (size_t) nr_value * (size_t) act[p]->nr2,
+				 HARD_SIZE, oneof) > 0)
+				/* Unexpected EOF */
+				return 2;
 		}
 		else {
 			/* nr_value == 0: Nothing to read */
@@ -1645,11 +1720,14 @@ void read_file_stat_bunch(struct activity *act[], int curr, int ifd, int act_nr,
 
 		/* Remap structure's fields to those known by current sysstat version */
 		for (j = 0; j < (nr_value * act[p]->nr2); j++) {
-			remap_struct(act[p]->gtypes_nr, act[p]->ftypes_nr,
-				     (char *) act[p]->buf[curr] + j * act[p]->msize,
-				     act[p]->fsize, act[p]->msize, act[p]->msize);
+			if (remap_struct(act[p]->gtypes_nr, act[p]->ftypes_nr,
+					 (char *) act[p]->buf[curr] + j * act[p]->msize,
+					 act[p]->fsize, act[p]->msize, act[p]->msize) < 0)
+				return 2;
 		}
 	}
+
+	return 0;
 }
 
 /*
@@ -1726,8 +1804,7 @@ int sa_open_read_magic(int *fd, char *dfile, struct file_magic *file_magic,
 	    ((file_magic->sysstat_version == 10) && (file_magic->sysstat_patchlevel >= 3))) {
 		/* header_size field exists only for sysstat versions 10.3.1 and later */
 		if ((file_magic->header_size <= MIN_FILE_HEADER_SIZE) ||
-		    (file_magic->header_size > MAX_FILE_HEADER_SIZE) ||
-		    ((file_magic->header_size < FILE_HEADER_SIZE) && !ignore)) {
+		    (file_magic->header_size > MAX_FILE_HEADER_SIZE)) {
 #ifdef DEBUG
 			fprintf(stderr, "%s: header_size=%u\n",
 				__FUNCTION__, file_magic->header_size);
@@ -1768,9 +1845,7 @@ int sa_open_read_magic(int *fd, char *dfile, struct file_magic *file_magic,
  * IN:
  * @dfile	Name of system activity data file.
  * @act		Array of activities.
- * @ignore	Set to 1 if a true sysstat activity file but with a bad
- *		format should not yield an error message. Used with
- *		sadf -H (sadf -c doesn't call check_file_actlst() function).
+ * @flags	Flags for common options and system state.
  *
  * OUT:
  * @ifd		System activity data file descriptor.
@@ -1785,17 +1860,20 @@ int sa_open_read_magic(int *fd, char *dfile, struct file_magic *file_magic,
  * @arch_64	TRUE if file's data come from a 64 bit machine.
  ***************************************************************************
  */
-void check_file_actlst(int *ifd, char *dfile, struct activity *act[],
+void check_file_actlst(int *ifd, char *dfile, struct activity *act[], uint64_t flags,
 		       struct file_magic *file_magic, struct file_header *file_hdr,
 		       struct file_activity **file_actlst, unsigned int id_seq[],
-		       int ignore, int *endian_mismatch, int *arch_64)
+		       int *endian_mismatch, int *arch_64)
 {
-	int i, j, k, p;
+	int i, j, k, p, skip;
 	struct file_activity *fal;
 	void *buffer = NULL;
+	size_t bh_size = FILE_HEADER_SIZE;
+	size_t ba_size = FILE_ACTIVITY_SIZE;
 
 	/* Open sa data file and read its magic structure */
-	if (sa_open_read_magic(ifd, dfile, file_magic, ignore, endian_mismatch, TRUE) < 0)
+	if (sa_open_read_magic(ifd, dfile, file_magic,
+			       DISPLAY_HDR_ONLY(flags), endian_mismatch, TRUE) < 0)
 		/*
 		 * Not current sysstat's format.
 		 * Return now so that sadf -H can display at least
@@ -1819,17 +1897,22 @@ void check_file_actlst(int *ifd, char *dfile, struct activity *act[],
 	}
 
 	/* Allocate buffer for file_header structure */
-	SREALLOC(buffer, char, file_magic->header_size);
+	if (file_magic->header_size > FILE_HEADER_SIZE) {
+		bh_size = file_magic->header_size;
+	}
+	SREALLOC(buffer, char, bh_size);
 
 	/* Read sa data file standard header and allocate activity list */
-	sa_fread(*ifd, buffer, (size_t) file_magic->header_size, HARD_SIZE);
+	sa_fread(*ifd, buffer, (size_t) file_magic->header_size, HARD_SIZE, UEOF_STOP);
 	/*
 	 * Data file header size (file_magic->header_size) may be greater or
 	 * smaller than FILE_HEADER_SIZE. Remap the fields of the file header
-	 * then copy its contents to the expected  structure.
+	 * then copy its contents to the expected structure.
 	 */
-	remap_struct(hdr_types_nr, file_magic->hdr_types_nr, buffer,
-		     file_magic->header_size, FILE_HEADER_SIZE, file_magic->header_size);
+	if (remap_struct(hdr_types_nr, file_magic->hdr_types_nr, buffer,
+			 file_magic->header_size, FILE_HEADER_SIZE, bh_size) < 0)
+		goto format_error;
+
 	memcpy(file_hdr, buffer, FILE_HEADER_SIZE);
 	free(buffer);
 	buffer = NULL;
@@ -1862,7 +1945,11 @@ void check_file_actlst(int *ifd, char *dfile, struct activity *act[],
 		goto format_error;
 	}
 
-	SREALLOC(buffer, char, file_hdr->act_size);
+	/* Allocate buffer for file_activity structures */
+	if (file_hdr->act_size > FILE_ACTIVITY_SIZE) {
+		ba_size = file_hdr->act_size;
+	}
+	SREALLOC(buffer, char, ba_size);
 	SREALLOC(*file_actlst, struct file_activity, FILE_ACTIVITY_SIZE * file_hdr->sa_act_nr);
 	fal = *file_actlst;
 
@@ -1871,14 +1958,16 @@ void check_file_actlst(int *ifd, char *dfile, struct activity *act[],
 	for (i = 0; i < file_hdr->sa_act_nr; i++, fal++) {
 
 		/* Read current file_activity structure from file */
-		sa_fread(*ifd, buffer, (size_t) file_hdr->act_size, HARD_SIZE);
+		sa_fread(*ifd, buffer, (size_t) file_hdr->act_size, HARD_SIZE, UEOF_STOP);
+
 		/*
-		* Data file_activity size (file_hdr->act_size) may be greater or
-		* smaller than FILE_ACTIVITY_SIZE. Remap the fields of the file's structure
-		* then copy its contents to the expected structure.
-		*/
-		remap_struct(act_types_nr, file_hdr->act_types_nr, buffer,
-			     file_hdr->act_size, FILE_ACTIVITY_SIZE, file_hdr->act_size);
+		 * Data file_activity size (file_hdr->act_size) may be greater or
+		 * smaller than FILE_ACTIVITY_SIZE. Remap the fields of the file's structure
+		 * then copy its contents to the expected structure.
+		 */
+		if (remap_struct(act_types_nr, file_hdr->act_types_nr, buffer,
+			     file_hdr->act_size, FILE_ACTIVITY_SIZE, ba_size) < 0)
+			goto format_error;
 		memcpy(fal, buffer, FILE_ACTIVITY_SIZE);
 
 		/* Normalize endianness for file_activity structures */
@@ -1911,17 +2000,19 @@ void check_file_actlst(int *ifd, char *dfile, struct activity *act[],
 			/* Unknown activity */
 			continue;
 
-		if (act[p]->magic != fal->magic) {
+		skip = FALSE;
+		if (fal->magic != act[p]->magic) {
 			/* Bad magical number */
-			if (ignore) {
+			if (DISPLAY_HDR_ONLY(flags)) {
 				/*
 				 * This is how sadf -H knows that this
 				 * activity has an unknown format.
 				 */
 				act[p]->magic = ACTIVITY_MAGIC_UNKNOWN;
 			}
-			else
-				continue;
+			else {
+				skip = TRUE;
+			}
 		}
 
 		/* Check max value for known activities */
@@ -1946,7 +2037,16 @@ void check_file_actlst(int *ifd, char *dfile, struct activity *act[],
 		     ||
 		     ((fal->types_nr[0] <= act[p]->gtypes_nr[0]) &&
 		     (fal->types_nr[1] <= act[p]->gtypes_nr[1]) &&
-		     (fal->types_nr[2] <= act[p]->gtypes_nr[2]))) && !ignore) {
+		     (fal->types_nr[2] <= act[p]->gtypes_nr[2]))) &&
+		     (act[p]->magic != ACTIVITY_MAGIC_UNKNOWN) && !DISPLAY_HDR_ONLY(flags)) {
+			/*
+			 * This may not be an error (that's actually why we may have changed
+			 * the magic number for this activity above).
+			 * So, if the activity magic number has changed (e.g.: ACTIVITY_MAGIC_UNKNOWN)
+			 * and we want to display only the header, then ignore the error.
+			 * If we want to also display the stats then we must stop here because
+			 * we won't know how to map the contents of the stats structure.
+			 */
 #ifdef DEBUG
 			fprintf(stderr, "%s: id=%d file=%d,%d,%d activity=%d,%d,%d\n",
 				__FUNCTION__, fal->id, fal->types_nr[0], fal->types_nr[1], fal->types_nr[2],
@@ -1962,6 +2062,13 @@ void check_file_actlst(int *ifd, char *dfile, struct activity *act[],
 #endif
 			goto format_error;
 		}
+
+		if (skip)
+			/*
+			 * This is an unknown activity and we want stats about it:
+			 * This is not possible so skip it.
+			 */
+			continue;
 
 		for (k = 0; k < 3; k++) {
 			act[p]->ftypes_nr[k] = fal->types_nr[k];
@@ -1987,6 +2094,7 @@ void check_file_actlst(int *ifd, char *dfile, struct activity *act[],
 	}
 
 	free(buffer);
+	buffer = NULL;
 
 	/* Check that at least one activity selected by the user is available in file */
 	for (i = 0; i < NR_ACT; i++) {
@@ -2011,12 +2119,19 @@ void check_file_actlst(int *ifd, char *dfile, struct activity *act[],
 	 * NB: Error is ignored if we only want to display
 	 * datafile header (sadf -H).
 	 */
-	if (!get_activity_nr(act, AO_SELECTED, COUNT_ACTIVITIES) && !ignore) {
+	if (!get_activity_nr(act, AO_SELECTED, COUNT_ACTIVITIES) && !DISPLAY_HDR_ONLY(flags)) {
 		fprintf(stderr, _("Requested activities not available in file %s\n"),
 			dfile);
 		close(*ifd);
 		exit(1);
 	}
+
+	/*
+	 * Check if there are some extra structures.
+	 * We will just skip them as they are unknown for now.
+	 */
+	if (file_hdr->extra_next && (skip_extra_struct(*ifd, *endian_mismatch, *arch_64) < 0))
+		goto format_error;
 
 	return;
 
@@ -2045,7 +2160,7 @@ format_error:
  ***************************************************************************
  */
 int parse_sar_opt(char *argv[], int *opt, struct activity *act[],
-		  unsigned int *flags, int caller)
+		  uint64_t *flags, int caller)
 {
 	int i, p;
 
@@ -2059,21 +2174,19 @@ int parse_sar_opt(char *argv[], int *opt, struct activity *act[],
 
 		case 'A':
 			select_all_activities(act);
+			*flags |= S_F_OPTION_A;
 
 			/*
-			 * Force '-P ALL -I ALL -r ALL -u ALL -F'.
+			 * Force '-r ALL -u ALL -F'.
 			 * Setting -F is compulsory because corresponding activity
 			 * has AO_MULTIPLE_OUTPUTS flag set.
+			 * -P ALL / -I ALL will be set only if corresponding option has
+			 * not been exlicitly entered on the command line.
 			 */
 			p = get_activity_position(act, A_MEMORY, EXIT_IF_NOT_FOUND);
 			act[p]->opt_flags |= AO_F_MEMORY + AO_F_SWAP + AO_F_MEM_ALL;
 
-			p = get_activity_position(act, A_IRQ, EXIT_IF_NOT_FOUND);
-			memset(act[p]->bitmap->b_array, ~0,
-			       BITMAP_SIZE(act[p]->bitmap->b_size));
 			p = get_activity_position(act, A_CPU, EXIT_IF_NOT_FOUND);
-			memset(act[p]->bitmap->b_array, ~0,
-			       BITMAP_SIZE(act[p]->bitmap->b_size));
 			act[p]->opt_flags = AO_F_CPU_ALL;
 
 			p = get_activity_position(act, A_FS, EXIT_IF_NOT_FOUND);
@@ -2114,11 +2227,8 @@ int parse_sar_opt(char *argv[], int *opt, struct activity *act[],
 			break;
 
 		case 'h':
-			/*
-			 * Make output easier to read by a human.
-			 * Option -h implies --human and -p (pretty-print).
-			 */
-			*flags |= S_F_HUMAN_READ + S_F_UNIT + S_F_DEV_PRETTY;
+			/* Option -h is equivalent to --pretty --human */
+			*flags |= S_F_PRETTY + S_F_UNIT;
 			break;
 
 		case 'j':
@@ -2126,29 +2236,32 @@ int parse_sar_opt(char *argv[], int *opt, struct activity *act[],
 				return 1;
 			}
 			(*opt)++;
-			if (strnlen(argv[*opt], MAX_FILE_LEN) >= MAX_FILE_LEN - 1)
+			if (!strcmp(argv[*opt], K_SID)) {
+				*flags |= S_F_DEV_SID + S_F_PRETTY;
+				return 0;
+			}
+
+			if (strnlen(argv[*opt], sizeof(persistent_name_type)) >= sizeof(persistent_name_type) - 1)
 				return 1;
 
-			strncpy(persistent_name_type, argv[*opt], MAX_FILE_LEN - 1);
-			persistent_name_type[MAX_FILE_LEN - 1] = '\0';
+			strncpy(persistent_name_type, argv[*opt], sizeof(persistent_name_type) - 1);
+			persistent_name_type[sizeof(persistent_name_type) - 1] = '\0';
 			strtolower(persistent_name_type);
 			if (!get_persistent_type_dir(persistent_name_type)) {
 				fprintf(stderr, _("Invalid type of persistent device name\n"));
 				return 2;
 			}
-			/*
-			 * If persistent device name doesn't exist for device, use
-			 * its pretty name.
-			 */
-			*flags |= S_F_PERSIST_NAME + S_F_DEV_PRETTY;
+			/* Pretty print report (option -j implies option -p) */
+			*flags |= S_F_PERSIST_NAME + S_F_PRETTY;
 			return 0;
 			break;
 
 		case 'p':
-			*flags |= S_F_DEV_PRETTY;
+			*flags |= S_F_PRETTY;
 			break;
 
 		case 'q':
+			/* Option -q grouped with other ones */
 			SELECT_ACTIVITY(A_QUEUE);
 			break;
 
@@ -2392,6 +2505,57 @@ int parse_sar_n_opt(char *argv[], int *opt, struct activity *act[])
 
 /*
  ***************************************************************************
+ * Parse sar "-q" option.
+ *
+ * IN:
+ * @argv	Arguments list.
+ * @opt		Index in list of arguments.
+ *
+ * OUT:
+ * @act		Array of selected activities.
+ *
+ * RETURNS:
+ * 0 on success, 1 otherwise.
+ ***************************************************************************
+ */
+int parse_sar_q_opt(char *argv[], int *opt, struct activity *act[])
+{
+	char *t;
+
+	for (t = strtok(argv[*opt], ","); t; t = strtok(NULL, ",")) {
+		if (!strcmp(t, K_LOAD)) {
+			SELECT_ACTIVITY(A_QUEUE);
+		}
+		else if (!strcmp(t, K_PSI_CPU)) {
+			SELECT_ACTIVITY(A_PSI_CPU);
+		}
+		else if (!strcmp(t, K_PSI_IO)) {
+			SELECT_ACTIVITY(A_PSI_IO);
+		}
+		else if (!strcmp(t, K_PSI_MEM)) {
+			SELECT_ACTIVITY(A_PSI_MEM);
+		}
+		else if (!strcmp(t, K_PSI)) {
+			SELECT_ACTIVITY(A_PSI_CPU);
+			SELECT_ACTIVITY(A_PSI_IO);
+			SELECT_ACTIVITY(A_PSI_MEM);
+		}
+		else if (!strcmp(t, K_ALL)) {
+			SELECT_ACTIVITY(A_QUEUE);
+			SELECT_ACTIVITY(A_PSI_CPU);
+			SELECT_ACTIVITY(A_PSI_IO);
+			SELECT_ACTIVITY(A_PSI_MEM);
+		}
+		else
+			return 1;
+	}
+
+	(*opt)++;
+	return 0;
+}
+
+/*
+ ***************************************************************************
  * Parse sar "-I" option.
  *
  * IN:
@@ -2400,13 +2564,14 @@ int parse_sar_n_opt(char *argv[], int *opt, struct activity *act[])
  * @act		Array of activities.
  *
  * OUT:
+ * @flags	Common flags and system state.
  * @act		Array of activities, with interrupts activity selected.
  *
  * RETURNS:
  * 0 on success, 1 otherwise.
  ***************************************************************************
  */
-int parse_sar_I_opt(char *argv[], int *opt, struct activity *act[])
+int parse_sar_I_opt(char *argv[], int *opt, uint64_t *flags, struct activity *act[])
 {
 	int p;
 
@@ -2419,6 +2584,7 @@ int parse_sar_I_opt(char *argv[], int *opt, struct activity *act[])
 			     act[p]->bitmap->b_size, K_SUM))
 			return 1;
 		(*opt)++;
+		*flags |= S_F_OPTION_I;
 		return 0;
 	}
 
@@ -2442,7 +2608,7 @@ int parse_sar_I_opt(char *argv[], int *opt, struct activity *act[])
  * 0 on success, 1 otherwise.
  ***************************************************************************
  */
-int parse_sa_P_opt(char *argv[], int *opt, unsigned int *flags, struct activity *act[])
+int parse_sa_P_opt(char *argv[], int *opt, uint64_t *flags, struct activity *act[])
 {
 	int p;
 
@@ -2453,10 +2619,42 @@ int parse_sa_P_opt(char *argv[], int *opt, unsigned int *flags, struct activity 
 			     act[p]->bitmap->b_size, K_LOWERALL))
 			return 1;
 		(*opt)++;
+		*flags |= S_F_OPTION_P;
 		return 0;
 	}
 
 	return 1;
+}
+
+/*
+ ***************************************************************************
+ * If option -A has been used, force -P ALL -I ALL only if corresponding
+ * option has not been explicitly entered on the command line.
+ *
+ * IN:
+ * @flags	Common flags and system state.
+ *
+ * OUT:
+ * @act		Array of selected activities.
+ ***************************************************************************
+ */
+void set_bitmaps(struct activity *act[], uint64_t *flags)
+{
+	int p;
+
+	if (!USE_OPTION_P(*flags)) {
+		/* Force -P ALL */
+		p = get_activity_position(act, A_CPU, EXIT_IF_NOT_FOUND);
+		memset(act[p]->bitmap->b_array, ~0,
+		       BITMAP_SIZE(act[p]->bitmap->b_size));
+	}
+
+	if (!USE_OPTION_I(*flags)) {
+		/* Force -I ALL */
+		p = get_activity_position(act, A_IRQ, EXIT_IF_NOT_FOUND);
+		memset(act[p]->bitmap->b_array, ~0,
+		       BITMAP_SIZE(act[p]->bitmap->b_size));
+	}
 }
 
 /*
@@ -2640,7 +2838,7 @@ void replace_nonprintable_char(int ifd, char *comment)
 	int i;
 
 	/* Read comment */
-	sa_fread(ifd, comment, MAX_COMMENT_LEN, HARD_SIZE);
+	sa_fread(ifd, comment, MAX_COMMENT_LEN, HARD_SIZE, UEOF_STOP);
 	comment[MAX_COMMENT_LEN - 1] = '\0';
 
 	/* Replace non printable chars */
@@ -2681,41 +2879,27 @@ void replace_nonprintable_char(int ifd, char *comment)
  * 1 if an error was detected, or 0 otherwise.
  ***************************************************************************
 */
-int sa_get_record_timestamp_struct(unsigned int l_flags, struct record_header *record_hdr,
-				   struct tm *rectime, struct tm *loctime)
+int sa_get_record_timestamp_struct(uint64_t l_flags, struct record_header *record_hdr,
+				   struct tm *rectime)
 {
-	struct tm *ltm = NULL;
+	struct tm *ltm;
 	int rc = 0;
 
-	/* Fill localtime structure if given */
-	if (loctime) {
-		if ((ltm = localtime((const time_t *) &(record_hdr->ust_time))) != NULL) {
-			*loctime = *ltm;
-		}
-		else {
-			rc = 1;
-		}
-	}
-
-	/* Fill generic rectime structure */
-	if (PRINT_LOCAL_TIME(l_flags) && !ltm) {
-		/* Get local time if not already done */
-		ltm = localtime((const time_t *) &(record_hdr->ust_time));
-	}
+	/*
+	 * Fill generic rectime structure in local time.
+	 * Done so that we have some default values.
+	 */
+	ltm = localtime_r((const time_t *) &(record_hdr->ust_time), rectime);
 
 	if (!PRINT_LOCAL_TIME(l_flags) && !PRINT_TRUE_TIME(l_flags)) {
 		/*
 		 * Get time in UTC
 		 * (the user doesn't want local time nor time of file's creator).
 		 */
-		ltm = gmtime((const time_t *) &(record_hdr->ust_time));
+		ltm = gmtime_r((const time_t *) &(record_hdr->ust_time), rectime);
 	}
 
-	if (ltm) {
-		/* Done even in true time mode so that we have some default values */
-		*rectime = *ltm;
-	}
-	else {
+	if (!ltm) {
 		rc = 1;
 	}
 
@@ -2755,7 +2939,7 @@ int sa_get_record_timestamp_struct(unsigned int l_flags, struct record_header *r
  * 		been used.
  ***************************************************************************
 */
-void set_record_timestamp_string(unsigned int l_flags, struct record_header *record_hdr,
+void set_record_timestamp_string(uint64_t l_flags, struct record_header *record_hdr,
 				 char *cur_date, char *cur_time, int len, struct tm *rectime)
 {
 	/* Set cur_time date value */
@@ -2795,8 +2979,6 @@ void set_record_timestamp_string(unsigned int l_flags, struct record_header *rec
  * @rectime	Structure where timestamp (expressed in local time or in UTC
  *		depending on whether options -T/-t have been used or not) can
  *		be saved for current record.
- * @loctime	Structure where timestamp (expressed in local time) can be
- *		saved for current record. May be NULL.
  * @file	Name of file being read.
  * @tab		Number of tabulations to print.
  * @file_magic	file_magic structure filled with file magic header data.
@@ -2810,16 +2992,14 @@ void set_record_timestamp_string(unsigned int l_flags, struct record_header *rec
  * OUT:
  * @rectime	Structure where timestamp (expressed in local time or in UTC)
  *		has been saved.
- * @loctime	Structure where timestamp (expressed in local time) has been
- *		saved (if requested).
  *
  * RETURNS:
  * 1 if the record has been successfully displayed, and 0 otherwise.
  ***************************************************************************
  */
-int print_special_record(struct record_header *record_hdr, unsigned int l_flags,
+int print_special_record(struct record_header *record_hdr, uint64_t l_flags,
 			 struct tstamp *tm_start, struct tstamp *tm_end, int rtype, int ifd,
-			 struct tm *rectime, struct tm *loctime, char *file, int tab,
+			 struct tm *rectime, char *file, int tab,
 			 struct file_magic *file_magic, struct file_header *file_hdr,
 			 struct activity *act[], struct report_format *ofmt,
 			 int endian_mismatch, int arch_64)
@@ -2829,17 +3009,12 @@ int print_special_record(struct record_header *record_hdr, unsigned int l_flags,
 	int p;
 
 	/* Fill timestamp structure (rectime) for current record */
-	if (sa_get_record_timestamp_struct(l_flags, record_hdr, rectime, loctime))
+	if (sa_get_record_timestamp_struct(l_flags, record_hdr, rectime))
 		return 0;
 
-	/* If loctime is NULL, then use rectime for comparison */
-	if (!loctime) {
-		loctime = rectime;
-	}
-
 	/* The record must be in the interval specified by -s/-e options */
-	if ((tm_start->use && (datecmp(loctime, tm_start) < 0)) ||
-	    (tm_end->use && (datecmp(loctime, tm_end) > 0))) {
+	if ((tm_start->use && (datecmp(rectime, tm_start, FALSE) < 0)) ||
+	    (tm_end->use && (datecmp(rectime, tm_end, FALSE) > 0))) {
 		/* Will not display the special record */
 		dp = 0;
 	}
@@ -2871,13 +3046,17 @@ int print_special_record(struct record_header *record_hdr, unsigned int l_flags,
 			}
 		}
 
+		/* Ignore unknown extra structures if present */
+		if (record_hdr->extra_next && (skip_extra_struct(ifd, endian_mismatch, arch_64) < 0))
+			return 0;
+
 		if (!dp)
 			return 0;
 
 		if (*ofmt->f_restart) {
 			(*ofmt->f_restart)(&tab, F_MAIN, cur_date, cur_time,
 					   !PRINT_LOCAL_TIME(l_flags) &&
-					   !PRINT_TRUE_TIME(l_flags), file_hdr);
+					   !PRINT_TRUE_TIME(l_flags), file_hdr, record_hdr);
 		}
 	}
 	else if (rtype == R_COMMENT) {
@@ -2886,6 +3065,10 @@ int print_special_record(struct record_header *record_hdr, unsigned int l_flags,
 		/* Read and replace non printable chars in comment */
 		replace_nonprintable_char(ifd, file_comment);
 
+		/* Ignore unknown extra structures if present */
+		if (record_hdr->extra_next && (skip_extra_struct(ifd, endian_mismatch, arch_64) < 0))
+			return 0;
+
 		if (!dp || !DISPLAY_COMMENT(l_flags))
 			return 0;
 
@@ -2893,7 +3076,7 @@ int print_special_record(struct record_header *record_hdr, unsigned int l_flags,
 			(*ofmt->f_comment)(&tab, F_MAIN, cur_date, cur_time,
 					   !PRINT_LOCAL_TIME(l_flags) &&
 					   !PRINT_TRUE_TIME(l_flags), file_comment,
-					   file_hdr);
+					   file_hdr, record_hdr);
 		}
 	}
 
@@ -2925,7 +3108,7 @@ int print_special_record(struct record_header *record_hdr, unsigned int l_flags,
  ***************************************************************************
  */
 unsigned long long get_global_cpu_statistics(struct activity *a, int prev, int curr,
-					     unsigned int flags, unsigned char offline_cpu_bitmap[])
+					     uint64_t flags, unsigned char offline_cpu_bitmap[])
 {
 	int i;
 	unsigned long long tot_jiffies_c, tot_jiffies_p;
@@ -3072,7 +3255,7 @@ unsigned long long get_global_cpu_statistics(struct activity *a, int prev, int c
  ***************************************************************************
  */
 void get_global_soft_statistics(struct activity *a, int prev, int curr,
-				unsigned int flags, unsigned char offline_cpu_bitmap[])
+				uint64_t flags, unsigned char offline_cpu_bitmap[])
 {
 	int i;
 	struct stats_softnet *ssnc, *ssnp;
@@ -3128,40 +3311,35 @@ void get_global_soft_statistics(struct activity *a, int prev, int curr,
 
 /*
  ***************************************************************************
- * Get device name (whether pretty-printed, persistent or not).
+ * Get filesystem name to display. This may be either the persistent name
+ * if requested by the user, the standard filesystem name (e.g. /dev/sda1,
+ * /dev/sdb3, etc.) or the mount point. This is used when displaying
+ * filesystem statistics: sar -F or sadf -- -F).
  *
  * IN:
- * @major	Major number of the device.
- * @minor	Minor number of the device.
+ * @a		Activity structure.
  * @flags	Flags for common options and system state.
+ * @st_fs	Statistics for current filesystem.
  *
  * RETURNS:
- * The name of the device.
+ * Filesystem name to display.
  ***************************************************************************
  */
-char *get_sa_devname(unsigned int major, unsigned int minor, unsigned int flags)
+char *get_fs_name_to_display(struct activity *a, uint64_t flags, struct stats_filesystem *st_fs)
 {
-	char *dev_name = NULL, *persist_dev_name = NULL;
+	char *pname = NULL, *persist_dev_name;
+	char fname[MAX_FS_LEN];
 
-	if (DISPLAY_PERSIST_NAME_S(flags)) {
-		persist_dev_name = get_persistent_name_from_pretty(get_devname(major, minor, TRUE));
-	}
-
-	if (persist_dev_name) {
-		dev_name = persist_dev_name;
-	}
-	else {
-		if ((USE_PRETTY_OPTION(flags)) && (major == dm_major)) {
-			dev_name = transform_devmapname(major, minor);
-		}
-
-		if (!dev_name) {
-			dev_name = get_devname(major, minor,
-					       USE_PRETTY_OPTION(flags));
+	if (DISPLAY_PERSIST_NAME_S(flags) && !DISPLAY_MOUNT(a->opt_flags)) {
+		strncpy(fname, st_fs->fs_name, sizeof(fname));
+		fname[sizeof(fname) - 1] = '\0';
+		if ((persist_dev_name = get_persistent_name_from_pretty(basename(fname))) != NULL) {
+			pname = persist_dev_name;
 		}
 	}
-
-	return dev_name;
+	if (!pname) {
+		pname = DISPLAY_MOUNT(a->opt_flags) ? st_fs->mountp : st_fs->fs_name;
+	}
+	return pname;
 }
-
 #endif /* SOURCE_SADC undefined */

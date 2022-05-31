@@ -1,6 +1,6 @@
 /*
  * sar, sadc, sadf, mpstat and iostat common routines.
- * (C) 1999-2018 by Sebastien GODARD (sysstat <at> orange.fr)
+ * (C) 1999-2020 by Sebastien GODARD (sysstat <at> orange.fr)
  *
  ***************************************************************************
  * This program is free software; you can redistribute it and/or modify it *
@@ -31,10 +31,12 @@
 #include <sys/types.h>
 #include <dirent.h>
 #include <ctype.h>
+#include <limits.h>
 #include <libgen.h>
 
 #include "version.h"
 #include "common.h"
+#include "ioconf.h"
 
 #ifdef USE_NLS
 #include <locale.h>
@@ -97,15 +99,11 @@ void print_version(void)
 time_t get_localtime(struct tm *rectime, int d_off)
 {
 	time_t timer;
-	struct tm *ltm;
 
-	time(&timer);
+	timer = __time(NULL);
 	timer -= SEC_PER_DAY * d_off;
-	ltm = localtime(&timer);
+	localtime_r(&timer, rectime);
 
-	if (ltm) {
-		*rectime = *ltm;
-	}
 	return timer;
 }
 
@@ -126,15 +124,11 @@ time_t get_localtime(struct tm *rectime, int d_off)
 time_t get_gmtime(struct tm *rectime, int d_off)
 {
 	time_t timer;
-	struct tm *ltm;
 
-	time(&timer);
+	timer = __time(NULL);
 	timer -= SEC_PER_DAY * d_off;
-	ltm = gmtime(&timer);
+	gmtime_r(&timer, rectime);
 
-	if (ltm) {
-		*rectime = *ltm;
-	}
 	return timer;
 }
 
@@ -159,7 +153,7 @@ time_t get_time(struct tm *rectime, int d_off)
 
 	if (!utc) {
 		/* Read environment variable value once */
-		if ((e = getenv(ENV_TIME_DEFTM)) != NULL) {
+		if ((e = __getenv(ENV_TIME_DEFTM)) != NULL) {
 			utc = !strcmp(e, K_UTC);
 		}
 		utc++;
@@ -192,20 +186,19 @@ void init_nls(void)
 /*
  ***************************************************************************
  * Test whether given name is a device or a partition, using sysfs.
- * This is more straightforward that using ioc_iswhole() function from
- * ioconf.c which should be used only with kernels that don't have sysfs.
  *
  * IN:
+ * @sysdev		sysfs location.
  * @name		Device or partition name.
  * @allow_virtual	TRUE if virtual devices are also accepted.
  *			The device is assumed to be virtual if no
  *			/sys/block/<device>/device link exists.
  *
  * RETURNS:
- * TRUE if @name is not a partition.
+ * TRUE if @name is a device, and FALSE if it's a partition.
  ***************************************************************************
  */
-int is_device(char *name, int allow_virtual)
+int is_device(char *sysdev, char *name, int allow_virtual)
 {
 	char syspath[PATH_MAX];
 	char *slash;
@@ -214,7 +207,7 @@ int is_device(char *name, int allow_virtual)
 	while ((slash = strchr(name, '/'))) {
 		*slash = '!';
 	}
-	snprintf(syspath, sizeof(syspath), "%s/%s%s", SYSFS_BLOCK, name,
+	snprintf(syspath, sizeof(syspath), "%s/%s/%s%s", sysdev, __BLOCK, name,
 		 allow_virtual ? "" : "/device");
 
 	return !(access(syspath, F_OK));
@@ -277,6 +270,168 @@ void sysstat_panic(const char *function, int error_code)
 	exit(1);
 }
 
+/*
+ ***************************************************************************
+ * Extract WWWN identifiers from filename, as read from /dev/disk/by-id.
+ *
+ * Sample valid names read from /dev/disk/by-id:
+ * wwn-0x5000cca369f193ac
+ * wwn-0x5000cca369f193ac-part12
+ * wwn-0x600605b00a2bdf00242b28c10dcb1999
+ * wwn-0x600605b00a2bdf00242b28c10dcb1999-part2
+ *
+ * WWN ids like these ones are ignored:
+ * wwn-0x5438850077615869953x
+ * wwn-0x5438850077615869953x-part1
+ *
+ * IN:
+ * @name	Filename read from /dev/disk/by-id.
+ *
+ * OUT:
+ * @wwn		WWN identifier (8 or 16 hex characters).
+ * @part-nr	Partition number if applicable.
+ *
+ * RETURNS:
+ * 0 on success, -1 otherwise.
+ ***************************************************************************
+*/
+int extract_wwnid(char *name, unsigned long long *wwn, unsigned int *part_nr)
+{
+	char id[17];
+	char *s;
+	int wwnlen;
+
+	*wwn = *(wwn + 1) = 0ULL;
+	*part_nr = 0;
+
+	/* Check name */
+	if (((wwnlen = strlen(name)) < 22) || (strncmp(name, "wwn-0x", 6)))
+		return -1;
+
+	/* Is there a partition number? */
+	if ((s = strstr(name, "-part")) != NULL) {
+		/* Yes: Get partition number */
+		if (sscanf(s + 5, "%u", part_nr) == 0)
+			return -1;
+		wwnlen = s - name - 6;
+	}
+	else {
+		wwnlen -= 6;	/* Don't count "wwn-0x" */
+	}
+
+	/* Check WWN length */
+	if ((wwnlen != 16) && (wwnlen != 32))
+		return -1;
+
+	/* Extract first 16 hex chars of WWN */
+	strncpy(id, name + 6, 16);
+	id[16] = '\0';
+	if (sscanf(id, "%llx", wwn) == 0)
+		return -1;
+
+	if (strlen(name) < 38)
+		/* This is a short (16 hex chars) WWN id */
+		return 0;
+
+	/* Extract second part of WWN */
+	if (sscanf(name + 22, "%llx", wwn + 1) == 0)
+		return -1;
+
+	return 0;
+}
+
+/*
+ ***************************************************************************
+ * Get WWWN identifiers from a pretty filename using links present in
+ * /dev/disk/by-id directory.
+ *
+ * IN:
+ * @pretty	Pretty name (e.g. sda, sdb3...).
+ *
+ * OUT:
+ * @wwn		WWN identifier (8 or 16 hex characters).
+ * @part-nr	Partition number if applicable.
+ *
+ * RETURNS:
+ * 0 on success, -1 otherwise.
+ ***************************************************************************
+*/
+int get_wwnid_from_pretty(char *pretty, unsigned long long *wwn, unsigned int *part_nr)
+{
+	DIR *dir;
+	struct dirent *drd;
+	ssize_t r;
+	char link[PATH_MAX], target[PATH_MAX], wwn_name[FILENAME_MAX];
+	char *name;
+	int rc = -1;
+
+	/* Open  /dev/disk/by-id directory */
+	if ((dir = opendir(DEV_DISK_BY_ID)) == NULL)
+		return -1;
+
+	/* Get current id */
+	while ((drd = readdir(dir)) != NULL) {
+
+		if (strncmp(drd->d_name, "wwn-0x", 6))
+			continue;
+
+		/* Get absolute path for current persistent name */
+		snprintf(link, PATH_MAX, "%s/%s", DEV_DISK_BY_ID, drd->d_name);
+
+		/* Persistent name is usually a symlink: Read it... */
+		r = readlink(link, target, PATH_MAX);
+		if ((r <= 0) || (r >= PATH_MAX))
+			continue;
+
+		target[r] = '\0';
+
+		/* ... and get device pretty name it points at */
+		name = basename(target);
+		if (!name || (name[0] == '\0'))
+			continue;
+
+		if (!strncmp(name, pretty, FILENAME_MAX)) {
+			/* We have found pretty name for current persistent one */
+			strncpy(wwn_name, drd->d_name, MINIMUM(sizeof(wwn_name), sizeof(drd->d_name)));
+			wwn_name[sizeof(wwn_name) - 1] = '\0';
+
+			/* Try to extract WWN */
+			if (!extract_wwnid(wwn_name, wwn, part_nr)) {
+				/* WWN successfully extracted */
+				rc = 0;
+				break;
+			}
+		}
+	}
+
+	/* Close directory */
+	closedir(dir);
+
+	return rc;
+}
+
+/*
+ ***************************************************************************
+ * Check if a directory exists.
+ *
+ * IN:
+ * @dirname	Name of the directory.
+ *
+ * RETURNS:
+ * TRUE if @dirname is actually an existing directory.
+ ***************************************************************************
+ */
+int check_dir(char *dirname)
+{
+	struct stat sb;
+
+	if (!stat(dirname, &sb) && S_ISDIR(sb.st_mode))
+		return 1;
+
+	return 0;
+}
+
+
 #ifndef SOURCE_SADC
 /*
  ***************************************************************************
@@ -307,103 +462,6 @@ int count_csvalues(int arg_c, char **arg_v)
 	}
 
 	return nr;
-}
-
-/*
- ***************************************************************************
- * Look for partitions of a given block device in /sys filesystem.
- *
- * IN:
- * @dev_name	Name of the block device.
- *
- * RETURNS:
- * Number of partitions for the given block device.
- ***************************************************************************
- */
-int get_dev_part_nr(char *dev_name)
-{
-	DIR *dir;
-	struct dirent *drd;
-	char dfile[MAX_PF_NAME], line[MAX_PF_NAME];
-	int part = 0, err;
-
-	snprintf(dfile, MAX_PF_NAME, "%s/%s", SYSFS_BLOCK, dev_name);
-	dfile[MAX_PF_NAME - 1] = '\0';
-
-	/* Open current device directory in /sys/block */
-	if ((dir = opendir(dfile)) == NULL)
-		return 0;
-
-	/* Get current file entry */
-	while ((drd = readdir(dir)) != NULL) {
-		if (!strcmp(drd->d_name, ".") || !strcmp(drd->d_name, ".."))
-			continue;
-		err = snprintf(line, MAX_PF_NAME, "%s/%s/%s", dfile, drd->d_name, S_STAT);
-		if ((err < 0) || (err >= MAX_PF_NAME))
-			continue;
-
-		/* Try to guess if current entry is a directory containing a stat file */
-		if (!access(line, R_OK)) {
-			/* Yep... */
-			part++;
-		}
-	}
-
-	/* Close directory */
-	closedir(dir);
-
-	return part;
-}
-
-/*
- ***************************************************************************
- * Look for block devices present in /sys/ filesystem:
- * Check first that sysfs is mounted (done by trying to open /sys/block
- * directory), then find number of devices registered.
- *
- * IN:
- * @display_partitions	Set to TRUE if partitions must also be counted.
- *
- * RETURNS:
- * Total number of block devices (and partitions if @display_partitions was
- * set).
- ***************************************************************************
- */
-int get_sysfs_dev_nr(int display_partitions)
-{
-	DIR *dir;
-	struct dirent *drd;
-	char line[MAX_PF_NAME];
-	int dev = 0;
-
-	/* Open /sys/block directory */
-	if ((dir = opendir(SYSFS_BLOCK)) == NULL)
-		/* sysfs not mounted, or perhaps this is an old kernel */
-		return 0;
-
-	/* Get current file entry in /sys/block directory */
-	while ((drd = readdir(dir)) != NULL) {
-		if (!strcmp(drd->d_name, ".") || !strcmp(drd->d_name, ".."))
-			continue;
-		snprintf(line, MAX_PF_NAME, "%s/%s/%s", SYSFS_BLOCK, drd->d_name, S_STAT);
-		line[MAX_PF_NAME - 1] = '\0';
-
-		/* Try to guess if current entry is a directory containing a stat file */
-		if (!access(line, R_OK)) {
-			/* Yep... */
-			dev++;
-
-			if (display_partitions) {
-				/* We also want the number of partitions for this device */
-				dev += get_dev_part_nr(drd->d_name);
-			}
-		}
-	}
-
-	/* Close /sys/block directory */
-	closedir(dir);
-
-	return dev;
 }
 
 /*
@@ -455,7 +513,7 @@ int is_iso_time_fmt(void)
 	char *e;
 
 	if (is_iso < 0) {
-		is_iso = (((e = getenv(ENV_TIME_FMT)) != NULL) && !strcmp(e, K_ISO));
+		is_iso = (((e = __getenv(ENV_TIME_FMT)) != NULL) && !strcmp(e, K_ISO));
 	}
 	return is_iso;
 }
@@ -631,7 +689,10 @@ int get_win_height(void)
 
 /*
  ***************************************************************************
- * Canonicalize and remove /dev from path name.
+ * Canonicalize and remove /dev from path name. If the device has a slash
+ * character in its name, replace it with a bang character ('!'), e.g.:
+ * cciss/c0d0 -> cciss!c0d0
+ * cciss/c0d0p1 -> cciss!c0d0p1
  *
  * IN:
  * @name	Device name (may begin with "/dev/" or can be a symlink).
@@ -643,22 +704,31 @@ int get_win_height(void)
 char *device_name(char *name)
 {
 	static char out[MAX_FILE_LEN];
-	char *resolved_name;
+	char *resolved_name = NULL, *slash;
 	int i = 0;
 
 	/* realpath() creates new string, so we need to free it later */
-	resolved_name = realpath(name, NULL);
+	resolved_name = __realpath(name, NULL);
 
 	/* If path doesn't exist, just return input */
 	if (!resolved_name) {
 		return name;
 	}
 
+#ifdef DEBUG
+	fprintf(stderr, "Real pathname: %s (%s)\n", resolved_name, name);
+#endif
+
 	if (!strncmp(resolved_name, "/dev/", 5)) {
 		i = 5;
 	}
-	strncpy(out, resolved_name + i, MAX_FILE_LEN);
-	out[MAX_FILE_LEN - 1] = '\0';
+	strncpy(out, resolved_name + i, sizeof(out));
+	out[sizeof(out) - 1] = '\0';
+
+	/* Some devices may have a slash in their name (eg. cciss/c0d0...) */
+	while ((slash = strchr(out, '/'))) {
+		*slash = '!';
+	}
 
 	free(resolved_name);
 
@@ -771,16 +841,18 @@ char *strtolower(char *str)
  * @type	Persistent type name (UUID, LABEL, etc.)
  *
  * RETURNS:
- * Path to the persistent type name directory, or NULL if access is denied.
+ * Path to the persistent type name directory, or NULL if access is denied
+ * or strings have been truncated.
  ***************************************************************************
 */
 char *get_persistent_type_dir(char *type)
 {
-	static char dir[32];
+	static char dir[PATH_MAX];
+	int n;
 
-	snprintf(dir, 32, "%s-%s", DEV_DISK_BY, type);
+	n = snprintf(dir, sizeof(dir), "%s-%s", DEV_DISK_BY, type);
 
-	if (access(dir, R_OK)) {
+	if ((n >= sizeof(dir)) || access(dir, R_OK)) {
 		return (NULL);
 	}
 
@@ -795,17 +867,19 @@ char *get_persistent_type_dir(char *type)
  * @name	Persistent name.
  *
  * RETURNS:
- * Path to the persistent name, or NULL if file doesn't exist.
+ * Path to the persistent name, or NULL if file doesn't exist or strings
+ * have been truncated.
  ***************************************************************************
 */
 char *get_persistent_name_path(char *name)
 {
 	static char path[PATH_MAX];
+	int n;
 
-	snprintf(path, PATH_MAX, "%s/%s",
-		 get_persistent_type_dir(persistent_name_type), name);
+	n = snprintf(path, sizeof(path), "%s/%s",
+		     get_persistent_type_dir(persistent_name_type), name);
 
-	if (access(path, F_OK)) {
+	if ((n >= sizeof(path)) || access(path, F_OK)) {
 		return (NULL);
 	}
 
@@ -851,7 +925,7 @@ char **get_persistent_names(void)
 	 * i != k because we are ignoring "." and ".." entries.
 	 */
 	for (i = 0; i < n; i++) {
-		/* Ignore "." and "..". */
+		/* Ignore "." and ".." */
 		if (!strcmp(".", namelist[i]->d_name) ||
 		    !strcmp("..", namelist[i]->d_name))
 			continue;
@@ -921,8 +995,8 @@ char *get_persistent_name_from_pretty(char *pretty)
 
 		if (!strncmp(name, pretty, FILENAME_MAX)) {
 			/* We have found pretty name for current persistent one */
-			strncpy(persist_name, persist_names[i], FILENAME_MAX);
-			persist_name[FILENAME_MAX - 1] = '\0';
+			strncpy(persist_name, persist_names[i], sizeof(persist_name));
+			persist_name[sizeof(persist_name) - 1] = '\0';
 			break;
 		}
 	}
@@ -976,6 +1050,153 @@ char *get_pretty_name_from_persistent(char *persistent)
 }
 
 /*
+ * **************************************************************************
+ * Try to get device real name from sysfs tree.
+ *
+ * IN:
+ * @major	Major number of the device.
+ * @minor	Minor number of the device.
+ *
+ * RETURNS:
+ * The name of the device, which may be the real name (as it appears in /dev)
+ * or NULL.
+ ***************************************************************************
+ */
+char *get_devname_from_sysfs(unsigned int major, unsigned int minor)
+{
+	static char link[256], target[PATH_MAX];
+	char *devname;
+	ssize_t r;
+
+	snprintf(link, 256, "%s/%u:%u", SYSFS_DEV_BLOCK, major, minor);
+
+	/* Get full path to device knowing its major and minor numbers */
+	r = readlink(link, target, PATH_MAX);
+	if (r <= 0 || r >= PATH_MAX)
+		return (NULL);
+
+	target[r] = '\0';
+
+	/* Get device name */
+	devname = basename(target);
+	if (!devname || strnlen(devname, FILENAME_MAX) == 0) {
+		return (NULL);
+	}
+
+	return (devname);
+}
+
+/*
+ * **************************************************************************
+ * Get device real name if possible.
+ *
+ * IN:
+ * @major	Major number of the device.
+ * @minor	Minor number of the device.
+ *
+ * RETURNS:
+ * The name of the device, which may be the real name (as it appears in /dev)
+ * or a string with the following format devM-n.
+ ***************************************************************************
+ */
+char *get_devname(unsigned int major, unsigned int minor)
+{
+	static char buf[32];
+	char *name;
+
+	name = get_devname_from_sysfs(major, minor);
+	if (name != NULL)
+		return (name);
+
+	name = ioc_name(major, minor);
+	if ((name != NULL) && strcmp(name, K_NODEV))
+		return (name);
+
+	snprintf(buf, 32, "dev%u-%u", major, minor);
+	return (buf);
+}
+
+/*
+ * **************************************************************************
+ * Get device name (whether pretty-printed, persistent or not).
+ *
+ * IN:
+ * @major		Major number of the device.
+ * @minor		Minor number of the device.
+ * @wwn			WWN identifier of the device (0 if unknown).
+ * @part_nr		Partition number (0 if unknown).
+ * @disp_devmap_name	Display device mapper name.
+ * @disp_persist_name	Display persistent name of the device.
+ * @use_stable_id	Display stable-across-reboots name.
+ * @dflt_name		Device name to use by default (if existent).
+ *
+ * RETURNS:
+ * The name of the device.
+ ***************************************************************************
+ */
+char *get_device_name(unsigned int major, unsigned int minor, unsigned long long wwn[],
+		      unsigned int part_nr, unsigned int disp_devmap_name,
+		      unsigned int disp_persist_name, unsigned int use_stable_id,
+		      char *dflt_name)
+{
+	static unsigned int dm_major = 0;
+	char *dev_name = NULL, *persist_dev_name = NULL, *bang;
+	static char sid[64], dname[MAX_NAME_LEN];
+	char xsid[32] = "", pn[16] = "";
+
+	if (disp_persist_name) {
+		persist_dev_name = get_persistent_name_from_pretty(get_devname(major, minor));
+	}
+
+	if (persist_dev_name) {
+		dev_name = persist_dev_name;
+	}
+	else {
+		if (use_stable_id && (wwn[0] != 0)) {
+			if (wwn[1] != 0) {
+				sprintf(xsid, "%016llx", wwn[1]);
+			}
+			if (part_nr) {
+				sprintf(pn, "-%d", part_nr);
+			}
+			snprintf(sid, sizeof(sid), "%#016llx%s%s", wwn[0], xsid, pn);
+			dev_name = sid;
+		}
+		else if (disp_devmap_name) {
+			if (!dm_major) {
+				dm_major = get_devmap_major();
+			}
+			if (major == dm_major) {
+				dev_name = transform_devmapname(major, minor);
+			}
+		}
+
+		if (!dev_name) {
+			if (dflt_name) {
+				dev_name = dflt_name;
+			}
+			else {
+				dev_name = get_devname(major, minor);
+			}
+		}
+	}
+
+	strncpy(dname, dev_name, sizeof(dname));
+	dname[sizeof(dname) - 1] = '\0';
+
+	while ((bang = strchr(dname, '!'))) {
+		/*
+		 * Some devices may have had a slash replaced with
+		 * a bang character (eg. cciss!c0d0...)
+		 * Restore their original names.
+		 */
+		*bang = '/';
+	}
+
+	return dname;
+}
+
+/*
  ***************************************************************************
  * Init color strings.
  ***************************************************************************
@@ -986,11 +1207,13 @@ void init_colors(void)
 	int len;
 
 	/* Read S_COLORS environment variable */
-	if (((e = getenv(ENV_COLORS)) == NULL) ||
-	    !strcmp(e, C_NEVER) ||
-	    (strcmp(e, C_ALWAYS) && !isatty(STDOUT_FILENO))) {
+	if ((e = __getenv(ENV_COLORS)) == NULL
+	     ? !isatty(STDOUT_FILENO)
+	     : (!strcmp(e, C_NEVER) ||
+		(strcmp(e, C_ALWAYS) && !isatty(STDOUT_FILENO)))) {
 		/*
-		 * Environment variable not set, or set to "never",
+		 * Environment variable not set and stdout is not a terminal,
+		 * or set to "never",
 		 * or set to "auto" and stdout is not a terminal:
 		 * Unset color strings.
 		 */
@@ -1007,7 +1230,7 @@ void init_colors(void)
 	}
 
 	/* Read S_COLORS_SGR environment variable */
-	if ((e = getenv(ENV_COLORS_SGR)) == NULL)
+	if ((e = __getenv(ENV_COLORS_SGR)) == NULL)
 		/* Environment variable not set */
 		return;
 
@@ -1403,7 +1626,7 @@ int parse_values(char *strargv, unsigned char bitmap[], int max_val, const char 
 			strncpy(range, t, 16);
 			range[15] = '\0';
 			valstr = t;
-			if ((s = index(range, '-')) != NULL) {
+			if ((s = strchr(range, '-')) != NULL) {
 				/* Possible range of values */
 				*s = '\0';
 				if (parse_valstr(range, max_val, &val_low) || (val_low < 0))

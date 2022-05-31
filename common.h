@@ -1,6 +1,6 @@
 /*
  * sysstat: System performance tools for Linux
- * (C) 1999-2018 by Sebastien Godard (sysstat <at> orange.fr)
+ * (C) 1999-2020 by Sebastien Godard (sysstat <at> orange.fr)
  */
 
 #ifndef _COMMON_H
@@ -13,6 +13,7 @@
 #include <sched.h>	/* For __CPU_SETSIZE */
 #include <limits.h>
 #include <stdlib.h>
+#include "systest.h"
 
 #ifdef HAVE_SYS_SYSMACROS_H
 /* Needed on some non-glibc environments */
@@ -67,26 +68,32 @@
 #define K_JSON		"JSON"
 
 /* Files */
-#define STAT			"/proc/stat"
-#define UPTIME			"/proc/uptime"
-#define DISKSTATS		"/proc/diskstats"
-#define INTERRUPTS		"/proc/interrupts"
-#define MEMINFO			"/proc/meminfo"
-#define SYSFS_BLOCK		"/sys/block"
-#define SYSFS_DEV_BLOCK		"/sys/dev/block"
-#define SYSFS_DEVCPU		"/sys/devices/system/cpu"
+#define __DISKSTATS		"diskstats"
+#define __BLOCK			"block"
+#define __DEV_BLOCK		"dev/block"
+#define SLASH_SYS		PRE "/sys"
+#define SLASH_DEV		PRE "/dev/"
+#define STAT			PRE "/proc/stat"
+#define UPTIME			PRE "/proc/uptime"
+#define DISKSTATS		PRE "/proc/" __DISKSTATS
+#define INTERRUPTS		PRE "/proc/interrupts"
+#define MEMINFO			PRE "/proc/meminfo"
+#define SYSFS_BLOCK		SLASH_SYS "/" __BLOCK
+#define SYSFS_DEV_BLOCK		SLASH_SYS "/" __DEV_BLOCK
+#define SYSFS_DEVCPU		PRE "/sys/devices/system/cpu"
 #define SYSFS_TIME_IN_STATE	"cpufreq/stats/time_in_state"
 #define S_STAT			"stat"
-#define DEVMAP_DIR		"/dev/mapper"
-#define DEVICES			"/proc/devices"
-#define SYSFS_USBDEV		"/sys/bus/usb/devices"
-#define DEV_DISK_BY		"/dev/disk/by"
+#define DEVMAP_DIR		PRE "/dev/mapper"
+#define DEVICES			PRE "/proc/devices"
+#define SYSFS_USBDEV		PRE "/sys/bus/usb/devices"
+#define DEV_DISK_BY		PRE "/dev/disk/by"
+#define DEV_DISK_BY_ID		PRE "/dev/disk/by-id"
 #define SYSFS_IDVENDOR		"idVendor"
 #define SYSFS_IDPRODUCT		"idProduct"
 #define SYSFS_BMAXPOWER		"bMaxPower"
 #define SYSFS_MANUFACTURER	"manufacturer"
 #define SYSFS_PRODUCT		"product"
-#define SYSFS_FCHOST		"/sys/class/fc_host"
+#define SYSFS_FCHOST		PRE "/sys/class/fc_host"
 
 #define MAX_FILE_LEN		512
 #define MAX_PF_NAME		1024
@@ -216,7 +223,6 @@ extern char persistent_name_type[MAX_FILE_LEN];
 struct ext_disk_stats {
 	double util;
 	double await;
-	double svctm;
 	double arqsz;
 };
 
@@ -238,9 +244,15 @@ time_t get_time
 void init_nls
 	(void);
 int is_device
-	(char *, int);
+	(char *, char *, int);
 void sysstat_panic
 	(const char *, int);
+int extract_wwnid
+	(char *, unsigned long long *, unsigned int *);
+int get_wwnid_from_pretty
+	(char *, unsigned long long *, unsigned int *);
+int check_dir
+	(char *);
 
 #ifndef SOURCE_SADC
 int count_bits
@@ -261,6 +273,9 @@ void cprintf_x
 	(int, int, ...);
 char *device_name
 	(char *);
+char *get_device_name
+	(unsigned int, unsigned int, unsigned long long [],
+	 unsigned int, unsigned int, unsigned int, unsigned int, char *);
 unsigned int get_devmap_major
 	(void);
 unsigned long long get_interval

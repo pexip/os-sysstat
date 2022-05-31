@@ -1,6 +1,6 @@
 /*
  * rndr_stats.c: Funtions used by sadf to display statistics in selected format.
- * (C) 1999-2018 by Sebastien GODARD (sysstat <at> orange.fr)
+ * (C) 1999-2020 by Sebastien GODARD (sysstat <at> orange.fr)
  *
  ***************************************************************************
  * This program is free software; you can redistribute it and/or modify it *
@@ -712,17 +712,31 @@ __print_funct_t render_io_stats(struct activity *a, int isdb, char *pre,
 	       NULL);
 
 	render(isdb, pre, PT_NOFLAG,
+	       "-\tdtps", NULL, NULL,
+	       NOVAL,
+	       sic->dk_drive_dio < sip->dk_drive_dio ? 0.0 :
+	       S_VALUE(sip->dk_drive_dio, sic->dk_drive_dio, itv),
+	       NULL);
+
+	render(isdb, pre, PT_NOFLAG,
 	       "-\tbread/s", NULL, NULL,
 	       NOVAL,
 	       sic->dk_drive_rblk < sip->dk_drive_rblk ? 0.0 :
 	       S_VALUE(sip->dk_drive_rblk, sic->dk_drive_rblk, itv),
 	       NULL);
 
-	render(isdb, pre, pt_newlin,
+	render(isdb, pre, PT_NOFLAG,
 	       "-\tbwrtn/s", NULL, NULL,
 	       NOVAL,
 	       sic->dk_drive_wblk < sip->dk_drive_wblk ? 0.0 :
 	       S_VALUE(sip->dk_drive_wblk, sic->dk_drive_wblk, itv),
+	       NULL);
+
+	render(isdb, pre, pt_newlin,
+	       "-\tbdscd/s", NULL, NULL,
+	       NOVAL,
+	       sic->dk_drive_dblk < sip->dk_drive_dblk ? 0.0 :
+	       S_VALUE(sip->dk_drive_dblk, sic->dk_drive_dblk, itv),
 	       NULL);
 }
 
@@ -1077,7 +1091,9 @@ __print_funct_t render_disk_stats(struct activity *a, int isdb, char *pre,
 		}
 
 		/* Get device name */
-		dev_name = get_sa_devname(sdc->major, sdc->minor, flags);
+		dev_name = get_device_name(sdc->major, sdc->minor, sdc->wwn, sdc->part_nr,
+					   DISPLAY_PRETTY(flags), DISPLAY_PERSIST_NAME_S(flags),
+					   USE_STABLE_ID(flags), NULL);
 
 		if (a->item_list != NULL) {
 			/* A list of devices has been entered on the command line */
@@ -1111,6 +1127,13 @@ __print_funct_t render_disk_stats(struct activity *a, int isdb, char *pre,
 		       NULL);
 
 		render(isdb, pre, PT_NOFLAG,
+		       "%s\tdkB/s", NULL,
+		       cons(sv, dev_name, NULL),
+		       NOVAL,
+		       S_VALUE(sdp->dc_sect, sdc->dc_sect, itv) / 2,
+		       NULL);
+
+		render(isdb, pre, PT_NOFLAG,
 		       "%s\tareq-sz", NULL,
 		       cons(sv, dev_name, NULL),
 		       NOVAL,
@@ -1129,13 +1152,6 @@ __print_funct_t render_disk_stats(struct activity *a, int isdb, char *pre,
 		       cons(sv, dev_name, NULL),
 		       NOVAL,
 		       xds.await,
-		       NULL);
-
-		render(isdb, pre, PT_NOFLAG,
-		       "%s\tsvctm", NULL,
-		       cons(sv, dev_name, NULL),
-		       NOVAL,
-		       xds.svctm,
 		       NULL);
 
 		render(isdb, pre, pt_newlin,
@@ -2730,11 +2746,19 @@ __print_funct_t render_huge_stats(struct activity *a, int isdb, char *pre,
 	       "-\tkbhugused", NULL, NULL,
 	       smc->tlhkb - smc->frhkb, DNOVAL, NULL);
 
-	render(isdb, pre, pt_newlin,
+	render(isdb, pre, PT_NOFLAG,
 	       "-\t%hugused", NULL, NULL, NOVAL,
 	       smc->tlhkb ?
 	       SP_VALUE(smc->frhkb, smc->tlhkb, smc->tlhkb) :
 	       0.0, NULL);
+
+	render(isdb, pre, PT_USEINT,
+	       "-\tkbhugrsvd", NULL, NULL,
+	       smc->rsvdhkb, DNOVAL, NULL);
+
+	render(isdb, pre, PT_USEINT | pt_newlin,
+	       "-\tkbhugsurp", NULL, NULL,
+	       smc->surphkb, DNOVAL, NULL);
 }
 
 /*
@@ -2887,14 +2911,17 @@ __print_funct_t render_filesystem_stats(struct activity *a, int isdb, char *pre,
 {
 	int i;
 	struct stats_filesystem *sfc;
+	char *dev_name;
 
 	for (i = 0; i < a->nr[curr]; i++) {
 		sfc = (struct stats_filesystem *) ((char *) a->buf[curr] + i * a->msize);
 
+		/* Get name to display (persistent or standard fs name, or mount point) */
+		dev_name = get_fs_name_to_display(a, flags, sfc);
+
 		if (a->item_list != NULL) {
 			/* A list of devices has been entered on the command line */
-			if (!search_list_item(a->item_list,
-					      DISPLAY_MOUNT(a->opt_flags) ? sfc->mountp : sfc->fs_name))
+			if (!search_list_item(a->item_list, dev_name))
 				/* Device not found */
 				continue;
 		}
@@ -2902,7 +2929,7 @@ __print_funct_t render_filesystem_stats(struct activity *a, int isdb, char *pre,
 		render(isdb, pre, PT_USERND,
 		       "%s\tMBfsfree",
 		       "%s",
-		       cons(sv, DISPLAY_MOUNT(a->opt_flags) ? sfc->mountp : sfc->fs_name, NOVAL),
+		       cons(sv, dev_name, NOVAL),
 		       NOVAL,
 		       (double) sfc->f_bfree / 1024 / 1024,
 		       NULL);
@@ -2910,7 +2937,7 @@ __print_funct_t render_filesystem_stats(struct activity *a, int isdb, char *pre,
 		render(isdb, pre, PT_USERND,
 		       "%s\tMBfsused",
 		       NULL,
-		       cons(sv, DISPLAY_MOUNT(a->opt_flags) ? sfc->mountp : sfc->fs_name, NOVAL),
+		       cons(sv, dev_name, NOVAL),
 		       NOVAL,
 		       (double) (sfc->f_blocks - sfc->f_bfree) / 1024 / 1024,
 		       NULL);
@@ -2918,7 +2945,7 @@ __print_funct_t render_filesystem_stats(struct activity *a, int isdb, char *pre,
 		render(isdb, pre, PT_NOFLAG,
 		       "%s\t%%fsused",
 		       NULL,
-		       cons(sv, DISPLAY_MOUNT(a->opt_flags) ? sfc->mountp : sfc->fs_name, NOVAL),
+		       cons(sv, dev_name, NOVAL),
 		       NOVAL,
 		       sfc->f_blocks ? SP_VALUE(sfc->f_bfree, sfc->f_blocks, sfc->f_blocks)
 				     : 0.0,
@@ -2927,7 +2954,7 @@ __print_funct_t render_filesystem_stats(struct activity *a, int isdb, char *pre,
 		render(isdb, pre, PT_NOFLAG,
 		       "%s\t%%ufsused",
 		       NULL,
-		       cons(sv, DISPLAY_MOUNT(a->opt_flags) ? sfc->mountp : sfc->fs_name, NOVAL),
+		       cons(sv, dev_name, NOVAL),
 		       NOVAL,
 		       sfc->f_blocks ? SP_VALUE(sfc->f_bavail, sfc->f_blocks, sfc->f_blocks)
 				     : 0.0,
@@ -2936,7 +2963,7 @@ __print_funct_t render_filesystem_stats(struct activity *a, int isdb, char *pre,
 		render(isdb, pre, PT_USEINT,
 		       "%s\tIfree",
 		       NULL,
-		       cons(sv, DISPLAY_MOUNT(a->opt_flags) ? sfc->mountp : sfc->fs_name, NOVAL),
+		       cons(sv, dev_name, NOVAL),
 		       sfc->f_ffree,
 		       NOVAL,
 		       NULL);
@@ -2944,7 +2971,7 @@ __print_funct_t render_filesystem_stats(struct activity *a, int isdb, char *pre,
 		render(isdb, pre, PT_USEINT,
 		       "%s\tIused",
 		       NULL,
-		       cons(sv, DISPLAY_MOUNT(a->opt_flags) ? sfc->mountp : sfc->fs_name, NOVAL),
+		       cons(sv, dev_name, NOVAL),
 		       sfc->f_files - sfc->f_ffree,
 		       NOVAL,
 		       NULL);
@@ -2953,7 +2980,7 @@ __print_funct_t render_filesystem_stats(struct activity *a, int isdb, char *pre,
 		       (DISPLAY_HORIZONTALLY(flags) ? PT_NOFLAG : PT_NEWLIN),
 		       "%s\t%%Iused",
 		       NULL,
-		       cons(sv, DISPLAY_MOUNT(a->opt_flags) ? sfc->mountp : sfc->fs_name, NOVAL),
+		       cons(sv, dev_name, NOVAL),
 		       NOVAL,
 		       sfc->f_files ? SP_VALUE(sfc->f_ffree, sfc->f_files, sfc->f_files)
 				    : 0.0,
@@ -2977,15 +3004,16 @@ __print_funct_t render_fchost_stats(struct activity *a, int isdb, char *pre,
 				    int curr, unsigned long long itv)
 {
 	int i, j, j0, found;
-	struct stats_fchost *sfcc, *sfcp;
+	struct stats_fchost *sfcc, *sfcp, sfczero;
+
+	memset(&sfczero, 0, sizeof(struct stats_fchost));
 
 	for (i = 0; i < a->nr[curr]; i++) {
 
 		found = FALSE;
+		sfcc = (struct stats_fchost *) ((char *) a->buf[curr] + i * a->msize);
 
 		if (a->nr[!curr] > 0) {
-			sfcc = (struct stats_fchost *) ((char *) a->buf[curr] + i * a->msize);
-
 			/* Look for corresponding structure in previous iteration */
 			j = i;
 
@@ -3008,8 +3036,10 @@ __print_funct_t render_fchost_stats(struct activity *a, int isdb, char *pre,
 			while (j != j0);
 		}
 
-		if (!found)
-			continue;
+		if (!found) {
+			/* This is a newly registered host */
+			sfcp = &sfczero;
+		}
 
 		render(isdb, pre, PT_NOFLAG ,
 		       "%s\tfch_rxf/s",
@@ -3166,4 +3196,190 @@ __print_funct_t render_softnet_stats(struct activity *a, int isdb, char *pre,
 			       NULL);
 		}
 	}
+}
+
+/*
+ ***************************************************************************
+ * Display pressure-stall CPU statistics in selected format.
+ *
+ * IN:
+ * @a		Activity structure with statistics.
+ * @isdb	Flag, true if db printing, false if ppc printing.
+ * @pre		Prefix string for output entries
+ * @curr	Index in array for current sample statistics.
+ * @itv		Interval of time in 1/100th of a second.
+ ***************************************************************************
+ */
+__print_funct_t render_psicpu_stats(struct activity *a, int isdb, char *pre,
+				    int curr, unsigned long long itv)
+{
+	struct stats_psi_cpu
+		*psic = (struct stats_psi_cpu *) a->buf[curr],
+		*psip = (struct stats_psi_cpu *) a->buf[!curr];
+	int pt_newlin
+		= (DISPLAY_HORIZONTALLY(flags) ? PT_NOFLAG : PT_NEWLIN);
+
+	render(isdb, pre, PT_NOFLAG,
+	       "-\t%scpu-10", NULL, NULL,
+	       NOVAL,
+	       (double) psic->some_acpu_10 / 100,
+	       NULL);
+
+	render(isdb, pre, PT_NOFLAG,
+	       "-\t%scpu-60", NULL, NULL,
+	       NOVAL,
+	       (double) psic->some_acpu_60 / 100,
+	       NULL);
+
+	render(isdb, pre, PT_NOFLAG,
+	       "-\t%scpu-300", NULL, NULL,
+	       NOVAL,
+	       (double) psic->some_acpu_300 / 100,
+	       NULL);
+
+	render(isdb, pre, pt_newlin,
+	       "-\t%scpu", NULL, NULL,
+	       NOVAL,
+	       ((double) psic->some_cpu_total - psip->some_cpu_total) / (100 * itv),
+	       NULL);
+}
+
+/*
+ ***************************************************************************
+ * Display pressure-stall I/O statistics in selected format.
+ *
+ * IN:
+ * @a		Activity structure with statistics.
+ * @isdb	Flag, true if db printing, false if ppc printing.
+ * @pre		Prefix string for output entries
+ * @curr	Index in array for current sample statistics.
+ * @itv		Interval of time in 1/100th of a second.
+ ***************************************************************************
+ */
+__print_funct_t render_psiio_stats(struct activity *a, int isdb, char *pre,
+				   int curr, unsigned long long itv)
+{
+	struct stats_psi_io
+		*psic = (struct stats_psi_io *) a->buf[curr],
+		*psip = (struct stats_psi_io *) a->buf[!curr];
+	int pt_newlin
+		= (DISPLAY_HORIZONTALLY(flags) ? PT_NOFLAG : PT_NEWLIN);
+
+	render(isdb, pre, PT_NOFLAG,
+	       "-\t%sio-10", NULL, NULL,
+	       NOVAL,
+	       (double) psic->some_aio_10 / 100,
+	       NULL);
+
+	render(isdb, pre, PT_NOFLAG,
+	       "-\t%sio-60", NULL, NULL,
+	       NOVAL,
+	       (double) psic->some_aio_60 / 100,
+	       NULL);
+
+	render(isdb, pre, PT_NOFLAG,
+	       "-\t%sio-300", NULL, NULL,
+	       NOVAL,
+	       (double) psic->some_aio_300 / 100,
+	       NULL);
+
+	render(isdb, pre, PT_NOFLAG,
+	       "-\t%sio", NULL, NULL,
+	       NOVAL,
+	       ((double) psic->some_io_total - psip->some_io_total) / (100 * itv),
+	       NULL);
+
+	render(isdb, pre, PT_NOFLAG,
+	       "-\t%fio-10", NULL, NULL,
+	       NOVAL,
+	       (double) psic->full_aio_10 / 100,
+	       NULL);
+
+	render(isdb, pre, PT_NOFLAG,
+	       "-\t%fio-60", NULL, NULL,
+	       NOVAL,
+	       (double) psic->full_aio_60 / 100,
+	       NULL);
+
+	render(isdb, pre, PT_NOFLAG,
+	       "-\t%fio-300", NULL, NULL,
+	       NOVAL,
+	       (double) psic->full_aio_300 / 100,
+	       NULL);
+
+	render(isdb, pre, pt_newlin,
+	       "-\t%fio", NULL, NULL,
+	       NOVAL,
+	       ((double) psic->full_io_total - psip->full_io_total) / (100 * itv),
+	       NULL);
+}
+
+/*
+ ***************************************************************************
+ * Display pressure-stall memory statistics in selected format.
+ *
+ * IN:
+ * @a		Activity structure with statistics.
+ * @isdb	Flag, true if db printing, false if ppc printing.
+ * @pre		Prefix string for output entries
+ * @curr	Index in array for current sample statistics.
+ * @itv		Interval of time in 1/100th of a second.
+ ***************************************************************************
+ */
+__print_funct_t render_psimem_stats(struct activity *a, int isdb, char *pre,
+				    int curr, unsigned long long itv)
+{
+	struct stats_psi_mem
+		*psic = (struct stats_psi_mem *) a->buf[curr],
+		*psip = (struct stats_psi_mem *) a->buf[!curr];
+	int pt_newlin
+		= (DISPLAY_HORIZONTALLY(flags) ? PT_NOFLAG : PT_NEWLIN);
+
+	render(isdb, pre, PT_NOFLAG,
+	       "-\t%smem-10", NULL, NULL,
+	       NOVAL,
+	       (double) psic->some_amem_10 / 100,
+	       NULL);
+
+	render(isdb, pre, PT_NOFLAG,
+	       "-\t%smem-60", NULL, NULL,
+	       NOVAL,
+	       (double) psic->some_amem_60 / 100,
+	       NULL);
+
+	render(isdb, pre, PT_NOFLAG,
+	       "-\t%smem-300", NULL, NULL,
+	       NOVAL,
+	       (double) psic->some_amem_300 / 100,
+	       NULL);
+
+	render(isdb, pre, PT_NOFLAG,
+	       "-\t%smem", NULL, NULL,
+	       NOVAL,
+	       ((double) psic->some_mem_total - psip->some_mem_total) / (100 * itv),
+	       NULL);
+
+	render(isdb, pre, PT_NOFLAG,
+	       "-\t%fmem-10", NULL, NULL,
+	       NOVAL,
+	       (double) psic->full_amem_10 / 100,
+	       NULL);
+
+	render(isdb, pre, PT_NOFLAG,
+	       "-\t%fmem-60", NULL, NULL,
+	       NOVAL,
+	       (double) psic->full_amem_60 / 100,
+	       NULL);
+
+	render(isdb, pre, PT_NOFLAG,
+	       "-\t%fmem-300", NULL, NULL,
+	       NOVAL,
+	       (double) psic->full_amem_300 / 100,
+	       NULL);
+
+	render(isdb, pre, pt_newlin,
+	       "-\t%fmem", NULL, NULL,
+	       NOVAL,
+	       ((double) psic->full_mem_total - psip->full_mem_total) / (100 * itv),
+	       NULL);
 }

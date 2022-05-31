@@ -1,6 +1,6 @@
 /*
  * raw_stats.c: Functions used by sar to display statistics in raw format.
- * (C) 1999-2018 by Sebastien GODARD (sysstat <at> orange.fr)
+ * (C) 1999-2020 by Sebastien GODARD (sysstat <at> orange.fr)
  *
  ***************************************************************************
  * This program is free software; you can redistribute it and/or modify it *
@@ -53,8 +53,8 @@ char *pfield(char *hdr_line, int pos)
 	int i, j = 0;
 
 	if (hdr_line) {
-		strncpy(hline, hdr_line, HEADER_LINE_LEN - 1);
-		hline[HEADER_LINE_LEN - 1] = '\0';
+		strncpy(hline, hdr_line, sizeof(hline) - 1);
+		hline[sizeof(hline) - 1] = '\0';
 		idx = 0;
 
 		for (hl = strtok(hline, "|"); hl && (pos > 0); hl = strtok(NULL, "|"), pos--);
@@ -67,8 +67,8 @@ char *pfield(char *hdr_line, int pos)
 			j = strcspn(hl, "&");
 			*(hl + j) = ';';
 		}
-		strncpy(field, hl, HEADER_LINE_LEN);
-		field[HEADER_LINE_LEN - 1] = '\0';
+		strncpy(field, hl, sizeof(field));
+		field[sizeof(field) - 1] = '\0';
 	}
 
 	/* Display current field */
@@ -105,6 +105,11 @@ void pval(unsigned long long valp, unsigned long long valc)
 /*
  ***************************************************************************
  * Display CPU statistics in raw format.
+ * Note: Values displayed for CPU "all" may slightly differ from those you
+ * would get if you were displaying them in pr_stats.c:print_cpu_stats().
+ * This is because values for CPU "all" are recalculated there as the sum of
+ * all individual CPU values (done by a call to get_global_cpu_statistics()
+ * function).
  *
  * IN:
  * @a		Activity structure with statistics.
@@ -334,9 +339,13 @@ __print_funct_t raw_print_io_stats(struct activity *a, char *timestr, int curr)
 	printf(" %s", pfield(NULL, 0));
 	pval(sip->dk_drive_wio, sic->dk_drive_wio);
 	printf(" %s", pfield(NULL, 0));
+	pval(sip->dk_drive_dio, sic->dk_drive_dio);
+	printf(" %s", pfield(NULL, 0));
 	pval(sip->dk_drive_rblk, sic->dk_drive_rblk);
 	printf(" %s", pfield(NULL, 0));
 	pval(sip->dk_drive_wblk, sic->dk_drive_wblk);
+	printf(" %s", pfield(NULL, 0));
+	pval(sip->dk_drive_dblk, sic->dk_drive_dblk);
 	printf("\n");
 }
 
@@ -528,7 +537,9 @@ __print_funct_t raw_print_disk_stats(struct activity *a, char *timestr, int curr
 		sdc = (struct stats_disk *) ((char *) a->buf[curr] + i * a->msize);
 
 		/* Get device name */
-		dev_name = get_sa_devname(sdc->major, sdc->minor, flags);
+		dev_name = get_device_name(sdc->major, sdc->minor, sdc->wwn, sdc->part_nr,
+					   DISPLAY_PRETTY(flags), DISPLAY_PERSIST_NAME_S(flags),
+					   USE_STABLE_ID(flags), NULL);
 
 		if (a->item_list != NULL) {
 			/* A list of devices has been entered on the command line */
@@ -559,6 +570,14 @@ __print_funct_t raw_print_disk_stats(struct activity *a, char *timestr, int curr
 		pval((unsigned long long) sdp->rd_sect, (unsigned long long) sdc->rd_sect);
 		printf(" %s", pfield(NULL, 0));
 		pval((unsigned long long) sdp->wr_sect, (unsigned long long) sdc->wr_sect);
+		printf(" %s", pfield(NULL, 0));
+		pval((unsigned long long) sdp->dc_sect, (unsigned long long) sdc->dc_sect);
+		printf(" rd_ticks");
+		pval((unsigned long long) sdp->rd_ticks, (unsigned long long) sdc->rd_ticks);
+		printf(" wr_ticks");
+		pval((unsigned long long) sdp->wr_ticks, (unsigned long long) sdc->wr_ticks);
+		printf(" dc_ticks");
+		pval((unsigned long long) sdp->dc_ticks, (unsigned long long) sdc->dc_ticks);
 		printf(" tot_ticks");
 		pval((unsigned long long) sdp->tot_ticks, (unsigned long long) sdc->tot_ticks);
 		pfield(NULL, 0); /* Skip areq-sz */
@@ -1392,7 +1411,11 @@ __print_funct_t raw_print_huge_stats(struct activity *a, char *timestr, int curr
 		*smc = (struct stats_huge *) a->buf[curr];
 
 	printf("%s; %s; %llu;", timestr, pfield(a->hdr_line, FIRST), smc->frhkb);
-	printf(" hugtotal; %llu;\n", smc->tlhkb);
+	printf(" hugtotal; %llu;", smc->tlhkb);
+	pfield(NULL, 0); /* Skip kbhugused */
+	pfield(NULL, 0); /* Skip %hugused */
+	printf(" %s; %llu;", pfield(NULL, 0), smc->rsvdhkb);
+	printf(" %s; %llu;\n", pfield(NULL, 0), smc->surphkb);
 }
 
 /*
@@ -1478,20 +1501,23 @@ __print_funct_t raw_print_filesystem_stats(struct activity *a, char *timestr, in
 {
 	int i;
 	struct stats_filesystem *sfc;
+	char *dev_name;
 
 	for (i = 0; i < a->nr[curr]; i++) {
 		sfc = (struct stats_filesystem *) ((char *) a->buf[curr] + i * a->msize);
 
+		/* Get name to display (persistent or standard fs name, or mount point) */
+		dev_name = get_fs_name_to_display(a, flags, sfc);
+
 		if (a->item_list != NULL) {
 			/* A list of devices has been entered on the command line */
-			if (!search_list_item(a->item_list,
-					      DISPLAY_MOUNT(a->opt_flags) ? sfc->mountp : sfc->fs_name))
+			if (!search_list_item(a->item_list, dev_name))
 				/* Device not found */
 				continue;
 		}
 
 		printf("%s; %s; \"%s\";", timestr, pfield(a->hdr_line, FIRST + DISPLAY_MOUNT(a->opt_flags)),
-		       DISPLAY_MOUNT(a->opt_flags) ? sfc->mountp : sfc->fs_name);
+		       dev_name);
 		printf(" f_bfree; %llu;", sfc->f_bfree);
 		printf(" f_blocks; %llu;", sfc->f_blocks);
 		printf(" f_bavail; %llu;", sfc->f_bavail);
@@ -1518,15 +1544,16 @@ __print_funct_t raw_print_filesystem_stats(struct activity *a, char *timestr, in
 __print_funct_t raw_print_fchost_stats(struct activity *a, char *timestr, int curr)
 {
 	int i, j, j0, found;
-	struct stats_fchost *sfcc, *sfcp;
+	struct stats_fchost *sfcc, *sfcp, sfczero;
+
+	memset(&sfczero, 0, sizeof(struct stats_fchost));
 
 	for (i = 0; i < a->nr[curr]; i++) {
 
 		found = FALSE;
+		sfcc = (struct stats_fchost *) ((char *) a->buf[curr] + i * a->msize);
 
 		if (a->nr[!curr] > 0) {
-			sfcc = (struct stats_fchost *) ((char *) a->buf[curr] + i * a->msize);
-
 			/* Look for corresponding structure in previous iteration */
 			j = i;
 
@@ -1549,10 +1576,17 @@ __print_funct_t raw_print_fchost_stats(struct activity *a, char *timestr, int cu
 			while (j != j0);
 		}
 
-		if (!found)
-			continue;
+		printf("%s; %s", timestr, pfield(a->hdr_line, FIRST));
 
-		printf("%s; %s; %s;", timestr, pfield(a->hdr_line, FIRST), sfcc->fchost_name);
+		if (!found) {
+			/* This is a newly registered host. Previous stats are zero */
+			sfcp = &sfczero;
+			if (DISPLAY_DEBUG_MODE(flags)) {
+				printf(" [NEW]");
+			}
+		}
+
+		printf("; %s;", sfcc->fchost_name);
 		printf(" %s", pfield(NULL, 0));
 		pval((unsigned long long) sfcp->f_rxframes, (unsigned long long) sfcc->f_rxframes);
 		printf(" %s", pfield(NULL, 0));
@@ -1633,4 +1667,88 @@ __print_funct_t raw_print_softnet_stats(struct activity *a, char *timestr, int c
 		pval((unsigned long long) ssnp->flow_limit, (unsigned long long) ssnc->flow_limit);
 		printf("\n");
 	}
+}
+
+/*
+ ***************************************************************************
+ * Display pressure-stall CPU statistics in raw format.
+ *
+ * IN:
+ * @a		Activity structure with statistics.
+ * @timestr	Time for current statistics sample.
+ * @curr	Index in array for current sample statistics.
+ ***************************************************************************
+ */
+__print_funct_t raw_print_psicpu_stats(struct activity *a, char *timestr, int curr)
+{
+	struct stats_psi_cpu
+		*psic = (struct stats_psi_cpu *) a->buf[curr],
+		*psip = (struct stats_psi_cpu *) a->buf[!curr];
+
+	printf("%s; %s; %lu;", timestr, pfield(a->hdr_line, FIRST), psic->some_acpu_10);
+	printf(" %s; %lu;", pfield(NULL, 0), psic->some_acpu_60);
+	printf(" %s; %lu;", pfield(NULL, 0), psic->some_acpu_300);
+	printf(" %s", pfield(NULL, 0));
+	pval((unsigned long long) psip->some_cpu_total, (unsigned long long) psic->some_cpu_total);
+	printf("\n");
+}
+
+/*
+ ***************************************************************************
+ * Display pressure-stall I/O statistics in raw format.
+ *
+ * IN:
+ * @a		Activity structure with statistics.
+ * @timestr	Time for current statistics sample.
+ * @curr	Index in array for current sample statistics.
+ ***************************************************************************
+ */
+__print_funct_t raw_print_psiio_stats(struct activity *a, char *timestr, int curr)
+{
+	struct stats_psi_io
+		*psic = (struct stats_psi_io *) a->buf[curr],
+		*psip = (struct stats_psi_io *) a->buf[!curr];
+
+	printf("%s; %s; %lu;", timestr, pfield(a->hdr_line, FIRST), psic->some_aio_10);
+	printf(" %s; %lu;", pfield(NULL, 0), psic->some_aio_60);
+	printf(" %s; %lu;", pfield(NULL, 0), psic->some_aio_300);
+	printf(" %s", pfield(NULL, 0));
+	pval((unsigned long long) psip->some_io_total, (unsigned long long) psic->some_io_total);
+
+	printf(" %s; %lu;", pfield(NULL, 0), psic->full_aio_10);
+	printf(" %s; %lu;", pfield(NULL, 0), psic->full_aio_60);
+	printf(" %s; %lu;", pfield(NULL, 0), psic->full_aio_300);
+	printf(" %s", pfield(NULL, 0));
+	pval((unsigned long long) psip->full_io_total, (unsigned long long) psic->full_io_total);
+	printf("\n");
+}
+
+/*
+ ***************************************************************************
+ * Display pressure-stall mem statistics in raw format.
+ *
+ * IN:
+ * @a		Activity structure with statistics.
+ * @timestr	Time for current statistics sample.
+ * @curr	Index in array for current sample statistics.
+ ***************************************************************************
+ */
+__print_funct_t raw_print_psimem_stats(struct activity *a, char *timestr, int curr)
+{
+	struct stats_psi_mem
+		*psic = (struct stats_psi_mem *) a->buf[curr],
+		*psip = (struct stats_psi_mem *) a->buf[!curr];
+
+	printf("%s; %s; %lu;", timestr, pfield(a->hdr_line, FIRST), psic->some_amem_10);
+	printf(" %s; %lu;", pfield(NULL, 0), psic->some_amem_60);
+	printf(" %s; %lu;", pfield(NULL, 0), psic->some_amem_300);
+	printf(" %s", pfield(NULL, 0));
+	pval((unsigned long long) psip->some_mem_total, (unsigned long long) psic->some_mem_total);
+
+	printf(" %s; %lu;", pfield(NULL, 0), psic->full_amem_10);
+	printf(" %s; %lu;", pfield(NULL, 0), psic->full_amem_60);
+	printf(" %s; %lu;", pfield(NULL, 0), psic->full_amem_300);
+	printf(" %s", pfield(NULL, 0));
+	pval((unsigned long long) psip->full_mem_total, (unsigned long long) psic->full_mem_total);
+	printf("\n");
 }

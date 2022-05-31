@@ -1,6 +1,6 @@
 /*
  * mpstat: per-processor statistics
- * (C) 2000-2018 by Sebastien GODARD (sysstat <at> orange.fr)
+ * (C) 2000-2020 by Sebastien GODARD (sysstat <at> orange.fr)
  *
  ***************************************************************************
  * This program is free software; you can redistribute it and/or modify it *
@@ -31,7 +31,6 @@
 
 #include "version.h"
 #include "mpstat.h"
-#include "common.h"
 #include "rd_stats.h"
 #include "count.h"
 
@@ -85,6 +84,9 @@ int *cpu_per_node;
  */
 int *cpu2node;
 
+/* CPU topology */
+struct cpu_topology *st_cpu_topology;
+
 struct tm mp_tstamp[3];
 
 /* Activity flag */
@@ -133,7 +135,7 @@ void usage(char *progname)
 		progname);
 
 	fprintf(stderr, _("Options are:\n"
-			  "[ -A ] [ -n ] [ -u ] [ -V ]\n"
+			  "[ -A ] [ -n ] [ -T ] [ -u ] [ -V ]\n"
 			  "[ -I { SUM | CPU | SCPU | ALL } ] [ -N { <node_list> | ALL } ]\n"
 			  "[ --dec={ 0 | 1 | 2 } ] [ -o JSON ] [ -P { <cpu_list> | ALL } ]\n"));
 	exit(1);
@@ -239,6 +241,11 @@ void salloc_mp_struct(int nr_cpus)
 		perror("malloc");
 		exit(4);
 	}
+
+	if ((st_cpu_topology = (struct cpu_topology *) malloc(sizeof(struct cpu_topology) * nr_cpus)) == NULL) {
+		perror("malloc");
+		exit(4);
+	}
 }
 
 /*
@@ -270,7 +277,7 @@ void sfree_mp_struct(void)
  * CPU that each node has).
  *
  * IN:
- * @cpu_nr		Number of CPU on this machine.
+ * @nr_cpus		Number of CPU on this machine.
  *
  * OUT:
  * @cpu_per_node	Number of CPU per node.
@@ -281,25 +288,25 @@ void sfree_mp_struct(void)
  * A value of -1 means no nodes have been found.
  ***************************************************************************
  */
-int get_node_placement(int cpu_nr, int cpu_per_node[], int cpu2node[])
+int get_node_placement(int nr_cpus, int cpu_per_node[], int cpu2node[])
 
 {
 	DIR *dir;
 	struct dirent *drd;
 	char line[MAX_PF_NAME];
-	int cpu, node, node_nr = -1;
+	int cpu, node, hi_node_nr = -1;
 
 	/* Init number of CPU per node */
-	memset(cpu_per_node, 0, sizeof(int) * (cpu_nr + 1));
+	memset(cpu_per_node, 0, sizeof(int) * (nr_cpus + 1));
 	/* CPU belongs to no node by default */
-	memset(cpu2node, -1, sizeof(int) * cpu_nr);
+	memset(cpu2node, -1, sizeof(int) * nr_cpus);
 
 	/* This is node "all" */
-	cpu_per_node[0] = cpu_nr;
+	cpu_per_node[0] = nr_cpus;
 
-	for (cpu = 0; cpu < cpu_nr; cpu++) {
-		snprintf(line, MAX_PF_NAME, "%s/cpu%d", SYSFS_DEVCPU, cpu);
-		line[MAX_PF_NAME - 1] = '\0';
+	for (cpu = 0; cpu < nr_cpus; cpu++) {
+		snprintf(line, sizeof(line), "%s/cpu%d", SYSFS_DEVCPU, cpu);
+		line[sizeof(line) - 1] = '\0';
 
 		/* Open relevant /sys directory */
 		if ((dir = opendir(line)) == NULL)
@@ -310,15 +317,15 @@ int get_node_placement(int cpu_nr, int cpu_per_node[], int cpu2node[])
 
 			if (!strncmp(drd->d_name, "node", 4) && isdigit(drd->d_name[4])) {
 				node = atoi(drd->d_name + 4);
-				if ((node >= cpu_nr) || (node < 0)) {
+				if ((node >= nr_cpus) || (node < 0)) {
 					/* Assume we cannot have more nodes than CPU */
 					closedir(dir);
 					return -1;
 				}
 				cpu_per_node[node + 1]++;
 				cpu2node[cpu] = node;
-				if (node > node_nr) {
-					node_nr = node;
+				if (node > hi_node_nr) {
+					hi_node_nr = node;
 				}
 				/* Node placement found for current CPU: Go to next CPU directory */
 				break;
@@ -329,7 +336,66 @@ int get_node_placement(int cpu_nr, int cpu_per_node[], int cpu2node[])
 		closedir(dir);
 	}
 
-	return node_nr;
+	return hi_node_nr;
+}
+
+/*
+ ***************************************************************************
+ * Read system logical topology: Socket number for each logical core is read
+ * from the /sys/devices/system/cpu/cpu{N}/topology/physical_package_id file,
+ * and the logical core id number is the first number read from the
+ * /sys/devices/system/cpu/cpu{N}/topology/thread_siblings_list file.
+ * Don't use /sys/devices/system/cpu/cpu{N}/topology/core_id as this is the
+ * physical core id (seems to be different from the number displayed by lscpu).
+ *
+ * IN:
+ * @nr_cpus	Number of CPU on this machine.
+ * @cpu_topo	Structures where socket and core id numbers will be saved.
+ *
+ * OUT:
+ * @cpu_topo	Structures where socket and core id numbers have been saved.
+ ***************************************************************************
+ */
+void read_topology(int nr_cpus, struct cpu_topology *cpu_topo)
+{
+	struct cpu_topology *cpu_topo_i;
+	FILE *fp;
+	char filename[MAX_PF_NAME];
+	int cpu, rc;
+
+	/* Init system topology */
+	memset(st_cpu_topology, 0, sizeof(struct cpu_topology) * nr_cpus);
+
+	for (cpu = 0; cpu < nr_cpus; cpu++) {
+
+		cpu_topo_i = cpu_topo + cpu;
+
+		/* Read current CPU's socket number */
+		snprintf(filename, sizeof(filename), "%s/cpu%d/%s", SYSFS_DEVCPU, cpu, PHYS_PACK_ID);
+		filename[sizeof(filename) - 1] = '\0';
+
+		if ((fp = fopen(filename, "r")) != NULL) {
+			rc = fscanf(fp, "%d", &cpu_topo_i->phys_package_id);
+			fclose(fp);
+
+			if (rc < 1) {
+				cpu_topo_i->phys_package_id = -1;
+			}
+		}
+
+		/* Read current CPU's logical core id number */
+		snprintf(filename, sizeof(filename), "%s/cpu%d/%s", SYSFS_DEVCPU, cpu, THREAD_SBL_LST);
+		filename[sizeof(filename) - 1] = '\0';
+
+		if ((fp = fopen(filename, "r")) != NULL) {
+			rc = fscanf(fp, "%d", &cpu_topo_i->logical_core_id);
+			fclose(fp);
+
+			if (rc < 1) {
+				cpu_topo_i->logical_core_id = -1;
+			}
+		}
+	}
 }
 
 /*
@@ -555,11 +621,15 @@ void write_plain_cpu_stats(int dis, unsigned long long deltot_jiffies, int prev,
 {
 	int i;
 	struct stats_cpu *scc, *scp;
+	struct cpu_topology *cpu_topo_i;
 
 	if (dis) {
-		printf("\n%-11s  CPU    %%usr   %%nice    %%sys %%iowait    %%irq   "
-		       "%%soft  %%steal  %%guest  %%gnice   %%idle\n",
-		       prev_string);
+		printf("\n%-11s  CPU", prev_string);
+		if (DISPLAY_TOPOLOGY(flags)) {
+			printf(" CORE SOCK NODE");
+		}
+		printf("    %%usr   %%nice    %%sys %%iowait    %%irq   "
+		       "%%soft  %%steal  %%guest  %%gnice   %%idle\n");
 	}
 
 	/*
@@ -581,9 +651,20 @@ void write_plain_cpu_stats(int dis, unsigned long long deltot_jiffies, int prev,
 		if (i == 0) {
 			/* This is CPU "all" */
 			cprintf_in(IS_STR, " %s", " all", 0);
+
+			if (DISPLAY_TOPOLOGY(flags)) {
+				printf("               ");
+			}
 		}
 		else {
 			cprintf_in(IS_INT, " %4d", "", i - 1);
+
+			if (DISPLAY_TOPOLOGY(flags)) {
+				cpu_topo_i = st_cpu_topology + i - 1;
+				cprintf_in(IS_INT, " %4d", "", cpu_topo_i->logical_core_id);
+				cprintf_in(IS_INT, " %4d", "", cpu_topo_i->phys_package_id);
+				cprintf_in(IS_INT, " %4d", "", cpu2node[i - 1]);
+			}
 
 			/* Recalculate itv for current proc */
 			deltot_jiffies = get_per_cpu_interval(scc, scp);
@@ -652,7 +733,9 @@ void write_json_cpu_stats(int tab, unsigned long long deltot_jiffies, int prev, 
 			  unsigned char offline_cpu_bitmap[])
 {
 	int i, next = FALSE;
+	char cpu_name[16], topology[1024] = "";
 	struct stats_cpu *scc, *scp;
+	struct cpu_topology *cpu_topo_i;
 
 	xprintf(tab++, "\"cpu-load\": [");
 
@@ -675,7 +758,27 @@ void write_json_cpu_stats(int tab, unsigned long long deltot_jiffies, int prev, 
 		}
 		next = TRUE;
 
-		if (i != 0) {
+		if (i == 0) {
+			/* This is CPU "all" */
+			strcpy(cpu_name, "all");
+
+			if (DISPLAY_TOPOLOGY(flags)) {
+				snprintf(topology, 1024,
+					 ", \"core\": \"\", \"socket\": \"\", \"node\": \"\"");
+			}
+
+		}
+		else {
+			snprintf(cpu_name, 16, "%d", i - 1);
+			cpu_name[15] = '\0';
+
+			if (DISPLAY_TOPOLOGY(flags)) {
+				cpu_topo_i = st_cpu_topology + i - 1;
+				snprintf(topology, 1024,
+					 ", \"core\": \"%d\", \"socket\": \"%d\", \"node\": \"%d\"",
+					 cpu_topo_i->logical_core_id, cpu_topo_i->phys_package_id, cpu2node[i - 1]);
+			}
+
 			/* Recalculate itv for current proc */
 			deltot_jiffies = get_per_cpu_interval(scc, scp);
 
@@ -684,19 +787,20 @@ void write_json_cpu_stats(int tab, unsigned long long deltot_jiffies, int prev, 
 				 * If the CPU is tickless then there is no change in CPU values
 				 * but the sum of values is not zero.
 				 */
-				xprintf0(tab, "{\"cpu\": \"%d\", \"usr\": 0.00, \"nice\": 0.00, "
+				xprintf0(tab, "{\"cpu\": \"%d\"%s, \"usr\": 0.00, \"nice\": 0.00, "
 					 "\"sys\": 0.00, \"iowait\": 0.00, \"irq\": 0.00, "
 					 "\"soft\": 0.00, \"steal\": 0.00, \"guest\": 0.00, "
-					 "\"gnice\": 0.00, \"idle\": 100.00}", i - 1);
+					 "\"gnice\": 0.00, \"idle\": 100.00}", i - 1, topology);
 				printf("\n");
 
 				continue;
 			}
 		}
 
-		xprintf0(tab, "{\"cpu\": \"%d\", \"usr\": %.2f, \"nice\": %.2f, \"sys\": %.2f, "
+		xprintf0(tab, "{\"cpu\": \"%s\"%s, \"usr\": %.2f, \"nice\": %.2f, \"sys\": %.2f, "
 			 "\"iowait\": %.2f, \"irq\": %.2f, \"soft\": %.2f, \"steal\": %.2f, "
-			 "\"guest\": %.2f, \"gnice\": %.2f, \"idle\": %.2f}", i - 1,
+			 "\"guest\": %.2f, \"gnice\": %.2f, \"idle\": %.2f}",
+			 cpu_name, topology,
 			 (scc->cpu_user - scc->cpu_guest) < (scp->cpu_user - scp->cpu_guest) ?
 			 0.0 :
 			 ll_sp_value(scp->cpu_user - scp->cpu_guest,
@@ -1321,7 +1425,7 @@ void write_plain_irqcpu_stats(struct stats_irqcpu *st_ic[], int ic_nr, int dis,
 		 * CPU must have been explicitly selected using option -P,
 		 * else we display every CPU.
 		 */
-		if (!(*(cpu_bitmap + (cpu >> 3)) & (1 << (cpu & 0x07))) && USE_P_OPTION(flags))
+		if (!(*(cpu_bitmap + (cpu >> 3)) & (1 << (cpu & 0x07))) && USE_OPTION_P(flags))
 			continue;
 
 		if ((scc->cpu_user    + scc->cpu_nice + scc->cpu_sys   +
@@ -1421,7 +1525,7 @@ void write_json_irqcpu_stats(int tab, struct stats_irqcpu *st_ic[], int ic_nr,
 		 * CPU must have been explicitly selected using option -P,
 		 * else we display every CPU.
 		 */
-		if (!(*(cpu_bitmap + (cpu >> 3)) & (1 << (cpu & 0x07))) && USE_P_OPTION(flags))
+		if (!(*(cpu_bitmap + (cpu >> 3)) & (1 << (cpu & 0x07))) && USE_OPTION_P(flags))
 			continue;
 
 		if ((scc->cpu_user    + scc->cpu_nice + scc->cpu_sys   +
@@ -1785,9 +1889,6 @@ void rw_mpstat_loop(int dis_hdr, int rows)
 	int curr = 1, dis = 1;
 	unsigned long lines = rows;
 
-	/* Dont buffer data if redirected to a pipe */
-	setbuf(stdout, NULL);
-
 	/* Read system uptime and CPU stats */
 	read_uptime(&(uptime_cs[0]));
 	read_stat_cpu(st_cpu[0], cpu_nr + 1);
@@ -1814,6 +1915,11 @@ void rw_mpstat_loop(int dis_hdr, int rows)
 			st_cpu[0]->cpu_guest += scc->cpu_guest;
 			st_cpu[0]->cpu_guest_nice += scc->cpu_guest_nice;
 		}
+	}
+
+	/* Read system topology */
+	if (DISPLAY_CPU(actflags) && DISPLAY_TOPOLOGY(flags)) {
+		read_topology(cpu_nr, st_cpu_topology);
 	}
 
 	/*
@@ -1871,14 +1977,12 @@ void rw_mpstat_loop(int dis_hdr, int rows)
 		       STATS_IRQCPU_SIZE * (cpu_nr + 1) * softirqcpu_nr);
 	}
 
-	if (!DISPLAY_JSON_OUTPUT(flags)) {
-		/* Set a handler for SIGINT */
-		memset(&int_act, 0, sizeof(int_act));
-		int_act.sa_handler = int_handler;
-		sigaction(SIGINT, &int_act, NULL);
-	}
+	/* Set a handler for SIGINT */
+	memset(&int_act, 0, sizeof(int_act));
+	int_act.sa_handler = int_handler;
+	sigaction(SIGINT, &int_act, NULL);
 
-	pause();
+	__pause();
 
 	if (sigint_caught)
 		/* SIGINT signal caught during first interval: Exit immediately */
@@ -1899,6 +2003,11 @@ void rw_mpstat_loop(int dis_hdr, int rows)
 		/* Read uptime and CPU stats */
 		read_uptime(&(uptime_cs[curr]));
 		read_stat_cpu(st_cpu[curr], cpu_nr + 1);
+
+		/* Read system topology */
+		if (DISPLAY_CPU(actflags) && DISPLAY_TOPOLOGY(flags)) {
+			read_topology(cpu_nr, st_cpu_topology);
+		}
 
 		/* Read total number of interrupts received among all CPU */
 		if (DISPLAY_IRQ_SUM(actflags)) {
@@ -1932,17 +2041,16 @@ void rw_mpstat_loop(int dis_hdr, int rows)
 
 		if (count) {
 
-			if (DISPLAY_JSON_OUTPUT(flags)) {
-				printf(",\n");
-			}
-			pause();
+			__pause();
 
 			if (sigint_caught) {
 				/* SIGINT signal caught => Display average stats */
 				count = 0;
-				printf("\n");	/* Skip "^C" displayed on screen */
 			}
 			else {
+				if (DISPLAY_JSON_OUTPUT(flags)) {
+					printf(",\n");
+				}
 				curr ^= 1;
 			}
 		}
@@ -2054,7 +2162,7 @@ int main(int argc, char **argv)
 				usage(argv[0]);
 			}
 			if (node_nr >= 0) {
-				flags |= F_N_OPTION;
+				flags |= F_OPTION_N;
 				actflags |= M_D_NODE;
 				actset = TRUE;
 				dis_hdr = 9;
@@ -2069,7 +2177,7 @@ int main(int argc, char **argv)
 			if (!argv[++opt]) {
 				usage(argv[0]);
 			}
-			flags |= F_P_OPTION;
+			flags |= F_OPTION_P;
 			dis_hdr = 9;
 
 			if (parse_values(argv[opt], cpu_bitmap, cpu_nr, K_LOWERALL)) {
@@ -2083,16 +2191,12 @@ int main(int argc, char **argv)
 				switch (*(argv[opt] + i)) {
 
 				case 'A':
+					flags |= F_OPTION_A;
 					actflags |= M_D_CPU + M_D_IRQ_SUM + M_D_IRQ_CPU + M_D_SOFTIRQS;
 					if (node_nr >= 0) {
 						actflags |= M_D_NODE;
-						flags |= F_N_OPTION;
-						memset(node_bitmap, 0xff, ((cpu_nr + 1) >> 3) + 1);
 					}
 					actset = TRUE;
-					/* Select all processors */
-					flags |= F_P_OPTION;
-					memset(cpu_bitmap, 0xff, ((cpu_nr + 1) >> 3) + 1);
 					break;
 
 				case 'n':
@@ -2101,6 +2205,11 @@ int main(int argc, char **argv)
 						actflags |= M_D_NODE;
 						actset = TRUE;
 					}
+					break;
+
+				case 'T':
+					/* Display logical topology */
+					flags |= F_TOPOLOGY;
 					break;
 
 				case 'u':
@@ -2150,7 +2259,7 @@ int main(int argc, char **argv)
 
 	/* Default: Display CPU (e.g., "mpstat", "mpstat -P 1", "mpstat -P 1 -n", "mpstat -P 1 -N 1"... */
 	if (!actset ||
-	    (USE_P_OPTION(flags) && !(actflags & ~M_D_NODE))) {
+	    (USE_OPTION_P(flags) && !(actflags & ~M_D_NODE))) {
 		actflags |= M_D_CPU;
 	}
 
@@ -2158,11 +2267,26 @@ int main(int argc, char **argv)
 		dis_hdr = 9;
 	}
 
-	if (!USE_P_OPTION(flags)) {
+	if (USE_OPTION_A(flags)) {
+		/*
+		 * Set -P ALL -N ALL only if individual CPU and/or nodes
+		 * have not been selected.
+		 */
+		if ((node_nr >= 0) && !USE_OPTION_N(flags)) {
+			memset(node_bitmap, ~0, ((cpu_nr + 1) >> 3) + 1);
+			flags += F_OPTION_N;
+		}
+		if (!USE_OPTION_P(flags)) {
+			memset(cpu_bitmap, ~0, ((cpu_nr + 1) >> 3) + 1);
+			flags += F_OPTION_P;
+		}
+	}
+
+	if (!USE_OPTION_P(flags)) {
 		/* Option -P not used: Set bit 0 (global stats among all proc) */
 		*cpu_bitmap = 1;
 	}
-	if (!USE_N_OPTION(flags)) {
+	if (!USE_OPTION_N(flags)) {
 		/* Option -N not used: Set bit 0 (global stats among all nodes) */
 		*node_bitmap = 1;
 	}
@@ -2186,8 +2310,15 @@ int main(int argc, char **argv)
 	/* Get time */
 	get_localtime(&(mp_tstamp[0]), 0);
 
+	/*
+	 * Don't buffer data if redirected to a pipe.
+	 * Note: With musl-c, the behavior of this function is undefined except
+	 * when it is the first operation on the stream.
+	 */
+	setbuf(stdout, NULL);
+
 	/* Get system name, release number and hostname */
-	uname(&header);
+	__uname(&header);
 	print_gal_header(&(mp_tstamp[0]), header.sysname, header.release,
 			 header.nodename, header.machine, get_cpu_nr(~0, FALSE),
 			 DISPLAY_JSON_OUTPUT(flags));

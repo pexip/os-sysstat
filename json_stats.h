@@ -1,6 +1,6 @@
 /*
  * json_stats.h: Include file used to display system statistics in JSON format.
- * (C) 1999-2018 by Sebastien Godard (sysstat <at> orange.fr)
+ * (C) 1999-2020 by Sebastien Godard (sysstat <at> orange.fr)
  */
 
 #ifndef _JSON_STATS_H
@@ -14,7 +14,7 @@
  ***************************************************************************
  */
 
-/* Functions used to display statistics in XML */
+/* Functions used to display statistics in JSON */
 __print_funct_t json_print_cpu_stats
 	(struct activity *, int, int, unsigned long long);
 __print_funct_t json_print_pcsw_stats
@@ -93,5 +93,11 @@ __print_funct_t json_print_fchost_stats
 	(struct activity *, int, int, unsigned long long);
 __print_funct_t json_print_softnet_stats
 	(struct activity *, int, int, unsigned long long);
+__print_funct_t json_print_psicpu_stats
+	(struct activity *, int, int, unsigned long long);
+__print_funct_t json_print_psiio_stats
+	(struct activity *, int, int, unsigned long long);
+__print_funct_t json_print_psimem_stats
+	(struct activity *, int, int, unsigned long long);
 
-#endif /* _XML_STATS_H */
+#endif /* _JSON_STATS_H */

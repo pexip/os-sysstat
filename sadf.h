@@ -1,6 +1,6 @@
 /*
  * sadf: System activity data formatter
- * (C) 1999-2018 by Sebastien Godard (sysstat <at> orange.fr)
+ * (C) 1999-2020 by Sebastien Godard (sysstat <at> orange.fr)
  */
 
 #ifndef _SADF_H
@@ -9,7 +9,7 @@
 #include "sa.h"
 
 /* DTD version for XML output */
-#define XML_DTD_VERSION	"3.4"
+#define XML_DTD_VERSION	"3.9"
 
 /* Various constants */
 #define DO_SAVE		0
@@ -28,7 +28,7 @@
  */
 
 /* Number of output formats */
-#define NR_FMT	8
+#define NR_FMT	9
 
 /* Output formats */
 #define F_DB_OUTPUT	1
@@ -39,36 +39,23 @@
 #define F_CONV_OUTPUT	6
 #define F_SVG_OUTPUT	7
 #define F_RAW_OUTPUT	8
+#define F_PCP_OUTPUT	9
 
 /* Format options */
 
 /*
- * Indicate that all statistics data for one activity should be displayed before
- * displaying stats for next activity. This is what sar does in its report.
- * Example: If stats for activities A and B at time t and t' have been collected,
- * setting AO_GROUPED_STATS for a format will result in the following output:
- * stats for activity A at t
- * stats for activity A at t'
- * stats for activity B at t
- * stats for activity B at t'
- * Without this option, output would be:
- * stats for activity A at t
- * stats for activity B at t
- * stats for activity A at t'
- * stats for activity B at t'
+ * Indicate that a decimal point should be used to make output
+ * locale independent.
  */
-#define FO_GROUPED_STATS	0x01
+#define FO_LC_NUMERIC_C		0x01
 
 /*
- * Indicate that output should stop after the header is displayed.
+ * Indicate that option -H may be used with corresponding format
+ * so that only the header is displayed.
  */
 #define FO_HEADER_ONLY		0x02
 
-/*
- * Indicate that a true sysstat activity file but with a bad
- * format should not yield an error message.
- */
-#define FO_BAD_FILE_FORMAT	0x04
+/* Unused: 0x04 */
 
 /*
  * Indicate that timestamp can be displayed in local time instead of UTC
@@ -106,15 +93,28 @@
  */
 #define FO_NO_TRUE_TIME		0x100
 
-#define DISPLAY_GROUPED_STATS(m)	(((m) & FO_GROUPED_STATS)	== FO_GROUPED_STATS)
+/*
+ * Indicate that the number of different items should be counted and
+ * a list created (see @item_list and @item_list_sz in struct activity).
+ */
+#define FO_ITEM_LIST		0x200
+
+/*
+ * Indicate that all the records, including RESTART and COMMENT ones,
+ * should be displayed in order of time.
+ */
+#define FO_FULL_ORDER		0x400
+
+#define SET_LC_NUMERIC_C(m)		(((m) & FO_LC_NUMERIC_C)	== FO_LC_NUMERIC_C)
 #define ACCEPT_HEADER_ONLY(m)		(((m) & FO_HEADER_ONLY)		== FO_HEADER_ONLY)
-#define ACCEPT_BAD_FILE_FORMAT(m)	(((m) & FO_BAD_FILE_FORMAT)	== FO_BAD_FILE_FORMAT)
 #define ACCEPT_LOCAL_TIME(m)		(((m) & FO_LOCAL_TIME)		== FO_LOCAL_TIME)
 #define ACCEPT_HORIZONTALLY(m)		(((m) & FO_HORIZONTALLY)	== FO_HORIZONTALLY)
 #define ACCEPT_SEC_EPOCH(m)		(((m) & FO_SEC_EPOCH)		== FO_SEC_EPOCH)
 #define DISPLAY_FIELD_LIST(m)		(((m) & FO_FIELD_LIST)		== FO_FIELD_LIST)
 #define TEST_MARKUP(m)			(((m) & FO_TEST_MARKUP)		== FO_TEST_MARKUP)
 #define REJECT_TRUE_TIME(m)		(((m) & FO_NO_TRUE_TIME)	== FO_NO_TRUE_TIME)
+#define CREATE_ITEM_LIST(m)		(((m) & FO_ITEM_LIST)		== FO_ITEM_LIST)
+#define ORDER_ALL_RECORDS(m)		(((m) & FO_FULL_ORDER)		== FO_FULL_ORDER)
 
 
 /*
@@ -130,53 +130,67 @@ void convert_file
  * Prototypes used to display restart messages
  */
 __printf_funct_t print_db_restart
-	(int *, int, char *, char *, int, struct file_header *);
+	(int *, int, char *, char *, int, struct file_header *, struct record_header *);
 __printf_funct_t print_ppc_restart
-	(int *, int, char *, char *, int, struct file_header *);
+	(int *, int, char *, char *, int, struct file_header *, struct record_header *);
 __printf_funct_t print_xml_restart
-	(int *, int, char *, char *, int, struct file_header *);
+	(int *, int, char *, char *, int, struct file_header *, struct record_header *);
 __printf_funct_t print_json_restart
-	(int *, int, char *, char *, int, struct file_header *);
+	(int *, int, char *, char *, int, struct file_header *, struct record_header *);
 __printf_funct_t print_raw_restart
-	(int *, int, char *, char *, int, struct file_header *);
+	(int *, int, char *, char *, int, struct file_header *, struct record_header *);
+__printf_funct_t print_pcp_restart
+	(int *, int, char *, char *, int, struct file_header *, struct record_header *);
 
 /*
  * Prototypes used to display comments
  */
 __printf_funct_t print_db_comment
-	(int *, int, char *, char *, int, char *, struct file_header *);
+	(int *, int, char *, char *, int, char *, struct file_header *, struct record_header *);
 __printf_funct_t print_ppc_comment
-	(int *, int, char *, char *, int, char *, struct file_header *);
+	(int *, int, char *, char *, int, char *, struct file_header *, struct record_header *);
 __printf_funct_t print_xml_comment
-	(int *, int, char *, char *, int, char *, struct file_header *);
+	(int *, int, char *, char *, int, char *, struct file_header *, struct record_header *);
 __printf_funct_t print_json_comment
-	(int *, int, char *, char *, int, char *, struct file_header *);
+	(int *, int, char *, char *, int, char *, struct file_header *, struct record_header *);
 __printf_funct_t print_sar_comment
-	(int *, int, char *, char *, int, char *, struct file_header *);
+	(int *, int, char *, char *, int, char *, struct file_header *, struct record_header *);
 __printf_funct_t print_raw_comment
-	(int *, int, char *, char *, int, char *, struct file_header *);
+	(int *, int, char *, char *, int, char *, struct file_header *, struct record_header *);
+__printf_funct_t print_pcp_comment
+	(int *, int, char *, char *, int, char *, struct file_header *, struct record_header *);
 
 /*
  * Prototypes used to display the statistics part of the report
  */
 __printf_funct_t print_xml_statistics
-	(int *, int);
+	(int *, int, struct activity * [], unsigned int []);
 __printf_funct_t print_json_statistics
-	(int *, int);
+	(int *, int, struct activity * [], unsigned int []);
+__printf_funct_t print_pcp_statistics
+	(int *, int, struct activity * [], unsigned int []);
 
 /*
  * Prototypes used to display the timestamp part of the report
  */
 __tm_funct_t print_db_timestamp
-	(void *, int, char *, char *, unsigned long long, struct file_header *, unsigned int);
+	(void *, int, char *, char *, unsigned long long,
+	 struct record_header *, struct file_header *, unsigned int);
 __tm_funct_t print_ppc_timestamp
-	(void *, int, char *, char *, unsigned long long, struct file_header *, unsigned int);
+	(void *, int, char *, char *, unsigned long long,
+	 struct record_header *, struct file_header *, unsigned int);
 __tm_funct_t print_xml_timestamp
-	(void *, int, char *, char *, unsigned long long, struct file_header *, unsigned int);
+	(void *, int, char *, char *, unsigned long long,
+	 struct record_header *, struct file_header *, unsigned int);
 __tm_funct_t print_json_timestamp
-	(void *, int, char *, char *, unsigned long long, struct file_header *, unsigned int);
+	(void *, int, char *, char *, unsigned long long,
+	 struct record_header *, struct file_header *, unsigned int);
 __tm_funct_t print_raw_timestamp
-	(void *, int, char *, char *, unsigned long long, struct file_header *, unsigned int);
+	(void *, int, char *, char *, unsigned long long,
+	 struct record_header *, struct file_header *, unsigned int);
+__tm_funct_t print_pcp_timestamp
+	(void *, int, char *, char *, unsigned long long,
+	 struct record_header *, struct file_header *, unsigned int);
 
 /*
  * Prototypes used to display the report header
@@ -193,5 +207,21 @@ __printf_funct_t print_hdr_header
 __printf_funct_t print_svg_header
 	(void *, int, char *, struct file_magic *, struct file_header *,
 	 struct activity * [], unsigned int [], struct file_activity *);
+__printf_funct_t print_pcp_header
+	(void *, int, char *, struct file_magic *, struct file_header *,
+	 struct activity * [], unsigned int [], struct file_activity *);
+
+/*
+ * Main display functions
+ */
+void logic1_display_loop
+	(int, char *, struct file_activity *, struct file_magic *,
+	 struct tm *, void *);
+void logic2_display_loop
+	(int, char *, struct file_activity *, struct file_magic *,
+	 struct tm *, void *);
+void svg_display_loop
+	(int, char *, struct file_activity *, struct file_magic *,
+	 struct tm *, void *);
 
 #endif  /* _SADF_H */

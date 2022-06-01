@@ -2,13 +2,14 @@ From: Robert Luberda <robert@debian.org>
 Date: Tue, 23 Mar 2010 22:04:47 +0100
 Subject: Minor fixes in config files
 
+Forwarded: not-needed
 ---
  cron/crontab.sample  | 3 ---
  sysstat.sysconfig.in | 9 ++++++---
  2 files changed, 6 insertions(+), 6 deletions(-)
 
 diff --git a/cron/crontab.sample b/cron/crontab.sample
-index 7cc3b44..40c5025 100644
+index b5e396d..30301d2 100644
 --- a/cron/crontab.sample
 +++ b/cron/crontab.sample
 @@ -1,7 +1,4 @@
@@ -18,9 +19,9 @@ index 7cc3b44..40c5025 100644
 -# /usr/lib/sa for example).
  #
  # 8am-7pm activity reports every 20 minutes during weekdays.
- # 0 8-18 * * 1-5 @SA_LIB_DIR@/sa1 1200 3 &
+ # 0 8-18 * * 1-5 @SA_LIB_DIR@/sa1 1200 3
 diff --git a/sysstat.sysconfig.in b/sysstat.sysconfig.in
-index 796da1f..7d20252 100644
+index aec7656..e951582 100644
 --- a/sysstat.sysconfig.in
 +++ b/sysstat.sysconfig.in
 @@ -1,6 +1,7 @@

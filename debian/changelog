@@ -1,3 +1,167 @@
+sysstat (12.5.2-2) unstable; urgency=medium
+
+  * Hopefully fix failures of autopkgtests introduced in previous upload:
+    + introduce 14-simtest-run-all.patch to run all upstream tests instead on
+      stopping on the first failed one;
+    + mark upstream unit tests as skippable, but make sure they are not
+      skipped on amd64 and arm64 architectures;
+    + run upstream tests twice: with and without debian patches applied;
+    + make skipped upstream tests save all temporary output files as
+      artifacts;
+    + add temporary code to diagnose failures of iostat in basic tests.
+
+ -- Robert Luberda <robert@debian.org>  Tue, 02 Feb 2021 23:46:08 +0100
+
+sysstat (12.5.2-1) unstable; urgency=low
+
+  * New upstream stable version.
+  * Add autopkgtest checks (LP: #1679406) consisting of:
+    + basic check of sinlge-run of commands provided by the package;
+    + run of upstream-provided tests, that require recompilation of binaries
+      with -DTEST flag.
+  * Drop no longer needed 10-ignore-ut-failures.patch.
+  * Add 13-irqstat-interpreter.patch to use '#/usr/bin/python2' in the irqstat
+    example script to fix lintian's `example-unusual-interpreter'.
+
+ -- Robert Luberda <robert@debian.org>  Sat, 30 Jan 2021 16:56:48 +0100
+
+sysstat (12.4.2-1) unstable; urgency=medium
+
+  * New upstream stable version.
+
+ -- Robert Luberda <robert@debian.org>  Wed, 06 Jan 2021 00:20:47 +0100
+
+sysstat (12.4.1-2) unstable; urgency=medium
+
+  * Revert the init.d change from the previous upload: make the 'Default-Stop'
+    line in init.d empty again, as it turned out that the line was not the
+    reason of the insserv's warning originally reported (see: #971713).
+
+ -- Robert Luberda <robert@debian.org>  Wed, 16 Dec 2020 09:36:42 +0100
+
+sysstat (12.4.1-1) unstable; urgency=medium
+
+  [ Robert Luberda ]
+  * New upstream stable version.
+  * Replace empty 'Default-Stop' line in the init.d file with
+    'Default-Stop: 0 1 6' to try fix warning given by insserv
+    however it seems to cause insserv to display an additional
+    warning instead (see: #971713).
+  * debian/watch: Update version to 4 (lintian).
+  * Standards-Version: 4.5.1 (no changes).
+
+  [ Debian Janitor ]
+  * Set upstream metadata fields: Bug-Submit.
+
+ -- Robert Luberda <robert@debian.org>  Sun, 13 Dec 2020 14:20:26 +0100
+
+sysstat (12.4.0-1) unstable; urgency=medium
+
+  * New upstream stable version.
+  * Drop no longer needed 09-enable-colors.patch.
+  * Enable systemd timers, and prefer them over the cron jobs:
+    + debian/rules: call configure with --enable-install-cron and
+      --disable-use-crond options to install upstream-provided systemd files;
+    + add systemd as build-dependency;
+    + drop debian/sysstat.service;
+    + introduce 12-systat.service-documentation.patch to add 'Documentation'
+      key to upstream-provided sysstat.service file;
+    + debian/debian-sa1, debian/sysstat.cron.daily: exit early if the
+      /run/systemd/system directory exists;
+    + debian/sysstat.postinst: use existing debconf question to enable/disable
+      systemd service and timers for sysstat.
+
+ -- Robert Luberda <robert@debian.org>  Thu, 27 Aug 2020 12:37:57 +0200
+
+sysstat (12.3.3-1) unstable; urgency=medium
+
+  * New upstream development version.
+  * Add 11-fix-spelling-typo.patch to fix a misspelled 'resource' word,
+    as found by lintian.
+  * Bump debhelper's compat version to 13.
+  * Convert debian/po/{es,pl}.po files to UTF-8 (lintian).
+  * Update lintian override file with renamed tags.
+  * Switch to using 'mktemp' instead of 'tmpfile' in the postinst script.
+
+ -- Robert Luberda <robert@debian.org>  Tue, 14 Jul 2020 11:39:09 +0200
+
+sysstat (12.3.2-1) unstable; urgency=medium
+
+  * New upstream development version.
+
+ -- Robert Luberda <robert@debian.org>  Mon, 20 Apr 2020 08:59:05 +0200
+
+sysstat (12.3.1-1) unstable; urgency=medium
+
+  * New upstream development version.
+  * Remove no longer needed 11-Double-free-in-check_file_actlst.patch.
+  * Standards-Version: 4.5.0 (no changes).
+
+ -- Robert Luberda <robert@debian.org>  Tue, 10 Mar 2020 20:26:38 +0100
+
+sysstat (12.2.0-2) unstable; urgency=medium
+
+  * Add 11-Double-free-in-check_file_actlst.patch, taken from upstream,
+    to really fix CVE-2019-19725 (closes: #946657).
+
+ -- Robert Luberda <robert@debian.org>  Mon, 23 Dec 2019 20:11:03 +0100
+
+sysstat (12.2.0-1) unstable; urgency=medium
+
+  * New upstream stable version:
+    + fixes double free in check_file_actlst in check_file_actlst in
+      sa_common.c (CVE-2019-19725, closes: #946657).
+  * Replace debian/compat file with build dependency on debhelper-compat.
+  * Add lintian overrides for manpages that document internal programs
+    shipped in /usr/lib/sysstat.
+  * Add upstream metadata file.
+
+ -- Robert Luberda <robert@debian.org>  Sun, 22 Dec 2019 12:44:20 +0100
+
+sysstat (12.1.7-1) unstable; urgency=medium
+
+  * New upstream development version:
+    + fixes memory corruption bug due to integer overflow in remap_struct()
+      function (CVE-2019-16167, closes: #939914).
+  * debian/control:
+    + switch Build-Depends to libsensors-dev from libsensors4-dev
+      (closes: #917450);
+    + Standards-Version: 4.4.1 (no changes).
+
+ -- Robert Luberda <robert@debian.org>  Sat, 02 Nov 2019 11:55:12 +0100
+
+sysstat (12.0.6-1) unstable; urgency=medium
+
+  * New upstream stable version.
+
+ -- Robert Luberda <robert@debian.org>  Sun, 18 Aug 2019 13:05:20 +0200
+
+sysstat (12.0.5-3) unstable; urgency=medium
+
+  * No changes, source-only upload to allow the package to migrate to testing.
+
+ -- Robert Luberda <robert@debian.org>  Thu, 08 Aug 2019 22:30:19 +0200
+
+sysstat (12.0.5-2) unstable; urgency=medium
+
+  * Fix a typo introduced into debian/rules.
+
+ -- Robert Luberda <robert@debian.org>  Mon, 29 Jul 2019 23:44:09 +0200
+
+sysstat (12.0.5-1) unstable; urgency=medium
+
+  * New upstream stable version.
+  * Bump debhelper's compat version to 12:
+    + pass --no-restart-after-upgrade and --no-stop-on-upgrade (in
+      addition to already existing --no-start) to dh_installinit
+      and dh_installsystemd to prevent bogus "Linux Restart" markers
+      from re-appearing on upgrades.
+  * debian/rules: Use DPKG_*_MAINT_APPEND variables and buildflags.mk
+    to setup build flags.
+  * Standards-Version: 4.4.0.
+
+ -- Robert Luberda <robert@debian.org>  Mon, 29 Jul 2019 22:06:11 +0200
+
 sysstat (12.0.3-2pexip2) pexip; urgency=medium
 
   * Rebuild in buster environment

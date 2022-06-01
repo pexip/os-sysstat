@@ -1,6 +1,6 @@
 /*
  * raw_stats.h: Include file used to display statistics in raw format.
- * (C) 1999-2018 by Sebastien Godard (sysstat <at> orange.fr)
+ * (C) 1999-2020 by Sebastien Godard (sysstat <at> orange.fr)
  */
 
 #ifndef _RAW_STATS_H
@@ -91,6 +91,12 @@ __print_funct_t raw_print_filesystem_stats
 __print_funct_t raw_print_fchost_stats
 	(struct activity *, char *, int);
 __print_funct_t raw_print_softnet_stats
+	(struct activity *, char *, int);
+__print_funct_t raw_print_psicpu_stats
+	(struct activity *, char *, int);
+__print_funct_t raw_print_psiio_stats
+	(struct activity *, char *, int);
+__print_funct_t raw_print_psimem_stats
 	(struct activity *, char *, int);
 
 #endif /* _RAW_STATS_H */

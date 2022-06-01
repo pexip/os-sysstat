@@ -1,6 +1,6 @@
 /*
  * sar: report system activity
- * (C) 1999-2018 by Sebastien GODARD (sysstat <at> orange.fr)
+ * (C) 1999-2020 by Sebastien GODARD (sysstat <at> orange.fr)
  *
  ***************************************************************************
  * This program is free software; you can redistribute it and/or modify it *
@@ -22,6 +22,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <stdint.h>
 #include <unistd.h>
 #include <time.h>
 #include <errno.h>
@@ -44,11 +45,16 @@
 char *sccsid(void) { return (SCCSID); }
 #endif
 
+#ifdef TEST
+extern time_t __unix_time;
+extern int __env;
+#endif
+
 /* Interval and count parameters */
 long interval = -1, count = 0;
 
 /* TRUE if a header line must be printed */
-int dis = TRUE;
+int dish = TRUE;
 /* TRUE if data read from file don't match current machine's endianness */
 int endian_mismatch = FALSE;
 /* TRUE if file's data come from a 64 bit machine */
@@ -56,8 +62,7 @@ int arch_64 = FALSE;
 /* Number of decimal places */
 int dplaces_nr = -1;
 
-unsigned int flags = 0;
-unsigned int dm_major;	/* Device-mapper major number */
+uint64_t flags = 0;
 
 char timestamp[2][TIMESTAMP_LEN];
 extern unsigned int rec_types_nr[];
@@ -116,13 +121,14 @@ void usage(char *progname)
 	print_usage_title(stderr, progname);
 	fprintf(stderr, _("Options are:\n"
 			  "[ -A ] [ -B ] [ -b ] [ -C ] [ -D ] [ -d ] [ -F [ MOUNT ] ] [ -H ] [ -h ]\n"
-			  "[ -p ] [ -q ] [ -r [ ALL ] ] [ -S ] [ -t ] [ -u [ ALL ] ] [ -V ]\n"
+			  "[ -p ] [ -r [ ALL ] ] [ -S ] [ -t ] [ -u [ ALL ] ] [ -V ]\n"
 			  "[ -v ] [ -W ] [ -w ] [ -y ] [ -z ]\n"
 			  "[ -I { <int_list> | SUM | ALL } ] [ -P { <cpu_list> | ALL } ]\n"
 			  "[ -m { <keyword> [,...] | ALL } ] [ -n { <keyword> [,...] | ALL } ]\n"
+			  "[ -q [ <keyword> [,...] | ALL ] ]\n"
 			  "[ --dev=<dev_list> ] [ --fs=<fs_list> ] [ --iface=<iface_list> ]\n"
-			  "[ --dec={ 0 | 1 | 2 } ] [ --help ] [ --human ] [ --sadc ]\n"
-			  "[ -j { ID | LABEL | PATH | UUID | ... } ]\n"
+			  "[ --dec={ 0 | 1 | 2 } ] [ --help ] [ --human ] [ --pretty ] [ --sadc ]\n"
+			  "[ -j { SID | ID | LABEL | PATH | UUID | ... } ]\n"
 			  "[ -f [ <filename> ] | -o [ <filename> ] | -[0-9]+ ]\n"
 			  "[ -i <interval> ] [ -s [ <hh:mm[:ss]> ] ] [ -e [ <hh:mm[:ss]> ] ]\n"));
 	exit(1);
@@ -180,7 +186,13 @@ void display_help(char *progname)
 		 "\t\tUDP6\tUDP traffic\t(v6)\n"
 		 "\t\tFC\tFibre channel HBAs\n"
 		 "\t\tSOFT\tSoftware-based network processing\n"));
-	printf(_("\t-q\tQueue length and load average statistics [A_QUEUE]\n"));
+	printf(_("\t-q [ <keyword> [,...] | PSI | ALL ]\n"
+		 "\t\tSystem load and pressure-stall statistics\n"
+		 "\t\tKeywords are:\n"
+		 "\t\tLOAD\tQueue length and load average statistics [A_QUEUE]\n"
+		 "\t\tCPU\tPressure-stall CPU statistics [A_PSI_CPU]\n"
+		 "\t\tIO\tPressure-stall I/O statistics [A_PSI_IO]\n"
+		 "\t\tMEM\tPressure-stall memory statistics [A_PSI_MEM]\n"));
 	printf(_("\t-r [ ALL ]\n"
 		 "\t\tMemory utilization statistics [A_MEMORY]\n"));
 	printf(_("\t-S\tSwap space utilization statistics [A_MEMORY]\n"));
@@ -367,9 +379,9 @@ void write_stats_avg(int curr, int read_from_file, unsigned int act_id)
 	/* Interval value in 1/100th of a second */
 	itv = get_interval(record_hdr[2].uptime_cs, record_hdr[curr].uptime_cs);
 
-	strncpy(timestamp[curr], _("Average:"), TIMESTAMP_LEN);
-	timestamp[curr][TIMESTAMP_LEN - 1] = '\0';
-	memcpy(timestamp[!curr], timestamp[curr], TIMESTAMP_LEN);
+	strncpy(timestamp[curr], _("Average:"), sizeof(timestamp[curr]));
+	timestamp[curr][sizeof(timestamp[curr]) - 1] = '\0';
+	memcpy(timestamp[!curr], timestamp[curr], sizeof(timestamp[!curr]));
 
 	/* Test stdout */
 	TEST_STDOUT(STDOUT_FILENO);
@@ -423,64 +435,59 @@ void write_stats_avg(int curr, int read_from_file, unsigned int act_id)
 int write_stats(int curr, int read_from_file, long *cnt, int use_tm_start,
 		int use_tm_end, int reset, unsigned int act_id, int reset_cd)
 {
-	int i;
+	int i, prev_hour;
 	unsigned long long itv;
-	static int cross_day = 0;
+	static int cross_day = FALSE;
 
 	if (reset_cd) {
 		/*
 		 * cross_day is a static variable that is set to 1 when the first
 		 * record of stats from a new day is read from a unique data file
 		 * (in the case where the file contains data from two consecutive
-		 * days). When set to 1, every following records timestamp will
+		 * days). When set to TRUE, every following records timestamp will
 		 * have its hour value increased by 24.
 		 * Yet when a new activity (being read from the file) is going to
 		 * be displayed, we start reading the file from the beginning
 		 * again, and so cross_day should be reset in this case.
 		 */
-		cross_day = 0;
+		cross_day = FALSE;
 	}
 
 	/* Check time (1) */
-	if (read_from_file) {
-		if (!next_slice(record_hdr[2].uptime_cs, record_hdr[curr].uptime_cs,
-				reset, interval))
-			/* Not close enough to desired interval */
-			return 0;
-	}
+	if (read_from_file && !next_slice(record_hdr[2].uptime_cs, record_hdr[curr].uptime_cs,
+					  reset, interval))
+		/* Not close enough to desired interval */
+		return 0;
 
 	/* Get then set previous timestamp */
 	if (sa_get_record_timestamp_struct(flags + S_F_LOCAL_TIME, &record_hdr[!curr],
-					   &rectime, NULL))
+					   &rectime))
 		return 0;
+	prev_hour = rectime.tm_hour;
 	set_record_timestamp_string(flags, &record_hdr[!curr],
 				    NULL, timestamp[!curr], TIMESTAMP_LEN, &rectime);
 
 	/* Get then set current timestamp */
 	if (sa_get_record_timestamp_struct(flags + S_F_LOCAL_TIME, &record_hdr[curr],
-					   &rectime, NULL))
+					   &rectime))
 		return 0;
 	set_record_timestamp_string(flags, &record_hdr[curr],
 				    NULL, timestamp[curr], TIMESTAMP_LEN, &rectime);
 
-	/* Check if we are beginning a new day */
+	/*
+	 * Check if we are beginning a new day.
+	 * Use rectime.tm_hour and prev_hour instead of record_hdr[].hour for comparison
+	 * to take into account the current timezone (hours displayed will depend on the
+	 * TZ variable value).
+	 */
 	if (use_tm_start && record_hdr[!curr].ust_time &&
 	    (record_hdr[curr].ust_time > record_hdr[!curr].ust_time) &&
-	    (record_hdr[curr].hour < record_hdr[!curr].hour)) {
-		cross_day = 1;
-	}
-
-	if (cross_day) {
-		/*
-		 * This is necessary if we want to properly handle something like:
-		 * sar -s time_start -e time_end with
-		 * time_start(day D) > time_end(day D+1)
-		 */
-		rectime.tm_hour += 24;
+	    (rectime.tm_hour < prev_hour)) {
+		cross_day = TRUE;
 	}
 
 	/* Check time (2) */
-	if (use_tm_start && (datecmp(&rectime, &tm_start) < 0))
+	if (use_tm_start && (datecmp(&rectime, &tm_start, cross_day) < 0))
 		/* it's too soon... */
 		return 0;
 
@@ -488,7 +495,7 @@ int write_stats(int curr, int read_from_file, long *cnt, int use_tm_start,
 	get_itv_value(&record_hdr[curr], &record_hdr[!curr], &itv);
 
 	/* Check time (3) */
-	if (use_tm_end && (datecmp(&rectime, &tm_end) > 0)) {
+	if (use_tm_end && (datecmp(&rectime, &tm_end, cross_day) > 0)) {
 		/* It's too late... */
 		*cnt = 0;
 		return 0;
@@ -548,7 +555,7 @@ void write_stats_startup(int curr)
 	}
 
 	flags |= S_F_SINCE_BOOT;
-	dis = TRUE;
+	dish = TRUE;
 
 	write_stats(curr, USE_SADC, &count, NO_TM_START, NO_TM_END, NO_RESET,
 		    ALL_ACTIVITIES, TRUE);
@@ -567,10 +574,11 @@ void write_stats_startup(int curr)
  * @buffer	Buffer where data will be saved.
  *
  * RETURNS:
- * 1 if end of file has been reached, 0 otherwise.
+ * 0 if all the data have been successfully read.
+ * Otherwise, return the number of bytes left to be read.
  ***************************************************************************
  */
-int sa_read(void *buffer, size_t size)
+size_t sa_read(void *buffer, size_t size)
 {
 	ssize_t n;
 
@@ -582,7 +590,7 @@ int sa_read(void *buffer, size_t size)
 		}
 
 		if (!n)
-			return 1;	/* EOF */
+			return size;	/* EOF */
 
 		size -= n;
 		buffer = (char *) buffer + n;
@@ -602,10 +610,12 @@ int sa_read(void *buffer, size_t size)
  * @cur_time	Time string of current restart message.
  * @utc		True if @cur_time is expressed in UTC (unused here).
  * @file_hdr	System activity file standard header.
+ * @record_hdr	Current record header (unused here).
  ***************************************************************************
  */
 __printf_funct_t print_sar_restart(int *tab, int action, char *cur_date, char *cur_time,
-				  int utc, struct file_header *file_hdr)
+				  int utc, struct file_header *file_hdr,
+				  struct record_header *record_hdr)
 {
 	char restart[64];
 
@@ -628,10 +638,12 @@ __printf_funct_t print_sar_restart(int *tab, int action, char *cur_date, char *c
  * @utc		True if @cur_time is expressed in UTC (unused here).
  * @comment	Comment to display.
  * @file_hdr	System activity file standard header (unused here).
+ * @record_hdr	Current record header (unused here).
  ***************************************************************************
  */
 __print_funct_t print_sar_comment(int *tab, int action, char *cur_date, char *cur_time, int utc,
-				  char *comment, struct file_header *file_hdr)
+				  char *comment, struct file_header *file_hdr,
+				  struct record_header *record_hdr)
 {
 	printf("%-11s", cur_time);
 	cprintf_s(IS_COMMENT, "  COM %s\n", comment);
@@ -712,7 +724,8 @@ void read_sadc_stat_bunch(int curr)
 
 /*
  ***************************************************************************
- * Read stats for current activity from file and display them.
+ * Read current activity's statistics (located between two consecutive
+ * LINUX RESTART messages) from file and display them.
  *
  * IN:
  * @ifd		Input file descriptor.
@@ -775,66 +788,72 @@ void handle_curr_act_stats(int ifd, off_t fpos, int *curr, long *cnt, int *eosaf
 		 * Start with reading current sample's record header.
 		 */
 		*eosaf = read_record_hdr(ifd, rec_hdr_tmp, &record_hdr[*curr],
-					 &file_hdr, arch_64, endian_mismatch, b_size);
+					 &file_hdr, arch_64, endian_mismatch, UEOF_STOP, b_size, flags);
 		rtype = record_hdr[*curr].record_type;
-
-		if (!*eosaf && (rtype != R_RESTART) && (rtype != R_COMMENT)) {
-			/* Read the extra fields since it's not a special record */
-			read_file_stat_bunch(act, *curr, ifd, file_hdr.sa_act_nr, file_actlst,
-					     endian_mismatch, arch_64, file, file_magic);
-		}
 
 		if ((lines >= rows) || !lines) {
 			lines = 0;
-			dis = 1;
+			dish = TRUE;
 		}
 		else
-			dis = 0;
+			dish = FALSE;
 
-		if (!*eosaf && (rtype != R_RESTART)) {
+		if (*eosaf || (rtype == R_RESTART))
+			/* This is EOF or we have met a LINUX RESTART record: Stop now */
+			break;
 
-			if (rtype == R_COMMENT) {
-				/* Display comment */
-				next = print_special_record(&record_hdr[*curr], flags + S_F_LOCAL_TIME,
-							    &tm_start, &tm_end, R_COMMENT, ifd,
-							    &rectime, NULL, file, 0,
-							    file_magic, &file_hdr, act, &sar_fmt,
-							    endian_mismatch, arch_64);
-				if (next && lines) {
-					/*
-					 * A line of comment was actually displayed: Count it in the
-					 * total number of displayed lines.
-					 * If no lines of stats had been previously displayed, ignore it
-					 * to make sure the header line will be displayed.
-					 */
-					lines++;
-				}
-				continue;
-			}
-
-			/* next is set to 1 when we were close enough to desired interval */
-			next = write_stats(*curr, USE_SA_FILE, cnt, tm_start.use, tm_end.use,
-					   *reset, act_id, reset_cd);
-			reset_cd = 0;
-			if (next && (*cnt > 0)) {
-				(*cnt)--;
-			}
-
-			if (next) {
-				davg++;
-				*curr ^= 1;
-
-				if (inc) {
-					lines += inc;
-				}
-				else {
-					lines += act[p]->nr[*curr];
-				}
-			}
-			*reset = FALSE;
+		if (rtype != R_COMMENT) {
+			/* Read the extra fields since it's not a special record */
+			read_file_stat_bunch(act, *curr, ifd, file_hdr.sa_act_nr, file_actlst,
+					     endian_mismatch, arch_64, file, file_magic, UEOF_STOP);
 		}
+		else {
+			/* Display comment */
+			next = print_special_record(&record_hdr[*curr], flags + S_F_LOCAL_TIME,
+						    &tm_start, &tm_end, R_COMMENT, ifd,
+						    &rectime, file, 0,
+						    file_magic, &file_hdr, act, &sar_fmt,
+						    endian_mismatch, arch_64);
+			if (next && lines) {
+				/*
+				 * A line of comment was actually displayed: Count it in the
+				 * total number of displayed lines.
+				 * If no lines of stats had been previously displayed, ignore it
+				 * to make sure the header line will be displayed.
+				 */
+				lines++;
+			}
+			continue;
+		}
+
+		/* next is set to 1 when we were close enough to desired interval */
+		next = write_stats(*curr, USE_SA_FILE, cnt, tm_start.use, tm_end.use,
+				   *reset, act_id, reset_cd);
+		reset_cd = 0;
+		if (next && (*cnt > 0)) {
+			(*cnt)--;
+		}
+
+		if (next) {
+			davg++;
+			*curr ^= 1;
+
+			if (inc) {
+				lines += inc;
+			}
+			else {
+				lines += act[p]->nr[*curr];
+			}
+		}
+		*reset = FALSE;
 	}
-	while (*cnt && !*eosaf && (rtype != R_RESTART));
+	while (*cnt);
+
+	/*
+	 * At this moment, if we had a R_RESTART record, we still haven't read
+	 * the number of CPU following it (nor the possible extra structures).
+	 * But in this case, we always have @cnt != 0.
+	 */
 
 	if (davg) {
 		write_stats_avg(!*curr, USE_SA_FILE, act_id);
@@ -881,6 +900,15 @@ void read_header_data(void)
 		fprintf(stderr, "%s: sysstat_magic=%x format_magic=%x version=%s\n",
 			__FUNCTION__, file_magic.sysstat_magic, file_magic.format_magic, version);
 #endif
+		if (rc == FILE_MAGIC_SIZE) {
+			/*
+			 * No data (0 byte) have been sent by sadc.
+			 * This is probably because no activities have been collected
+			 * ("Requested activities not available"). In this case, don't
+			 * display an error message: Exit now.
+			 */
+			exit(3);
+		}
 		print_read_error(INCONSISTENT_INPUT_DATA);
 	}
 
@@ -908,7 +936,7 @@ void read_header_data(void)
 	if ((file_hdr.act_size != FILE_ACTIVITY_SIZE) ||
 	    (file_hdr.rec_size != RECORD_HEADER_SIZE)) {
 #ifdef DEBUG
-		fprintf(stderr, "%s: act_size=%u/%lu rec_size=%u/%lu\n", __FUNCTION__,
+		fprintf(stderr, "%s: act_size=%u/%zu rec_size=%u/%zu\n", __FUNCTION__,
 			file_hdr.act_size, FILE_ACTIVITY_SIZE, file_hdr.rec_size, RECORD_HEADER_SIZE);
 #endif
 		print_read_error(INCONSISTENT_INPUT_DATA);
@@ -987,8 +1015,8 @@ void read_stats_from_file(char from_file[])
 	rows = get_win_height();
 
 	/* Read file headers and activity list */
-	check_file_actlst(&ifd, from_file, act, &file_magic, &file_hdr,
-			  &file_actlst, id_seq, FALSE, &endian_mismatch, &arch_64);
+	check_file_actlst(&ifd, from_file, act, flags, &file_magic, &file_hdr,
+			  &file_actlst, id_seq, &endian_mismatch, &arch_64);
 
 	/* Perform required allocations */
 	allocate_structures(act);
@@ -1004,7 +1032,7 @@ void read_stats_from_file(char from_file[])
 		 */
 		do {
 			if (read_record_hdr(ifd, rec_hdr_tmp, &record_hdr[0], &file_hdr,
-					    arch_64, endian_mismatch, sizeof(rec_hdr_tmp))) {
+					    arch_64, endian_mismatch, UEOF_STOP, sizeof(rec_hdr_tmp), flags)) {
 				/* End of sa data file */
 				return;
 			}
@@ -1013,7 +1041,7 @@ void read_stats_from_file(char from_file[])
 			if ((rtype == R_RESTART) || (rtype == R_COMMENT)) {
 				print_special_record(&record_hdr[0], flags + S_F_LOCAL_TIME,
 						     &tm_start, &tm_end, rtype, ifd,
-						     &rectime, NULL, from_file, 0, &file_magic,
+						     &rectime, from_file, 0, &file_magic,
 						     &file_hdr, act, &sar_fmt, endian_mismatch, arch_64);
 			}
 			else {
@@ -1023,10 +1051,9 @@ void read_stats_from_file(char from_file[])
 				 */
 				read_file_stat_bunch(act, 0, ifd, file_hdr.sa_act_nr,
 						     file_actlst, endian_mismatch, arch_64,
-						     from_file, &file_magic);
+						     from_file, &file_magic, UEOF_STOP);
 				if (sa_get_record_timestamp_struct(flags + S_F_LOCAL_TIME,
-								   &record_hdr[0],
-								   &rectime, NULL))
+								   &record_hdr[0], &rectime))
 					/*
 					 * An error was detected.
 					 * The timestamp hasn't been updated.
@@ -1035,8 +1062,8 @@ void read_stats_from_file(char from_file[])
 			}
 		}
 		while ((rtype == R_RESTART) || (rtype == R_COMMENT) ||
-		       (tm_start.use && (datecmp(&rectime, &tm_start) < 0)) ||
-		       (tm_end.use && (datecmp(&rectime, &tm_end) >=0)));
+		       (tm_start.use && (datecmp(&rectime, &tm_start, FALSE) < 0)) ||
+		       (tm_end.use && (datecmp(&rectime, &tm_end, FALSE) >= 0)));
 
 		/* Save the first stats collected. Will be used to compute the average */
 		copy_structures(act, id_seq, record_hdr, 2, 0);
@@ -1090,37 +1117,47 @@ void read_stats_from_file(char from_file[])
 				}
 			}
 		}
-
-		if (!cnt) {
-			/* Go to next Linux restart, if possible */
+		if (cnt == 0) {
+			/*
+			 * Go to next Linux restart, if possible.
+			 * Note: If we have @cnt == 0 then the last record we read was not a R_RESTART one
+			 * (else we would have had @cnt != 0, i.e. we would have stopped reading previous activity
+			 * because such a R_RESTART record would have been read, not because all the <count> lines
+			 * had been printed).
+			 * Remember @cnt is decremented only when a real line of stats have been displayed
+			 * (not when a special record has been read).
+			 */
 			do {
 				/* Read next record header */
 				eosaf = read_record_hdr(ifd, rec_hdr_tmp, &record_hdr[curr],
-							&file_hdr, arch_64, endian_mismatch, sizeof(rec_hdr_tmp));
+							&file_hdr, arch_64, endian_mismatch, UEOF_STOP, sizeof(rec_hdr_tmp), flags);
 				rtype = record_hdr[curr].record_type;
 
-				if (!eosaf && (rtype != R_RESTART) && (rtype != R_COMMENT)) {
+				if (eosaf || (rtype == R_RESTART))
+					break;
+
+				if (rtype != R_COMMENT) {
 					read_file_stat_bunch(act, curr, ifd, file_hdr.sa_act_nr,
 							     file_actlst, endian_mismatch, arch_64,
-							     from_file, &file_magic);
+							     from_file, &file_magic, UEOF_STOP);
 				}
-				else if (!eosaf && (rtype == R_COMMENT)) {
+				else {
 					/* This was a COMMENT record: print it */
 					print_special_record(&record_hdr[curr], flags + S_F_LOCAL_TIME,
 							     &tm_start, &tm_end, R_COMMENT, ifd,
-							     &rectime, NULL, from_file, 0,
+							     &rectime, from_file, 0,
 							     &file_magic, &file_hdr, act, &sar_fmt,
 							     endian_mismatch, arch_64);
 				}
 			}
-			while (!eosaf && (rtype != R_RESTART));
+			while (1);
 		}
 
 		/* The last record we read was a RESTART one: Print it */
 		if (!eosaf && (record_hdr[curr].record_type == R_RESTART)) {
 			print_special_record(&record_hdr[curr], flags + S_F_LOCAL_TIME,
 					     &tm_start, &tm_end, R_RESTART, ifd,
-					     &rectime, NULL, from_file, 0,
+					     &rectime, from_file, 0,
 					     &file_magic, &file_hdr, act, &sar_fmt,
 					     endian_mismatch, arch_64);
 		}
@@ -1199,8 +1236,8 @@ void read_stats(void)
 
 		/* Print results */
 		if (!dis_hdr) {
-			dis = lines / rows;
-			if (dis) {
+			dish = lines / rows;
+			if (dish) {
 				lines %= rows;
 			}
 			lines++;
@@ -1228,7 +1265,7 @@ void read_stats(void)
 	 * At least one line of stats must have been displayed for this.
 	 * (There may be no lines at all if we press Ctrl/C immediately).
 	 */
-	dis = dis_hdr;
+	dish = dis_hdr;
 	if (avg_count) {
 		write_stats_avg(curr, USE_SADC, ALL_ACTIVITIES);
 	}
@@ -1256,9 +1293,6 @@ int main(int argc, char **argv)
 	/* Init National Language Support */
 	init_nls();
 #endif
-
-	/* Init color strings */
-	init_colors();
 
 	tm_start.use = tm_end.use = FALSE;
 
@@ -1308,6 +1342,12 @@ int main(int argc, char **argv)
 			opt++;
 		}
 
+		else if (!strcmp(argv[opt], "--pretty")) {
+			/* Display an easy-to-read report */
+			flags |= S_F_PRETTY;
+			opt++;
+		}
+
 		else if (!strncmp(argv[opt], "--dec=", 6) && (strlen(argv[opt]) == 7)) {
 			/* Get number of decimal places */
 			dplaces_nr = atoi(argv[opt] + 6);
@@ -1319,7 +1359,7 @@ int main(int argc, char **argv)
 
 		else if (!strcmp(argv[opt], "-I")) {
 			/* Parse -I option */
-			if (parse_sar_I_opt(argv, &opt, act)) {
+			if (parse_sar_I_opt(argv, &opt, &flags, act)) {
 				usage(argv[0]);
 			}
 		}
@@ -1345,8 +1385,8 @@ int main(int argc, char **argv)
 			/* Save stats to a file */
 			if ((argv[++opt]) && strncmp(argv[opt], "-", 1) &&
 			    (strspn(argv[opt], DIGITS) != strlen(argv[opt]))) {
-				strncpy(to_file, argv[opt++], MAX_FILE_LEN);
-				to_file[MAX_FILE_LEN - 1] = '\0';
+				strncpy(to_file, argv[opt++], sizeof(to_file));
+				to_file[sizeof(to_file) - 1] = '\0';
 			}
 			else {
 				strcpy(to_file, "-");
@@ -1361,8 +1401,8 @@ int main(int argc, char **argv)
 			/* Read stats from a file */
 			if ((argv[++opt]) && strncmp(argv[opt], "-", 1) &&
 			    (strspn(argv[opt], DIGITS) != strlen(argv[opt]))) {
-				strncpy(from_file, argv[opt++], MAX_FILE_LEN);
-				from_file[MAX_FILE_LEN - 1] = '\0';
+				strncpy(from_file, argv[opt++], sizeof(from_file));
+				from_file[sizeof(from_file) - 1] = '\0';
 				/* Check if this is an alternate directory for sa files */
 				check_alt_sa_dir(from_file, day_offset, -1);
 			}
@@ -1416,6 +1456,29 @@ int main(int argc, char **argv)
 			}
 		}
 
+		else if (!strcmp(argv[opt], "-q")) {
+			if (!argv[++opt]) {
+				SELECT_ACTIVITY(A_QUEUE);
+			}
+			/* Parse option -q */
+			else if (parse_sar_q_opt(argv, &opt, act)) {
+				SELECT_ACTIVITY(A_QUEUE);
+			}
+		}
+
+#ifdef TEST
+		else if (!strncmp(argv[opt], "--getenv", 8)) {
+			__env = TRUE;
+			opt++;
+		}
+
+		else if (!strncmp(argv[opt], "--unix_time=", 12)) {
+			if (strspn(argv[opt] + 12, DIGITS) != strlen(argv[opt] + 12)) {
+				usage(argv[0]);
+			}
+			__unix_time = atoll(argv[opt++] + 12);
+		}
+#endif
 		else if ((strlen(argv[opt]) > 1) &&
 			 (strlen(argv[opt]) < 4) &&
 			 !strncmp(argv[opt], "-", 1) &&
@@ -1466,9 +1529,12 @@ int main(int argc, char **argv)
 		}
 	}
 
+	/* Init color strings */
+	init_colors();
+
 	/* 'sar' is equivalent to 'sar -f' */
 	if ((argc == 1) ||
-	    ((interval < 0) && !from_file[0] && !to_file[0])) {
+	    (((interval < 0) || INTERVAL_SET(flags)) && !from_file[0] && !to_file[0])) {
 		set_default_file(from_file, day_offset, -1);
 	}
 
@@ -1484,6 +1550,10 @@ int main(int argc, char **argv)
 		fprintf(stderr, _("-f and -o options are mutually exclusive\n"));
 		exit(1);
 	}
+	if (USE_OPTION_A(flags)) {
+		/* Set -P ALL -I ALL if needed */
+		set_bitmaps(act, &flags);
+	}
 	/* Use time start or option -i only when reading stats from a file */
 	if ((tm_start.use || INTERVAL_SET(flags)) && !from_file[0]) {
 		fprintf(stderr,
@@ -1498,10 +1568,6 @@ int main(int argc, char **argv)
 	/* Cannot enter a day shift with -o option */
 	if (to_file[0] && day_offset) {
 		usage(argv[0]);
-	}
-
-	if (USE_PRETTY_OPTION(flags)) {
-		dm_major = get_devmap_major();
 	}
 
 	if (!count) {
@@ -1528,7 +1594,7 @@ int main(int argc, char **argv)
 		/* Read stats from file */
 		read_stats_from_file(from_file);
 
-		/* Free stuctures and activity bitmaps */
+		/* Free structures and activity bitmaps */
 		free_bitmaps(act);
 		free_structures(act);
 
@@ -1586,6 +1652,12 @@ int main(int argc, char **argv)
 			salloc(args_idx++, ltemp);
 		}
 
+#ifdef TEST
+		if (__unix_time) {
+			sprintf(ltemp, "--unix_time=%ld", __unix_time);
+			salloc(args_idx++, ltemp);
+		}
+#endif
 		/* Flags to be passed to sadc */
 		salloc(args_idx++, "-Z");
 

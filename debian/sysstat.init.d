@@ -29,7 +29,7 @@ ENABLED="false"
 # ...overridden in the configuration file
 test -r "$DEFAULT" && . "$DEFAULT"
 
-set -e 
+set -e
 status=0
 
 . /lib/lsb/init-functions

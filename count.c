@@ -1,6 +1,6 @@
 /*
  * count.c: Count items for which statistics will be collected.
- * (C) 1999-2018 by Sebastien GODARD (sysstat <at> orange.fr)
+ * (C) 1999-2020 by Sebastien GODARD (sysstat <at> orange.fr)
  *
  ***************************************************************************
  * This program is free software; you can redistribute it and/or modify it *
@@ -73,8 +73,8 @@ int get_sys_cpu_nr(int highest)
 	while ((drd = readdir(dir)) != NULL) {
 
 		if (!strncmp(drd->d_name, "cpu", 3) && isdigit(drd->d_name[3])) {
-			snprintf(line, MAX_PF_NAME, "%s/%s", SYSFS_DEVCPU, drd->d_name);
-			line[MAX_PF_NAME - 1] = '\0';
+			snprintf(line, sizeof(line), "%s/%s", SYSFS_DEVCPU, drd->d_name);
+			line[sizeof(line) - 1] = '\0';
 			if (stat(line, &buf) < 0)
 				continue;
 			if (S_ISDIR(buf.st_mode)) {
@@ -250,7 +250,7 @@ __nr_t get_diskstats_dev_nr(int count_part, int only_used_dev)
 		if (!count_part) {
 			i = sscanf(line, "%*d %*d %s %lu %*u %*u %*u %lu",
 				   dev_name, &rd_ios, &wr_ios);
-			if ((i == 2) || !is_device(dev_name, ACCEPT_VIRTUAL_DEVICES))
+			if ((i == 2) || !is_device(SLASH_SYS, dev_name, ACCEPT_VIRTUAL_DEVICES))
 				/* It was a partition and not a device */
 				continue;
 			if (only_used_dev && !rd_ios && !wr_ios)
@@ -463,8 +463,8 @@ __nr_t get_usb_nr(void)
 __nr_t get_filesystem_nr(void)
 {
 	FILE *fp;
-	char line[512], fs_name[MAX_FS_LEN], mountp[256];
-	char *pos = 0;
+	char line[512], fs_name[MAX_FS_LEN], mountp[256], type[128];
+	char *pos = 0, *pos2 = 0;
 	__nr_t fs = 0;
 	int skip = 0, skip_next = 0;
 	struct statvfs buf;
@@ -491,6 +491,19 @@ __nr_t get_filesystem_nr(void)
 			if (pos == NULL)
 				continue;
 
+			/*
+			 * Find second field separator position,
+			 * read filesystem type,
+			 * if filesystem type is autofs, skip it
+			*/
+			pos2 = strchr(pos + 1, ' ');
+			if (pos2 == NULL)
+				continue;
+
+			sscanf(pos2 + 1, "%127s", type);
+			if(strcmp(type, "autofs") == 0)
+				continue;
+
 			/* Read filesystem name and mount point */
 			sscanf(line, "%127s", fs_name);
 			sscanf(pos + 1, "%255s", mountp);
@@ -499,7 +512,7 @@ __nr_t get_filesystem_nr(void)
 			oct2chr(mountp);
 
 			/* Check that total size is not zero */
-			if (statvfs(mountp, &buf) < 0)
+			if (__statvfs(mountp, &buf) < 0)
 				continue;
 
 			if (buf.f_blocks) {

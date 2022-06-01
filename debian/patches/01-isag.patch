@@ -2,6 +2,7 @@ From: Robert Luberda <robert@debian.org>
 Date: Tue, 23 Mar 2010 22:04:47 +0100
 Subject: Fix paths in isag script
 
+Forwarded: not-needed
 ---
  contrib/isag/README-isag | 2 +-
  contrib/isag/isag        | 4 ++--

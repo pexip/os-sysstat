@@ -1,0 +1,39 @@
+From: Robert Luberda <robert@debian.org>
+Date: Mon, 1 Feb 2021 10:03:01 +0100
+Subject: Run all unit tests
+
+Instead of stopping at the first failed test,
+run all test, and exit with code 3 if any
+test fails.
+---
+ Makefile.in | 10 +++++++++-
+ 1 file changed, 9 insertions(+), 1 deletion(-)
+
+diff --git a/Makefile.in b/Makefile.in
+index 63d56bb..640b317 100644
+--- a/Makefile.in
++++ b/Makefile.in
+@@ -794,14 +794,22 @@ unit:
+ 	@cat $(TESTDIR)/$(X) | $(TESTRUN)
+ 
+ # Use "do_test" script to make the following target
++FAILED_TESTS := tests/FAILURES
+ simtest: all testcomp
+-	@$(foreach x, $(TESTLIST), $(MAKE) X=$x unit || exit;)
++	rm -f $(FAILED_TESTS)
++	@$(foreach x, $(TESTLIST), $(MAKE) X=$x unit || echo $x >> $(FAILED_TESTS);)
+ 	rm -f tests/root
+ 	ln -s root1 tests/root
++	@if [ -s $(FAILED_TESTS) ]; then \
++		echo "Simulation tests: Failed test cases:"; \
++		cat $(FAILED_TESTS); \
++		exit 3; \
++	fi
+ 	@echo Simulation tests: Success!
+ 
+ clean:
+ 	rm -f sadc sar sadf iostat tapestat mpstat pidstat cifsiostat *.o *.a core TAGS tests/*.tmp
++	rm -f $(FAILED_TESTS)
+ 	rm -f nfsiostat* man/nfsiostat*
+ 	rm -f tests/sa[012]*
+ 	rm -f tests/root

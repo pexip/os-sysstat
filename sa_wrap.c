@@ -1,6 +1,6 @@
 /*
  * sysstat - sa_wrap.c: Functions used in activity.c
- * (C) 1999-2018 by Sebastien GODARD (sysstat <at> orange.fr)
+ * (C) 1999-2020 by Sebastien GODARD (sysstat <at> orange.fr)
  *
  ***************************************************************************
  * This program is free software; you can redistribute it and/or modify it *
@@ -1070,7 +1070,7 @@ __read_funct_t wrap_read_fchost(struct activity *a)
  *		CPU bitmap which has been filled.
  *
  * RETURNS:
- * Number of CPU for which statistics have to be be read.
+ * Number of CPU for which statistics have to be read.
  * 1 means CPU "all", 2 means CPU "all" and CPU 0, etc.
  * Or -1 if the buffer was too small and needs to be reallocated.
  ***************************************************************************
@@ -1139,23 +1139,86 @@ __read_funct_t wrap_read_softnet(struct activity *a)
 
 		/* Get online CPU list */
 		nr_read = get_online_cpu_list(online_cpu_bitmap, bitmap_size);
-		if (!nr_read)
-			break;
+
+		if (nr_read > 0) {
+			/* Read /proc/net/softnet stats */
+			nr_read *= read_softnet(st_softnet, a->nr_allocated, online_cpu_bitmap);
+		}
 
 		if (nr_read < 0) {
 			/* Buffer needs to be reallocated */
 			st_softnet = (struct stats_softnet *) reallocate_buffer(a);
 		}
-		else {
-			if (!read_softnet(st_softnet, a->nr_allocated, online_cpu_bitmap)) {
-				/* File /proc/net/softnet doesn't exist */
-				nr_read = 0;
-			}
-		}
 	}
 	while (nr_read < 0);
 
 	a->_nr0 = nr_read;
+
+	return;
+}
+
+/*
+ ***************************************************************************
+ * Read pressure-stall CPU statistics.
+ *
+ * IN:
+ * @a	Activity structure.
+ *
+ * OUT:
+ * @a	Activity structure with statistics.
+ ***************************************************************************
+ */
+__read_funct_t wrap_read_psicpu(struct activity *a)
+{
+	struct stats_psi_cpu *st_psicpu
+		= (struct stats_psi_cpu *) a->_buf0;
+
+	/* Read pressure-stall CPU stats */
+	read_psicpu(st_psicpu);
+
+	return;
+}
+
+/*
+ ***************************************************************************
+ * Read pressure-stall I/O statistics.
+ *
+ * IN:
+ * @a	Activity structure.
+ *
+ * OUT:
+ * @a	Activity structure with statistics.
+ ***************************************************************************
+ */
+__read_funct_t wrap_read_psiio(struct activity *a)
+{
+	struct stats_psi_io *st_psiio
+		= (struct stats_psi_io *) a->_buf0;
+
+	/* Read pressure-stall I/O stats */
+	read_psiio(st_psiio);
+
+	return;
+}
+
+/*
+ ***************************************************************************
+ * Read pressure-stall memory statistics.
+ *
+ * IN:
+ * @a	Activity structure.
+ *
+ * OUT:
+ * @a	Activity structure with statistics.
+ ***************************************************************************
+ */
+__read_funct_t wrap_read_psimem(struct activity *a)
+{
+	struct stats_psi_mem *st_psimem
+		= (struct stats_psi_mem *) a->_buf0;
+
+	/* Read pressure-stall memory stats */
+	read_psimem(st_psimem);
 
 	return;
 }
@@ -1442,4 +1505,20 @@ __nr_t wrap_get_fchost_nr(struct activity *a)
 	}
 
 	return 0;
+}
+
+/*
+ ***************************************************************************
+ * Check that /proc/pressure directory exists.
+ *
+ * IN:
+ * @a  Activity structure.
+ *
+ * RETURNS:
+ * TRUE if directory exists.
+ ***************************************************************************
+ */
+__nr_t wrap_detect_psi(struct activity *a)
+{
+	return (check_dir(PRESSURE));
 }

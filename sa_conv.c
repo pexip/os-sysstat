@@ -1,6 +1,6 @@
 /*
  * sa_conv.c: Convert an old format sa file to the up-to-date format.
- * (C) 1999-2018 by Sebastien GODARD (sysstat <at> orange.fr)
+ * (C) 1999-2020 by Sebastien GODARD (sysstat <at> orange.fr)
  *
  ***************************************************************************
  * This program is free software; you can redistribute it and/or modify it *
@@ -38,6 +38,7 @@
 #endif
 
 extern int endian_mismatch;
+extern unsigned int user_hz;
 extern unsigned int act_types_nr[];
 extern unsigned int rec_types_nr[];
 extern unsigned int hdr_types_nr[];
@@ -195,14 +196,14 @@ void upgrade_file_header(void *buffer, struct file_header *file_hdr, int previou
 		file_hdr->sa_day = f_hdr_2171->sa_day;
 		file_hdr->sa_month = f_hdr_2171->sa_month;
 		file_hdr->sa_sizeof_long = f_hdr_2171->sa_sizeof_long;
-		strncpy(file_hdr->sa_sysname, f_hdr_2171->sa_sysname, UTSNAME_LEN);
-		file_hdr->sa_sysname[UTSNAME_LEN - 1] = '\0';
-		strncpy(file_hdr->sa_nodename, f_hdr_2171->sa_nodename, UTSNAME_LEN);
-		file_hdr->sa_nodename[UTSNAME_LEN - 1] = '\0';
-		strncpy(file_hdr->sa_release, f_hdr_2171->sa_release, UTSNAME_LEN);
-		file_hdr->sa_release[UTSNAME_LEN - 1] = '\0';
-		strncpy(file_hdr->sa_machine, f_hdr_2171->sa_machine, UTSNAME_LEN);
-		file_hdr->sa_machine[UTSNAME_LEN - 1] = '\0';
+		strncpy(file_hdr->sa_sysname, f_hdr_2171->sa_sysname, sizeof(file_hdr->sa_sysname));
+		file_hdr->sa_sysname[sizeof(file_hdr->sa_sysname) - 1] = '\0';
+		strncpy(file_hdr->sa_nodename, f_hdr_2171->sa_nodename, sizeof(file_hdr->sa_nodename));
+		file_hdr->sa_nodename[sizeof(file_hdr->sa_nodename) - 1] = '\0';
+		strncpy(file_hdr->sa_release, f_hdr_2171->sa_release, sizeof(file_hdr->sa_release));
+		file_hdr->sa_release[sizeof(file_hdr->sa_release) - 1] = '\0';
+		strncpy(file_hdr->sa_machine, f_hdr_2171->sa_machine, sizeof(file_hdr->sa_machine));
+		file_hdr->sa_machine[sizeof(file_hdr->sa_machine) - 1] = '\0';
 	}
 
 	else if (previous_format == FORMAT_MAGIC_2173) {
@@ -238,6 +239,11 @@ void upgrade_file_header(void *buffer, struct file_header *file_hdr, int previou
 	}
 	file_hdr->act_size = FILE_ACTIVITY_SIZE;
 	file_hdr->rec_size = RECORD_HEADER_SIZE;
+
+	/*
+	 * Note: @extra_next and @sa_tzname[] members are set to zero
+	 * because file_hdr has been memset'd to zero.
+	 */
 }
 
 /*
@@ -287,7 +293,7 @@ int upgrade_header_section(char dfile[], int fd, int stdfd, struct activity *act
 	n = (previous_format == FORMAT_MAGIC_2171 ? FILE_HEADER_SIZE_2171
 						  : hdr_size);
 	SREALLOC(buffer, char, n);
-	sa_fread(fd, buffer, (size_t) n, HARD_SIZE);
+	sa_fread(fd, buffer, (size_t) n, HARD_SIZE, UEOF_STOP);
 
 	/* Upgrade file_header structure */
 	upgrade_file_header(buffer, file_hdr, previous_format,
@@ -305,7 +311,7 @@ int upgrade_header_section(char dfile[], int fd, int stdfd, struct activity *act
 
 	for (i = 0; i < file_hdr->sa_act_nr; i++, ofal++) {
 
-		sa_fread(fd, ofal, OLD_FILE_ACTIVITY_SIZE, HARD_SIZE);
+		sa_fread(fd, ofal, OLD_FILE_ACTIVITY_SIZE, HARD_SIZE, UEOF_STOP);
 
 		/* Normalize endianness for file_activity structures */
 		if (endian_mismatch) {
@@ -686,14 +692,14 @@ void upgrade_stats_queue(struct activity *act[], int p, unsigned int magic,
  * disk.
  ***************************************************************************
  */
-int upgrade_stats_serial(struct activity *act[], int p, int st_size, int endian_mismatch)
+int upgrade_stats_serial(struct activity *act[], int p, size_t st_size, int endian_mismatch)
 {
 	int i;
 	unsigned int line;
 	struct stats_serial *ssc;
 
 	/* Copy TTY stats to target structure */
-	memcpy(act[p]->buf[1], act[p]->buf[0], act[p]->nr_ini * st_size);
+	memcpy(act[p]->buf[1], act[p]->buf[0], (size_t) act[p]->nr_ini * st_size);
 
 	for (i = 0; i < act[p]->nr_ini; i++) {
 		ssc = (struct stats_serial *) ((char *) act[p]->buf[1] + i * act[p]->fsize);
@@ -804,8 +810,8 @@ void upgrade_stats_net_dev(struct activity *act[], int p, unsigned int magic,
 			sndc->tx_compressed = moveto_long_long(&sndp->tx_compressed, endian_mismatch, arch_64);
 			sndc->multicast = moveto_long_long(&sndp->multicast, endian_mismatch, arch_64);
 			sndc->speed = 0; /* New field */
-			strncpy(sndc->interface, sndp->interface, MAX_IFACE_LEN);
-			sndc->interface[MAX_IFACE_LEN - 1] = '\0';
+			strncpy(sndc->interface, sndp->interface, sizeof(sndc->interface));
+			sndc->interface[sizeof(sndc->interface) - 1] = '\0';
 			sndc->duplex = '\0'; /* New field */
 		}
 	}
@@ -824,8 +830,8 @@ void upgrade_stats_net_dev(struct activity *act[], int p, unsigned int magic,
 			sndc->tx_compressed = sndp->tx_compressed;
 			sndc->multicast = sndp->multicast;
 			sndc->speed = 0; /* New field */
-			strncpy(sndc->interface, sndp->interface, MAX_IFACE_LEN);
-			sndc->interface[MAX_IFACE_LEN - 1] = '\0';
+			strncpy(sndc->interface, sndp->interface, sizeof(sndc->interface));
+			sndc->interface[sizeof(sndc->interface) - 1] = '\0';
 			sndc->duplex = '\0'; /* New field */
 		}
 	}
@@ -844,8 +850,8 @@ void upgrade_stats_net_dev(struct activity *act[], int p, unsigned int magic,
 			sndc->tx_compressed = sndp->tx_compressed;
 			sndc->multicast = sndp->multicast;
 			sndc->speed = sndp->speed;
-			strncpy(sndc->interface, sndp->interface, MAX_IFACE_LEN);
-			sndc->interface[MAX_IFACE_LEN - 1] = '\0';
+			strncpy(sndc->interface, sndp->interface, sizeof(sndc->interface));
+			sndc->interface[sizeof(sndc->interface) - 1] = '\0';
 			sndc->duplex = sndp->duplex;
 		}
 	}
@@ -888,8 +894,8 @@ void upgrade_stats_net_edev(struct activity *act[], int p, unsigned int magic,
 			snedc->tx_fifo_errors = moveto_long_long(&snedp->tx_fifo_errors, endian_mismatch, arch_64);
 			snedc->rx_frame_errors = moveto_long_long(&snedp->rx_frame_errors, endian_mismatch, arch_64);
 			snedc->tx_carrier_errors = moveto_long_long(&snedp->tx_carrier_errors, endian_mismatch, arch_64);
-			strncpy(snedc->interface, snedp->interface, MAX_IFACE_LEN);
-			snedc->interface[MAX_IFACE_LEN - 1] = '\0';
+			strncpy(snedc->interface, snedp->interface, sizeof(snedc->interface));
+			snedc->interface[sizeof(snedc->interface) - 1] = '\0';
 		}
 	}
 	else {
@@ -908,8 +914,8 @@ void upgrade_stats_net_edev(struct activity *act[], int p, unsigned int magic,
 			snedc->tx_fifo_errors = snedp->tx_fifo_errors;
 			snedc->rx_frame_errors = snedp->rx_frame_errors;
 			snedc->tx_carrier_errors = snedp->tx_carrier_errors;
-			strncpy(snedc->interface, snedp->interface, MAX_IFACE_LEN);
-			snedc->interface[MAX_IFACE_LEN - 1] = '\0';
+			strncpy(snedc->interface, snedp->interface, sizeof(snedc->interface));
+			snedc->interface[sizeof(snedc->interface) - 1] = '\0';
 		}
 	}
 }
@@ -1191,16 +1197,16 @@ void upgrade_stats_filesystem(struct activity *act[], int p, int st_size)
 		sfc->f_bavail = sfp->f_bavail;
 		sfc->f_files = sfp->f_files;
 		sfc->f_ffree = sfp->f_ffree;
-		strncpy(sfc->fs_name, sfp->fs_name, MAX_FS_LEN);
-		sfc->fs_name[MAX_FS_LEN - 1] = '\0';
+		strncpy(sfc->fs_name, sfp->fs_name, sizeof(sfc->fs_name));
+		sfc->fs_name[sizeof(sfc->fs_name) - 1] = '\0';
 
 		if (st_size <= STATS_FILESYSTEM_8A_1_SIZE) {
 			/* mountp didn't exist with older versions */
 			sfc->mountp[0] = '\0';
 		}
 		else {
-			strncpy(sfc->mountp, sfp->mountp, MAX_FS_LEN);
-			sfc->mountp[MAX_FS_LEN - 1] = '\0';
+			strncpy(sfc->mountp, sfp->mountp, sizeof(sfc->mountp));
+			sfc->mountp[sizeof(sfc->mountp) - 1] = '\0';
 		}
 	}
 }
@@ -1458,6 +1464,8 @@ int upgrade_record_header(int fd, int stdfd, struct old_record_header *orec_hdr,
 {
 	struct record_header rec_hdr;
 
+	memset(&rec_hdr, 0, sizeof(struct record_header));
+
 	/* Convert current record header */
 	rec_hdr.uptime_cs = orec_hdr->uptime0 * 100 / HZ;	/* Uptime in cs, not jiffies */
 	rec_hdr.ust_time = (unsigned long long) orec_hdr->ust_time;
@@ -1499,11 +1507,11 @@ int upgrade_comment_record(int fd, int stdfd)
 	char file_comment[MAX_COMMENT_LEN];
 
 	/* Read the COMMENT record */
-	sa_fread(fd, file_comment, MAX_COMMENT_LEN, HARD_SIZE);
-	file_comment[MAX_COMMENT_LEN - 1] = '\0';
+	sa_fread(fd, file_comment, sizeof(file_comment), HARD_SIZE, UEOF_STOP);
+	file_comment[sizeof(file_comment) - 1] = '\0';
 
 	/* Then write it. No changes at this time */
-	if (write_all(stdfd, file_comment, MAX_COMMENT_LEN) != MAX_COMMENT_LEN) {
+	if (write_all(stdfd, file_comment, sizeof(file_comment)) != sizeof(file_comment)) {
 		fprintf(stderr, "\nwrite: %s\n", strerror(errno));
 		return -1;
 	}
@@ -1552,7 +1560,7 @@ int upgrade_restart_record(int fd, int stdfd, struct activity *act[],
 		 * of volatile activity structures. Among them is A_CPU activity.
 		 */
 		for (i = 0; i < vol_act_nr; i++) {
-			sa_fread(fd, &ofile_act, OLD_FILE_ACTIVITY_SIZE, HARD_SIZE);
+			sa_fread(fd, &ofile_act, OLD_FILE_ACTIVITY_SIZE, HARD_SIZE, UEOF_STOP);
 
 			/* Normalize endianness for file_activity structures */
 			if (endian_mismatch) {
@@ -1636,14 +1644,14 @@ int upgrade_common_record(int fd, int stdfd, struct activity *act[], struct file
 				for (k = 0; k < act[p]->nr2; k++) {
 					sa_fread(fd,
 						 (char *) act[p]->buf[0] + (j * act[p]->nr2 + k) * act[p]->msize,
-						 (size_t) ofal->size, HARD_SIZE);
+						 (size_t) ofal->size, HARD_SIZE, UEOF_STOP);
 				}
 			}
 		}
 		else if (act[p]->nr_ini > 0) {
 			sa_fread(fd, act[p]->buf[0],
 				 (size_t) ofal->size * (size_t) act[p]->nr_ini * (size_t) act[p]->nr2,
-				 HARD_SIZE);
+				 HARD_SIZE, UEOF_STOP);
 		}
 
 		nr_struct = act[p]->nr_ini;
@@ -1863,7 +1871,7 @@ int upgrade_stat_records(int fd, int stdfd, struct activity *act[], struct file_
 	fprintf(stderr, _("Statistics:\n"));
 
 	do {
-		eosaf = sa_fread(fd, &orec_hdr, OLD_RECORD_HEADER_SIZE, SOFT_SIZE);
+		eosaf = sa_fread(fd, &orec_hdr, OLD_RECORD_HEADER_SIZE, SOFT_SIZE, UEOF_STOP);
 
 		/* Normalize endianness */
 		if (endian_mismatch) {
@@ -1965,8 +1973,14 @@ void convert_file(char dfile[], struct activity *act[])
 		goto success;
 	}
 
-	/* Get HZ */
-	get_HZ();
+	if (!user_hz) {
+		/* Get HZ */
+		get_HZ();
+	}
+	else {
+		/* HZ set on the command line with option -O */
+		hz = user_hz;
+	}
 	fprintf(stderr, _("HZ: Using current value: %lu\n"), HZ);
 
 	/* Upgrade file's header section */

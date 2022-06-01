@@ -1,0 +1,47 @@
+From: Robert Luberda <robert@debian.org>
+Date: Fri, 5 Jun 2020 12:33:37 +0200
+Subject: Fix a typo found by lintian
+
+sed -e 's/ressource/resource' accross the code
+---
+ CHANGES | 6 +++---
+ FAQ.md  | 2 +-
+ 2 files changed, 4 insertions(+), 4 deletions(-)
+
+diff --git a/CHANGES b/CHANGES
+index 9a7f8b7..4a11900 100644
+--- a/CHANGES
++++ b/CHANGES
+@@ -478,7 +478,7 @@ Changes:
+ 	* Display unit with areq-sz metric values when --human option used.
+ 	* Display a percent sign after values when --human option used.
+ 	* pidstat: Don't stop if /proc/#/schedstat files don't exist.
+-	* Fix ressource leak (CID 144609) [11.4.5] [11.2.11].
++	* Fix resource leak (CID 144609) [11.4.5] [11.2.11].
+ 	* Cast variables to target type before use [11.4.5] [11.2.11].
+ 	* Fix buffer overflow when options -s or -e are used with sar
+ 	  (DEBIAN bug #863197) [11.4.5] [11.2.11].
+@@ -741,8 +741,8 @@ Changes:
+ 	* Check /proc/net/snmp format to collect ICMP statistics at
+ 	  their right positions [11.0.6].
+ 	* sadc: Fix untrusted value used as argument.
+-	* sa_conv.c: Fix ressource leak.
+-	* ioconf.c: Fix several ressource leaks [11.0.6].
++	* sa_conv.c: Fix resource leak.
++	* ioconf.c: Fix several resource leaks [11.0.6].
+ 	* mpstat: Fix alignment output, really [11.0.6].
+ 	* [Sampsa Kiiskinen]: Fix bug in isag [11.0.6].
+ 	* iostat's option -T renamed to -H.
+diff --git a/FAQ.md b/FAQ.md
+index cda3e41..e0a1233 100644
+--- a/FAQ.md
++++ b/FAQ.md
+@@ -745,7 +745,7 @@ an individual CPU can exceed 100%...
+ 
+ A: The CPU number displayed by pidstat is the CPU to which the task is attached
+ when the statistics are actually displayed. This doesn't mean that the task
+-has spent its whole interval of time attached to it. Hence the CPU ressource
++has spent its whole interval of time attached to it. Hence the CPU resource
+ used by a thread on an interval of time as displayed by pidstat may have
+ concerned several processors.
+ 

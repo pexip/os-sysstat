@@ -1,10 +1,12 @@
 /*
  * rd_stats.h: Include file used to read system statistics
- * (C) 1999-2018 by Sebastien Godard (sysstat <at> orange.fr)
+ * (C) 1999-2020 by Sebastien Godard (sysstat <at> orange.fr)
  */
 
 #ifndef _RD_STATS_H
 #define _RD_STATS_H
+
+#include "common.h"
 
 /*
  ***************************************************************************
@@ -51,26 +53,29 @@
  */
 
 /* Files */
-#define PROC		"/proc"
-#define SERIAL		"/proc/tty/driver/serial"
-#define FDENTRY_STATE	"/proc/sys/fs/dentry-state"
-#define FFILE_NR	"/proc/sys/fs/file-nr"
-#define FINODE_STATE	"/proc/sys/fs/inode-state"
-#define PTY_NR		"/proc/sys/kernel/pty/nr"
-#define NET_DEV		"/proc/net/dev"
-#define NET_SOCKSTAT	"/proc/net/sockstat"
-#define NET_SOCKSTAT6	"/proc/net/sockstat6"
-#define NET_RPC_NFS	"/proc/net/rpc/nfs"
-#define NET_RPC_NFSD	"/proc/net/rpc/nfsd"
-#define NET_SOFTNET	"/proc/net/softnet_stat"
-#define LOADAVG		"/proc/loadavg"
-#define VMSTAT		"/proc/vmstat"
-#define NET_SNMP	"/proc/net/snmp"
-#define NET_SNMP6	"/proc/net/snmp6"
-#define CPUINFO		"/proc/cpuinfo"
-#define MTAB		"/etc/mtab"
-#define IF_DUPLEX	"/sys/class/net/%s/duplex"
-#define IF_SPEED	"/sys/class/net/%s/speed"
+#define SERIAL		PRE "/proc/tty/driver/serial"
+#define FDENTRY_STATE	PRE "/proc/sys/fs/dentry-state"
+#define FFILE_NR	PRE "/proc/sys/fs/file-nr"
+#define FINODE_STATE	PRE "/proc/sys/fs/inode-state"
+#define PTY_NR		PRE "/proc/sys/kernel/pty/nr"
+#define NET_DEV		PRE "/proc/net/dev"
+#define NET_SOCKSTAT	PRE "/proc/net/sockstat"
+#define NET_SOCKSTAT6	PRE "/proc/net/sockstat6"
+#define NET_RPC_NFS	PRE "/proc/net/rpc/nfs"
+#define NET_RPC_NFSD	PRE "/proc/net/rpc/nfsd"
+#define NET_SOFTNET	PRE "/proc/net/softnet_stat"
+#define LOADAVG		PRE "/proc/loadavg"
+#define PRESSURE	PRE "/proc/pressure"
+#define PSI_CPU		PRESSURE "/cpu"
+#define PSI_IO		PRESSURE "/io"
+#define PSI_MEM		PRESSURE "/memory"
+#define VMSTAT		PRE "/proc/vmstat"
+#define NET_SNMP	PRE "/proc/net/snmp"
+#define NET_SNMP6	PRE "/proc/net/snmp6"
+#define CPUINFO		PRE "/proc/cpuinfo"
+#define MTAB		PRE "/etc/mtab"
+#define IF_DUPLEX	PRE "/sys/class/net/%s/duplex"
+#define IF_SPEED	PRE "/sys/class/net/%s/speed"
 #define FC_RX_FRAMES	"%s/%s/statistics/rx_frames"
 #define FC_TX_FRAMES	"%s/%s/statistics/tx_frames"
 #define FC_RX_WORDS	"%s/%s/statistics/rx_words"
@@ -117,7 +122,7 @@ struct stats_cpu {
 
 /*
  * Structure for task creation and context switch statistics.
- * The attribute (aligned(16)) is necessary so that sizeof(structure) has
+ * The attribute (aligned(8)) is necessary so that sizeof(structure) has
  * the same value on 32 and 64-bit architectures.
  */
 struct stats_pcsw {
@@ -179,10 +184,12 @@ struct stats_io {
 	unsigned long long dk_drive_wio;
 	unsigned long long dk_drive_rblk;
 	unsigned long long dk_drive_wblk;
+	unsigned long long dk_drive_dio;
+	unsigned long long dk_drive_dblk;
 };
 
 #define STATS_IO_SIZE	(sizeof(struct stats_io))
-#define STATS_IO_ULL	5
+#define STATS_IO_ULL	7
 #define STATS_IO_UL	0
 #define STATS_IO_U	0
 
@@ -259,20 +266,24 @@ struct stats_serial {
 /* Structure for block devices statistics */
 struct stats_disk {
 	unsigned long long nr_ios;
+	unsigned long long wwn[2];
 	unsigned long	   rd_sect	__attribute__ ((aligned (8)));
 	unsigned long	   wr_sect	__attribute__ ((aligned (8)));
+	unsigned long	   dc_sect	__attribute__ ((aligned (8)));
 	unsigned int	   rd_ticks	__attribute__ ((aligned (8)));
 	unsigned int	   wr_ticks;
 	unsigned int	   tot_ticks;
 	unsigned int	   rq_ticks;
 	unsigned int	   major;
 	unsigned int	   minor;
+	unsigned int	   dc_ticks;
+	unsigned int	   part_nr;
 };
 
 #define STATS_DISK_SIZE	(sizeof(struct stats_disk))
-#define STATS_DISK_ULL	1
-#define STATS_DISK_UL	2
-#define STATS_DISK_U	6
+#define STATS_DISK_ULL	3
+#define STATS_DISK_UL	3
+#define STATS_DISK_U	8
 
 /* Structure for network interfaces statistics */
 struct stats_net_dev {
@@ -611,10 +622,12 @@ struct stats_pwr_cpufreq {
 struct stats_huge {
 	unsigned long long frhkb;
 	unsigned long long tlhkb;
+	unsigned long long rsvdhkb;
+	unsigned long long surphkb;
 };
 
 #define STATS_HUGE_SIZE	(sizeof(struct stats_huge))
-#define STATS_HUGE_ULL	2
+#define STATS_HUGE_ULL	4
 #define STATS_HUGE_UL	0
 #define STATS_HUGE_U	0
 
@@ -694,6 +707,53 @@ struct stats_softnet {
 #define STATS_SOFTNET_ULL	0
 #define STATS_SOFTNET_UL	0
 #define STATS_SOFTNET_U		5
+
+/* Structure for pressure-stall CPU statistics */
+struct stats_psi_cpu {
+	unsigned long long some_cpu_total;
+	unsigned long	   some_acpu_10		__attribute__ ((aligned (8)));
+	unsigned long	   some_acpu_60		__attribute__ ((aligned (8)));
+	unsigned long	   some_acpu_300	__attribute__ ((aligned (8)));
+};
+
+#define STATS_PSI_CPU_SIZE	(sizeof(struct stats_psi_cpu))
+#define STATS_PSI_CPU_ULL	1
+#define STATS_PSI_CPU_UL	3
+#define STATS_PSI_CPU_U		0
+
+/* Structure for pressure-stall I/O statistics */
+struct stats_psi_io {
+	unsigned long long some_io_total;
+	unsigned long long full_io_total;
+	unsigned long	   some_aio_10		__attribute__ ((aligned (8)));
+	unsigned long	   some_aio_60		__attribute__ ((aligned (8)));
+	unsigned long	   some_aio_300		__attribute__ ((aligned (8)));
+	unsigned long	   full_aio_10		__attribute__ ((aligned (8)));
+	unsigned long	   full_aio_60		__attribute__ ((aligned (8)));
+	unsigned long	   full_aio_300		__attribute__ ((aligned (8)));
+};
+
+#define STATS_PSI_IO_SIZE	(sizeof(struct stats_psi_io))
+#define STATS_PSI_IO_ULL	2
+#define STATS_PSI_IO_UL		6
+#define STATS_PSI_IO_U		0
+
+/* Structure for pressure-stall memory statistics */
+struct stats_psi_mem {
+	unsigned long long some_mem_total;
+	unsigned long long full_mem_total;
+	unsigned long	   some_amem_10		__attribute__ ((aligned (8)));
+	unsigned long	   some_amem_60		__attribute__ ((aligned (8)));
+	unsigned long	   some_amem_300	__attribute__ ((aligned (8)));
+	unsigned long	   full_amem_10		__attribute__ ((aligned (8)));
+	unsigned long	   full_amem_60		__attribute__ ((aligned (8)));
+	unsigned long	   full_amem_300	__attribute__ ((aligned (8)));
+};
+
+#define STATS_PSI_MEM_SIZE	(sizeof(struct stats_psi_mem))
+#define STATS_PSI_MEM_ULL	2
+#define STATS_PSI_MEM_UL	6
+#define STATS_PSI_MEM_U		0
 
 /*
  ***************************************************************************
@@ -785,6 +845,13 @@ __nr_t read_fchost
 	(struct stats_fchost *, __nr_t);
 int read_softnet
 	(struct stats_softnet *, __nr_t, unsigned char []);
+__nr_t read_psicpu
+	(struct stats_psi_cpu *);
+__nr_t read_psiio
+	(struct stats_psi_io *);
+__nr_t read_psimem
+	(struct stats_psi_mem *);
+
 #endif /* SOURCE_SADC */
 
 #endif /* _RD_STATS_H */

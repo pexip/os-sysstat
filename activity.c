@@ -1,6 +1,6 @@
 /*
  * activity.c: Define system activities available for sar/sadc.
- * (C) 1999-2018 by Sebastien GODARD (sysstat <at> orange.fr)
+ * (C) 1999-2020 by Sebastien GODARD (sysstat <at> orange.fr)
  *
  ***************************************************************************
  * This program is free software; you can redistribute it and/or modify it *
@@ -31,6 +31,7 @@
 #include "json_stats.h"
 #include "svg_stats.h"
 #include "raw_stats.h"
+#include "pcp_stats.h"
 #endif
 
 /*
@@ -67,7 +68,8 @@ struct act_bitmap irq_bitmap = {
 struct activity cpu_act = {
 	.id		= A_CPU,
 	.options	= AO_COLLECTED + AO_COUNTED + AO_PERSISTENT +
-			  AO_MULTIPLE_OUTPUTS + AO_GRAPH_PER_ITEM,
+			  AO_MULTIPLE_OUTPUTS + AO_GRAPH_PER_ITEM +
+			  AO_ALWAYS_COUNTED,
 	.magic		= ACTIVITY_MAGIC_BASE + 1,
 	.group		= G_DEFAULT,
 #ifdef SOURCE_SADC
@@ -91,6 +93,7 @@ struct activity cpu_act = {
 	.f_json_print	= json_print_cpu_stats,
 	.f_svg_print	= svg_print_cpu_stats,
 	.f_raw_print	= raw_print_cpu_stats,
+	.f_pcp_print	= pcp_print_cpu_stats,
 	.f_count_new	= NULL,
 	.item_list	= NULL,
 	.desc		= "CPU utilization",
@@ -136,6 +139,7 @@ struct activity pcsw_act = {
 	.f_json_print	= json_print_pcsw_stats,
 	.f_svg_print	= svg_print_pcsw_stats,
 	.f_raw_print	= raw_print_pcsw_stats,
+	.f_pcp_print	= pcp_print_pcsw_stats,
 	.f_count_new	= NULL,
 	.item_list	= NULL,
 	.desc		= "Task creation and switching activity",
@@ -181,6 +185,7 @@ struct activity irq_act = {
 	.f_json_print	= json_print_irq_stats,
 	.f_svg_print	= NULL,
 	.f_raw_print	= raw_print_irq_stats,
+	.f_pcp_print	= pcp_print_irq_stats,
 	.f_count_new	= NULL,
 	.item_list	= NULL,
 	.desc		= "Interrupts statistics",
@@ -226,6 +231,7 @@ struct activity swap_act = {
 	.f_json_print	= json_print_swap_stats,
 	.f_svg_print	= svg_print_swap_stats,
 	.f_raw_print	= raw_print_swap_stats,
+	.f_pcp_print	= pcp_print_swap_stats,
 	.f_count_new	= NULL,
 	.item_list	= NULL,
 	.desc		= "Swap activity",
@@ -272,6 +278,7 @@ struct activity paging_act = {
 	.f_json_print	= json_print_paging_stats,
 	.f_svg_print	= svg_print_paging_stats,
 	.f_raw_print	= raw_print_paging_stats,
+	.f_pcp_print	= pcp_print_paging_stats,
 	.f_count_new	= NULL,
 	.item_list	= NULL,
 	.desc		= "Paging activity",
@@ -307,7 +314,7 @@ struct activity io_act = {
 	.f_print_avg	= print_io_stats,
 #endif
 #if defined(SOURCE_SAR) || defined(SOURCE_SADF)
-	.hdr_line	= "tps;rtps;wtps;bread/s;bwrtn/s",
+	.hdr_line	= "tps;rtps;wtps;dtps;bread/s;bwrtn/s;bdscd/s",
 #endif
 	.gtypes_nr	= {STATS_IO_ULL, STATS_IO_UL, STATS_IO_U},
 	.ftypes_nr	= {0, 0, 0},
@@ -317,6 +324,7 @@ struct activity io_act = {
 	.f_json_print	= json_print_io_stats,
 	.f_svg_print	= svg_print_io_stats,
 	.f_raw_print	= raw_print_io_stats,
+	.f_pcp_print	= pcp_print_io_stats,
 	.f_count_new	= NULL,
 	.item_list	= NULL,
 	.desc		= "I/O and transfer rate statistics",
@@ -363,6 +371,7 @@ struct activity memory_act = {
 	.f_json_print	= json_print_memory_stats,
 	.f_svg_print	= svg_print_memory_stats,
 	.f_raw_print	= raw_print_memory_stats,
+	.f_pcp_print	= pcp_print_memory_stats,
 	.f_count_new	= NULL,
 	.item_list	= NULL,
 	.desc		= "Memory and/or swap utilization",
@@ -408,6 +417,7 @@ struct activity ktables_act = {
 	.f_json_print	= json_print_ktables_stats,
 	.f_svg_print	= svg_print_ktables_stats,
 	.f_raw_print	= raw_print_ktables_stats,
+	.f_pcp_print	= pcp_print_ktables_stats,
 	.f_count_new	= NULL,
 	.item_list	= NULL,
 	.desc		= "Kernel tables statistics",
@@ -453,6 +463,7 @@ struct activity queue_act = {
 	.f_json_print	= json_print_queue_stats,
 	.f_svg_print	= svg_print_queue_stats,
 	.f_raw_print	= raw_print_queue_stats,
+	.f_pcp_print	= pcp_print_queue_stats,
 	.f_count_new	= NULL,
 	.item_list	= NULL,
 	.desc		= "Queue length and load average statistics",
@@ -488,7 +499,7 @@ struct activity serial_act = {
 	.f_print_avg	= print_serial_stats,
 #endif
 #if defined(SOURCE_SAR) || defined(SOURCE_SADF)
-	.hdr_line	= "TTY;rcvin/s;txmtin/s;framerr/s;prtyerr/s;brk/s;ovrun/s",
+	.hdr_line	= "TTY;rcvin/s;xmtin/s;framerr/s;prtyerr/s;brk/s;ovrun/s",
 #endif
 	.gtypes_nr	= {STATS_SERIAL_ULL, STATS_SERIAL_UL, STATS_SERIAL_U},
 	.ftypes_nr	= {0, 0, 0},
@@ -498,6 +509,7 @@ struct activity serial_act = {
 	.f_json_print	= json_print_serial_stats,
 	.f_svg_print	= NULL,
 	.f_raw_print	= raw_print_serial_stats,
+	.f_pcp_print	= pcp_print_serial_stats,
 	.f_count_new	= NULL,
 	.item_list	= NULL,
 	.desc		= "TTY devices statistics",
@@ -533,7 +545,7 @@ struct activity disk_act = {
 	.f_print_avg	= print_disk_stats,
 #endif
 #if defined(SOURCE_SAR) || defined(SOURCE_SADF)
-	.hdr_line	= "DEV;tps;rkB/s;wkB/s;areq-sz;aqu-sz;await;svctm;%util",
+	.hdr_line	= "DEV;tps;rkB/s;wkB/s;dkB/s;areq-sz;aqu-sz;await;%util",
 #endif
 	.gtypes_nr	= {STATS_DISK_ULL, STATS_DISK_UL, STATS_DISK_U},
 	.ftypes_nr	= {0, 0, 0},
@@ -543,6 +555,7 @@ struct activity disk_act = {
 	.f_json_print	= json_print_disk_stats,
 	.f_svg_print	= svg_print_disk_stats,
 	.f_raw_print	= raw_print_disk_stats,
+	.f_pcp_print	= pcp_print_disk_stats,
 	.f_count_new	= count_new_disk,
 	.item_list	= NULL,
 	.desc		= "Block devices statistics",
@@ -588,6 +601,7 @@ struct activity net_dev_act = {
 	.f_json_print	= json_print_net_dev_stats,
 	.f_svg_print	= svg_print_net_dev_stats,
 	.f_raw_print	= raw_print_net_dev_stats,
+	.f_pcp_print	= pcp_print_net_dev_stats,
 	.f_count_new	= count_new_net_dev,
 	.item_list	= NULL,
 	.desc		= "Network interfaces statistics",
@@ -634,6 +648,7 @@ struct activity net_edev_act = {
 	.f_json_print	= json_print_net_edev_stats,
 	.f_svg_print	= svg_print_net_edev_stats,
 	.f_raw_print	= raw_print_net_edev_stats,
+	.f_pcp_print	= pcp_print_net_edev_stats,
 	.f_count_new	= count_new_net_edev,
 	.item_list	= NULL,
 	.desc		= "Network interfaces errors statistics",
@@ -679,6 +694,7 @@ struct activity net_nfs_act = {
 	.f_json_print	= json_print_net_nfs_stats,
 	.f_svg_print	= svg_print_net_nfs_stats,
 	.f_raw_print	= raw_print_net_nfs_stats,
+	.f_pcp_print	= pcp_print_net_nfs_stats,
 	.f_count_new	= NULL,
 	.item_list	= NULL,
 	.desc		= "NFS client statistics",
@@ -725,6 +741,7 @@ struct activity net_nfsd_act = {
 	.f_json_print	= json_print_net_nfsd_stats,
 	.f_svg_print	= svg_print_net_nfsd_stats,
 	.f_raw_print	= raw_print_net_nfsd_stats,
+	.f_pcp_print	= pcp_print_net_nfsd_stats,
 	.f_count_new	= NULL,
 	.item_list	= NULL,
 	.desc		= "NFS server statistics",
@@ -770,6 +787,7 @@ struct activity net_sock_act = {
 	.f_json_print	= json_print_net_sock_stats,
 	.f_svg_print	= svg_print_net_sock_stats,
 	.f_raw_print	= raw_print_net_sock_stats,
+	.f_pcp_print	= pcp_print_net_sock_stats,
 	.f_count_new	= NULL,
 	.item_list	= NULL,
 	.desc		= "IPv4 sockets statistics",
@@ -815,6 +833,7 @@ struct activity net_ip_act = {
 	.f_json_print	= json_print_net_ip_stats,
 	.f_svg_print	= svg_print_net_ip_stats,
 	.f_raw_print	= raw_print_net_ip_stats,
+	.f_pcp_print	= pcp_print_net_ip_stats,
 	.f_count_new	= NULL,
 	.item_list	= NULL,
 	.desc		= "IPv4 traffic statistics",
@@ -860,6 +879,7 @@ struct activity net_eip_act = {
 	.f_json_print	= json_print_net_eip_stats,
 	.f_svg_print	= svg_print_net_eip_stats,
 	.f_raw_print	= raw_print_net_eip_stats,
+	.f_pcp_print	= pcp_print_net_eip_stats,
 	.f_count_new	= NULL,
 	.item_list	= NULL,
 	.desc		= "IPv4 traffic errors statistics",
@@ -906,6 +926,7 @@ struct activity net_icmp_act = {
 	.f_json_print	= json_print_net_icmp_stats,
 	.f_svg_print	= svg_print_net_icmp_stats,
 	.f_raw_print	= raw_print_net_icmp_stats,
+	.f_pcp_print	= pcp_print_net_icmp_stats,
 	.f_count_new	= NULL,
 	.item_list	= NULL,
 	.desc		= "ICMPv4 traffic statistics",
@@ -952,6 +973,7 @@ struct activity net_eicmp_act = {
 	.f_json_print	= json_print_net_eicmp_stats,
 	.f_svg_print	= svg_print_net_eicmp_stats,
 	.f_raw_print	= raw_print_net_eicmp_stats,
+	.f_pcp_print	= pcp_print_net_eicmp_stats,
 	.f_count_new	= NULL,
 	.item_list	= NULL,
 	.desc		= "ICMPv4 traffic errors statistics",
@@ -997,6 +1019,7 @@ struct activity net_tcp_act = {
 	.f_json_print	= json_print_net_tcp_stats,
 	.f_svg_print	= svg_print_net_tcp_stats,
 	.f_raw_print	= raw_print_net_tcp_stats,
+	.f_pcp_print	= pcp_print_net_tcp_stats,
 	.f_count_new	= NULL,
 	.item_list	= NULL,
 	.desc		= "TCPv4 traffic statistics",
@@ -1042,6 +1065,7 @@ struct activity net_etcp_act = {
 	.f_json_print	= json_print_net_etcp_stats,
 	.f_svg_print	= svg_print_net_etcp_stats,
 	.f_raw_print	= raw_print_net_etcp_stats,
+	.f_pcp_print	= pcp_print_net_etcp_stats,
 	.f_count_new	= NULL,
 	.item_list	= NULL,
 	.desc		= "TCPv4 traffic errors statistics",
@@ -1087,6 +1111,7 @@ struct activity net_udp_act = {
 	.f_json_print	= json_print_net_udp_stats,
 	.f_svg_print	= svg_print_net_udp_stats,
 	.f_raw_print	= raw_print_net_udp_stats,
+	.f_pcp_print	= pcp_print_net_udp_stats,
 	.f_count_new	= NULL,
 	.item_list	= NULL,
 	.desc		= "UDPv4 traffic statistics",
@@ -1132,6 +1157,7 @@ struct activity net_sock6_act = {
 	.f_json_print	= json_print_net_sock6_stats,
 	.f_svg_print	= svg_print_net_sock6_stats,
 	.f_raw_print	= raw_print_net_sock6_stats,
+	.f_pcp_print	= pcp_print_net_sock6_stats,
 	.f_count_new	= NULL,
 	.item_list	= NULL,
 	.desc		= "IPv6 sockets statistics",
@@ -1178,6 +1204,7 @@ struct activity net_ip6_act = {
 	.f_json_print	= json_print_net_ip6_stats,
 	.f_svg_print	= svg_print_net_ip6_stats,
 	.f_raw_print	= raw_print_net_ip6_stats,
+	.f_pcp_print	= pcp_print_net_ip6_stats,
 	.f_count_new	= NULL,
 	.item_list	= NULL,
 	.desc		= "IPv6 traffic statistics",
@@ -1224,6 +1251,7 @@ struct activity net_eip6_act = {
 	.f_json_print	= json_print_net_eip6_stats,
 	.f_svg_print	= svg_print_net_eip6_stats,
 	.f_raw_print	= raw_print_net_eip6_stats,
+	.f_pcp_print	= pcp_print_net_eip6_stats,
 	.f_count_new	= NULL,
 	.item_list	= NULL,
 	.desc		= "IPv6 traffic errors statistics",
@@ -1271,6 +1299,7 @@ struct activity net_icmp6_act = {
 	.f_json_print	= json_print_net_icmp6_stats,
 	.f_svg_print	= svg_print_net_icmp6_stats,
 	.f_raw_print	= raw_print_net_icmp6_stats,
+	.f_pcp_print	= pcp_print_net_icmp6_stats,
 	.f_count_new	= NULL,
 	.item_list	= NULL,
 	.desc		= "ICMPv6 traffic statistics",
@@ -1317,6 +1346,7 @@ struct activity net_eicmp6_act = {
 	.f_json_print	= json_print_net_eicmp6_stats,
 	.f_svg_print	= svg_print_net_eicmp6_stats,
 	.f_raw_print	= raw_print_net_eicmp6_stats,
+	.f_pcp_print	= pcp_print_net_eicmp6_stats,
 	.f_count_new	= NULL,
 	.item_list	= NULL,
 	.desc		= "ICMPv6 traffic errors statistics",
@@ -1362,6 +1392,7 @@ struct activity net_udp6_act = {
 	.f_json_print	= json_print_net_udp6_stats,
 	.f_svg_print	= svg_print_net_udp6_stats,
 	.f_raw_print	= raw_print_net_udp6_stats,
+	.f_pcp_print	= pcp_print_net_udp6_stats,
 	.f_count_new	= NULL,
 	.item_list	= NULL,
 	.desc		= "UDPv6 traffic statistics",
@@ -1407,6 +1438,7 @@ struct activity pwr_cpufreq_act = {
 	.f_json_print	= json_print_pwr_cpufreq_stats,
 	.f_svg_print	= svg_print_pwr_cpufreq_stats,
 	.f_raw_print	= raw_print_pwr_cpufreq_stats,
+	.f_pcp_print	= pcp_print_pwr_cpufreq_stats,
 	.f_count_new	= NULL,
 	.item_list	= NULL,
 	.desc		= "CPU clock frequency",
@@ -1452,6 +1484,7 @@ struct activity pwr_fan_act = {
 	.f_json_print	= json_print_pwr_fan_stats,
 	.f_svg_print	= svg_print_pwr_fan_stats,
 	.f_raw_print	= raw_print_pwr_fan_stats,
+	.f_pcp_print	= pcp_print_pwr_fan_stats,
 	.f_count_new	= NULL,
 	.item_list	= NULL,
 	.desc		= "Fans speed",
@@ -1497,6 +1530,7 @@ struct activity pwr_temp_act = {
 	.f_json_print	= json_print_pwr_temp_stats,
 	.f_svg_print	= svg_print_pwr_temp_stats,
 	.f_raw_print	= raw_print_pwr_temp_stats,
+	.f_pcp_print	= pcp_print_pwr_temp_stats,
 	.f_count_new	= NULL,
 	.item_list	= NULL,
 	.desc		= "Devices temperature",
@@ -1542,6 +1576,7 @@ struct activity pwr_in_act = {
 	.f_json_print	= json_print_pwr_in_stats,
 	.f_svg_print	= svg_print_pwr_in_stats,
 	.f_raw_print	= raw_print_pwr_in_stats,
+	.f_pcp_print	= pcp_print_pwr_in_stats,
 	.f_count_new	= NULL,
 	.item_list	= NULL,
 	.desc		= "Voltage inputs statistics",
@@ -1577,7 +1612,7 @@ struct activity huge_act = {
 	.f_print_avg	= print_avg_huge_stats,
 #endif
 #if defined(SOURCE_SAR) || defined(SOURCE_SADF)
-	.hdr_line	= "kbhugfree;kbhugused;%hugused",
+	.hdr_line	= "kbhugfree;kbhugused;%hugused;kbhugrsvd;kbhugsurp",
 #endif
 	.gtypes_nr	= {STATS_HUGE_ULL, STATS_HUGE_UL, STATS_HUGE_U},
 	.ftypes_nr	= {0, 0, 0},
@@ -1587,6 +1622,7 @@ struct activity huge_act = {
 	.f_json_print	= json_print_huge_stats,
 	.f_svg_print	= svg_print_huge_stats,
 	.f_raw_print	= raw_print_huge_stats,
+	.f_pcp_print	= pcp_print_huge_stats,
 	.f_count_new	= NULL,
 	.item_list	= NULL,
 	.desc		= "Huge pages utilization",
@@ -1677,6 +1713,7 @@ struct activity pwr_usb_act = {
 	.f_json_print	= json_print_pwr_usb_stats,
 	.f_svg_print	= NULL,
 	.f_raw_print	= raw_print_pwr_usb_stats,
+	.f_pcp_print	= pcp_print_pwr_usb_stats,
 	.f_count_new	= NULL,
 	.item_list	= NULL,
 	.desc		= "USB devices",
@@ -1723,6 +1760,7 @@ struct activity filesystem_act = {
 	.f_json_print	= json_print_filesystem_stats,
 	.f_svg_print	= svg_print_filesystem_stats,
 	.f_raw_print	= raw_print_filesystem_stats,
+	.f_pcp_print	= pcp_print_filesystem_stats,
 	.f_count_new	= count_new_filesystem,
 	.item_list	= NULL,
 	.desc		= "Filesystems statistics",
@@ -1768,6 +1806,7 @@ struct activity fchost_act = {
 	.f_json_print	= json_print_fchost_stats,
 	.f_svg_print	= svg_print_fchost_stats,
 	.f_raw_print	= raw_print_fchost_stats,
+	.f_pcp_print	= pcp_print_fchost_stats,
 	.f_count_new	= count_new_fchost,
 	.item_list	= NULL,
 	.desc		= "Fibre Channel HBA statistics",
@@ -1814,6 +1853,7 @@ struct activity softnet_act = {
 	.f_json_print	= json_print_softnet_stats,
 	.f_svg_print	= svg_print_softnet_stats,
 	.f_raw_print	= raw_print_softnet_stats,
+	.f_pcp_print	= pcp_print_softnet_stats,
 	.f_count_new	= NULL,
 	.item_list	= NULL,
 	.desc		= "Software-based network processing statistics",
@@ -1833,6 +1873,144 @@ struct activity softnet_act = {
 	.bitmap		= &cpu_bitmap
 };
 
+/* Pressure-stall CPU activity */
+struct activity psi_cpu_act = {
+	.id		= A_PSI_CPU,
+	.options	= AO_COLLECTED + AO_DETECTED,
+	.magic		= ACTIVITY_MAGIC_BASE,
+	.group		= G_DEFAULT,
+#ifdef SOURCE_SADC
+	.f_count_index	= 11,
+	.f_count2	= NULL,
+	.f_read		= wrap_read_psicpu,
+#endif
+#ifdef SOURCE_SAR
+	.f_print	= print_psicpu_stats,
+	.f_print_avg	= print_avg_psicpu_stats,
+#endif
+#if defined(SOURCE_SAR) || defined(SOURCE_SADF)
+	.hdr_line	= "%scpu-10;%scpu-60;%scpu-300;%scpu",
+#endif
+	.gtypes_nr	= {STATS_PSI_CPU_ULL, STATS_PSI_CPU_UL, STATS_PSI_CPU_U},
+	.ftypes_nr	= {0, 0, 0},
+#ifdef SOURCE_SADF
+	.f_render	= render_psicpu_stats,
+	.f_xml_print	= xml_print_psicpu_stats,
+	.f_json_print	= json_print_psicpu_stats,
+	.f_svg_print	= svg_print_psicpu_stats,
+	.f_raw_print	= raw_print_psicpu_stats,
+	.f_pcp_print	= pcp_print_psicpu_stats,
+	.f_count_new	= NULL,
+	.item_list	= NULL,
+	.desc		= "Pressure-stall CPU statistics",
+#endif
+	.name		= "A_PSI_CPU",
+	.item_list_sz	= 0,
+	.g_nr		= 2,
+	.nr_ini		= 1,
+	.nr2		= 1,
+	.nr_max		= 1,
+	.nr		= {1, 1, 1},
+	.nr_allocated	= 0,
+	.fsize		= STATS_PSI_CPU_SIZE,
+	.msize		= STATS_PSI_CPU_SIZE,
+	.opt_flags	= 0,
+	.buf		= {NULL, NULL, NULL},
+	.bitmap		= NULL
+};
+
+/* Pressure-stall I/O activity */
+struct activity psi_io_act = {
+	.id		= A_PSI_IO,
+	.options	= AO_COLLECTED + AO_DETECTED,
+	.magic		= ACTIVITY_MAGIC_BASE,
+	.group		= G_DEFAULT,
+#ifdef SOURCE_SADC
+	.f_count_index	= 11,
+	.f_count2	= NULL,
+	.f_read		= wrap_read_psiio,
+#endif
+#ifdef SOURCE_SAR
+	.f_print	= print_psiio_stats,
+	.f_print_avg	= print_avg_psiio_stats,
+#endif
+#if defined(SOURCE_SAR) || defined(SOURCE_SADF)
+	.hdr_line	= "%sio-10;%sio-60;%sio-300;%sio;%fio-10;%fio-60;%fio-300;%fio",
+#endif
+	.gtypes_nr	= {STATS_PSI_IO_ULL, STATS_PSI_IO_UL, STATS_PSI_IO_U},
+	.ftypes_nr	= {0, 0, 0},
+#ifdef SOURCE_SADF
+	.f_render	= render_psiio_stats,
+	.f_xml_print	= xml_print_psiio_stats,
+	.f_json_print	= json_print_psiio_stats,
+	.f_svg_print	= svg_print_psiio_stats,
+	.f_raw_print	= raw_print_psiio_stats,
+	.f_pcp_print	= pcp_print_psiio_stats,
+	.f_count_new	= NULL,
+	.item_list	= NULL,
+	.desc		= "Pressure-stall I/O statistics",
+#endif
+	.name		= "A_PSI_IO",
+	.item_list_sz	= 0,
+	.g_nr		= 4,
+	.nr_ini		= 1,
+	.nr2		= 1,
+	.nr_max		= 1,
+	.nr		= {1, 1, 1},
+	.nr_allocated	= 0,
+	.fsize		= STATS_PSI_IO_SIZE,
+	.msize		= STATS_PSI_IO_SIZE,
+	.opt_flags	= 0,
+	.buf		= {NULL, NULL, NULL},
+	.bitmap		= NULL
+};
+
+/* Pressure-stall memory activity */
+struct activity psi_mem_act = {
+	.id		= A_PSI_MEM,
+	.options	= AO_COLLECTED + AO_DETECTED + AO_CLOSE_MARKUP,
+	.magic		= ACTIVITY_MAGIC_BASE,
+	.group		= G_DEFAULT,
+#ifdef SOURCE_SADC
+	.f_count_index	= 11,
+	.f_count2	= NULL,
+	.f_read		= wrap_read_psimem,
+#endif
+#ifdef SOURCE_SAR
+	.f_print	= print_psimem_stats,
+	.f_print_avg	= print_avg_psimem_stats,
+#endif
+#if defined(SOURCE_SAR) || defined(SOURCE_SADF)
+	.hdr_line	= "%smem-10;%smem-60;%smem-300;%smem;%fmem-10;%fmem-60;%fmem-300;%fmem",
+#endif
+	.gtypes_nr	= {STATS_PSI_MEM_ULL, STATS_PSI_MEM_UL, STATS_PSI_MEM_U},
+	.ftypes_nr	= {0, 0, 0},
+#ifdef SOURCE_SADF
+	.f_render	= render_psimem_stats,
+	.f_xml_print	= xml_print_psimem_stats,
+	.f_json_print	= json_print_psimem_stats,
+	.f_svg_print	= svg_print_psimem_stats,
+	.f_raw_print	= raw_print_psimem_stats,
+	.f_pcp_print	= pcp_print_psimem_stats,
+	.f_count_new	= NULL,
+	.item_list	= NULL,
+	.desc		= "Pressure-stall memory statistics",
+#endif
+	.name		= "A_PSI_MEM",
+	.item_list_sz	= 0,
+	.g_nr		= 4,
+	.nr_ini		= 1,
+	.nr2		= 1,
+	.nr_max		= 1,
+	.nr		= {1, 1, 1},
+	.nr_allocated	= 0,
+	.fsize		= STATS_PSI_MEM_SIZE,
+	.msize		= STATS_PSI_MEM_SIZE,
+	.opt_flags	= 0,
+	.buf		= {NULL, NULL, NULL},
+	.bitmap		= NULL
+};
+
 #ifdef SOURCE_SADC
 /*
  * Array of functions used to count number of items.
@@ -1848,7 +2026,8 @@ __nr_t (*f_count[NR_F_COUNT]) (struct activity *) = {
 	wrap_get_in_nr,
 	wrap_get_usb_nr,
 	wrap_get_filesystem_nr,
-	wrap_get_fchost_nr
+	wrap_get_fchost_nr,
+	wrap_detect_psi
 };
 #endif
 
@@ -1897,7 +2076,12 @@ struct activity *act[NR_ACT] = {
 	&pwr_temp_act,
 	&pwr_in_act,
 	&pwr_wghfreq_act,
-	&pwr_usb_act,		/* AO_CLOSE_MARKUP */
+	&pwr_usb_act,	/* AO_CLOSE_MARKUP */
 	/* </power-management> */
-	&filesystem_act
+	&filesystem_act,
+	/* <psi> */
+	&psi_cpu_act,
+	&psi_io_act,
+	&psi_mem_act	/* AO_CLOSE_MARKUP */
+	/* </psi> */
 };

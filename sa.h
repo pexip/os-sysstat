@@ -1,12 +1,13 @@
 /*
  * sar/sadc: Report system activity
- * (C) 1999-2018 by Sebastien Godard (sysstat <at> orange.fr)
+ * (C) 1999-2020 by Sebastien Godard (sysstat <at> orange.fr)
  */
 
 #ifndef _SA_H
 #define _SA_H
 
 #include <stdio.h>
+#include <stdint.h>
 
 #include "common.h"
 #include "rd_stats.h"
@@ -19,12 +20,12 @@
  */
 
 /* Number of activities */
-#define NR_ACT		39
+#define NR_ACT		42
 /* The value below is used for sanity check */
 #define MAX_NR_ACT	256
 
 /* Number of functions used to count items */
-#define NR_F_COUNT	11
+#define NR_F_COUNT	12
 
 /* Activities */
 #define A_CPU		1
@@ -66,6 +67,9 @@
 #define A_FS		37
 #define A_NET_FC	38
 #define A_NET_SOFT	39
+#define A_PSI_CPU	40
+#define A_PSI_IO	41
+#define A_PSI_MEM	42
 
 
 /* Macro used to flag an activity that should be collected */
@@ -82,8 +86,9 @@
  */
 
 #define S_F_SINCE_BOOT		0x00000001
-#define S_F_SA_ROTAT      	0x00000002
-#define S_F_DEV_PRETTY		0x00000004
+#define S_F_SA_ROTAT      	0x00000002	/* Only used by sadc */
+#define S_F_DEV_SID		0x00000002	/* Only used by sar/sadf */
+#define S_F_PRETTY		0x00000004
 #define S_F_FORCE_FILE		0x00000008
 #define S_F_INTERVAL_SET	0x00000010
 #define S_F_TRUE_TIME		0x00000020
@@ -98,8 +103,6 @@
 #define S_F_LOCAL_TIME		0x00004000
 #define S_F_PREFD_TIME_OUTPUT	0x00008000
 #define S_F_SVG_SKIP		0x00010000
-/* Same value as S_F_SVG_SKIP above. Used for a different output format */
-#define S_F_RAW_DEBUG_MODE	0x00010000
 #define S_F_SVG_AUTOSCALE	0x00020000
 #define S_F_SVG_ONE_DAY		0x00040000
 #define S_F_SVG_SHOW_IDLE	0x00080000
@@ -107,13 +110,19 @@
 #define S_F_SVG_HEIGHT		0x00200000
 #define S_F_SVG_PACKED		0x00400000
 #define S_F_SVG_SHOW_INFO	0x00800000
-#define S_F_HUMAN_READ		0x01000000
+/* Unused 			0x01000000 */
 #define S_F_ZERO_OMIT		0x02000000
 #define S_F_SVG_SHOW_TOC	0x04000000
+#define S_F_FDATASYNC		0x08000000
+#define S_F_OPTION_A		0x10000000
+#define S_F_OPTION_P		0x20000000
+#define S_F_OPTION_I		0x40000000
+#define S_F_RAW_DEBUG_MODE	0x80000000
 
 #define WANT_SINCE_BOOT(m)		(((m) & S_F_SINCE_BOOT)   == S_F_SINCE_BOOT)
 #define WANT_SA_ROTAT(m)		(((m) & S_F_SA_ROTAT)     == S_F_SA_ROTAT)
-#define USE_PRETTY_OPTION(m)		(((m) & S_F_DEV_PRETTY)   == S_F_DEV_PRETTY)
+#define USE_STABLE_ID(m)		(((m) & S_F_DEV_SID)      == S_F_DEV_SID)
+#define DISPLAY_PRETTY(m)		(((m) & S_F_PRETTY)       == S_F_PRETTY)
 #define FORCE_FILE(m)			(((m) & S_F_FORCE_FILE)   == S_F_FORCE_FILE)
 #define INTERVAL_SET(m)			(((m) & S_F_INTERVAL_SET) == S_F_INTERVAL_SET)
 #define PRINT_TRUE_TIME(m)		(((m) & S_F_TRUE_TIME)    == S_F_TRUE_TIME)
@@ -131,14 +140,17 @@
 #define DISPLAY_ZERO_OMIT(m)		(((m) & S_F_ZERO_OMIT)    == S_F_ZERO_OMIT)
 #define DISPLAY_DEBUG_MODE(m)		(((m) & S_F_RAW_DEBUG_MODE) == S_F_RAW_DEBUG_MODE)
 #define AUTOSCALE_ON(m)			(((m) & S_F_SVG_AUTOSCALE) == S_F_SVG_AUTOSCALE)
-#define DISPLAY_ONE_DAY(m)		(((m) & S_F_SVG_ONE_DAY)   == S_F_SVG_ONE_DAY)
+#define DISPLAY_ONE_DAY(m)		(((m) & S_F_SVG_ONE_DAY)  == S_F_SVG_ONE_DAY)
 #define DISPLAY_IDLE(m)			(((m) & S_F_SVG_SHOW_IDLE) == S_F_SVG_SHOW_IDLE)
 #define DISPLAY_INFO(m)			(((m) & S_F_SVG_SHOW_INFO) == S_F_SVG_SHOW_INFO)
-#define DISPLAY_UNIT(m)			(((m) & S_F_UNIT) == S_F_UNIT)
-#define SET_CANVAS_HEIGHT(m)		(((m) & S_F_SVG_HEIGHT) == S_F_SVG_HEIGHT)
-#define PACK_VIEWS(m)			(((m) & S_F_SVG_PACKED) == S_F_SVG_PACKED)
-#define DISPLAY_HUMAN_READ(m)		(((m) & S_F_HUMAN_READ) == S_F_HUMAN_READ)
+#define DISPLAY_UNIT(m)			(((m) & S_F_UNIT)         == S_F_UNIT)
+#define SET_CANVAS_HEIGHT(m)		(((m) & S_F_SVG_HEIGHT)   == S_F_SVG_HEIGHT)
+#define PACK_VIEWS(m)			(((m) & S_F_SVG_PACKED)   == S_F_SVG_PACKED)
 #define DISPLAY_TOC(m)			(((m) & S_F_SVG_SHOW_TOC) == S_F_SVG_SHOW_TOC)
+#define FDATASYNC(m)			(((m) & S_F_FDATASYNC)    == S_F_FDATASYNC)
+#define USE_OPTION_A(m)			(((m) & S_F_OPTION_A)     == S_F_OPTION_A)
+#define USE_OPTION_P(m)			(((m) & S_F_OPTION_P)     == S_F_OPTION_P)
+#define USE_OPTION_I(m)			(((m) & S_F_OPTION_I)     == S_F_OPTION_I)
 
 #define AO_F_NULL		0x00000000
 
@@ -178,34 +190,40 @@
 
 /* Keywords */
 #define K_A_NULL	"A_NULL"
-#define K_XALL		"XALL"
-#define K_SUM		"SUM"
+#define K_CPU		"CPU"
+#define K_PSI_CPU	"CPU"
 #define K_DEV		"DEV"
 #define K_EDEV		"EDEV"
+#define K_EICMP		"EICMP"
+#define K_EICMP6	"EICMP6"
+#define K_EIP		"EIP"
+#define K_EIP6		"EIP6"
+#define K_ETCP		"ETCP"
+#define K_FAN		"FAN"
+#define K_FC		"FC"
+#define K_FREQ		"FREQ"
+#define K_ICMP		"ICMP"
+#define K_ICMP6		"ICMP6"
+#define K_IN		"IN"
+#define K_PSI_IO	"IO"
+#define K_IP		"IP"
+#define K_IP6		"IP6"
+#define K_LOAD		"LOAD"
+#define K_PSI_MEM	"MEM"
+#define K_MOUNT		"MOUNT"
 #define K_NFS		"NFS"
 #define K_NFSD		"NFSD"
+#define K_PSI		"PSI"
+#define K_SID		"SID"
 #define K_SOCK		"SOCK"
-#define K_IP		"IP"
-#define K_EIP		"EIP"
-#define K_ICMP		"ICMP"
-#define K_EICMP		"EICMP"
-#define K_TCP		"TCP"
-#define K_ETCP		"ETCP"
-#define K_UDP		"UDP"
 #define K_SOCK6		"SOCK6"
-#define K_IP6		"IP6"
-#define K_EIP6		"EIP6"
-#define K_ICMP6		"ICMP6"
-#define K_EICMP6	"EICMP6"
-#define K_UDP6		"UDP6"
-#define K_CPU		"CPU"
-#define K_FAN		"FAN"
-#define K_TEMP		"TEMP"
-#define K_IN		"IN"
-#define K_FREQ		"FREQ"
-#define K_MOUNT		"MOUNT"
-#define K_FC		"FC"
 #define K_SOFT		"SOFT"
+#define K_SUM		"SUM"
+#define K_TCP		"TCP"
+#define K_TEMP		"TEMP"
+#define K_UDP		"UDP"
+#define K_UDP6		"UDP6"
+#define K_XALL		"XALL"
 
 #define K_INT		"INT"
 #define K_DISK		"DISK"
@@ -224,6 +242,13 @@
 #define K_HEIGHT	"height="
 #define K_PACKED	"packed"
 #define K_SHOWTOC	"showtoc"
+#define K_CUSTOMCOL	"customcol"
+#define K_BWCOL		"bwcol"
+#define K_PCPARCHIVE	"pcparchive="
+#define K_HZ		"hz="
+
+/* Environment variables */
+#define ENV_COLORS_PALETTE	"S_COLORS_PALETTE"
 
 /* Groups of activities */
 #define G_DEFAULT	0x00
@@ -242,6 +267,7 @@
 #define DEF_TMEND	"18:00:00"
 
 #define UTSNAME_LEN	65
+#define TZNAME_LEN	8
 #define HEADER_LINE_LEN	512
 
 /*
@@ -289,6 +315,9 @@
 
 #define END_OF_DATA_UNEXPECTED	1
 #define INCONSISTENT_INPUT_DATA	2
+
+#define UEOF_STOP	0
+#define UEOF_CONT	1
 
 #define CLOSE_XML_MARKUP	0
 #define OPEN_XML_MARKUP		1
@@ -345,17 +374,49 @@ struct svg_hdr_parm {
  * 	|
  * 	|--                         --|
  * 	|                             |
- * 	| file_activity structure     | * sa_act_nr
+ * 	| file_activity structure     | x file_header:sa_act_nr
  * 	|                             |
- * 	|--                         --|
+ * 	|---------                  --|
+ *		|
+ * 		| extra_desc structure (exists only if file_header:extra_next != 0)
+ * 		|
+ * 		|--                         --|
+ *		|                             |
+ * 		| unknown extra structure(s)  | x extra_desc:extra_nr
+ * 		|                             |
+ * 		|--                         --|
+ *		|
+ * 		| (extra_desc structure (exists only if previous extra_desc:extra_next != 0))
+ * 		|
+ * 		|--
+ *		|
+ * 		| (...)
+ * 		|
+ * 	|---------                  --|
  * 	|                             |
  * 	| record_header structure     |
  * 	|                             |
- * 	|--                           |
+ * 	|---------                  --|
+ *		|
+ * 		| extra_desc structure (exists only if record_header:extra_next != 0)
+ * 		|
+ * 		|--                         --|
+ *		|                             |
+ * 		| unknown extra structure(s)  | x extra_desc:extra_nr
+ * 		|                             |
+ * 		|--                         --|
+ *		|
+ * 		| (extra_desc structure (exists only if previous extra_desc:extra_next != 0))
+ * 		|
+ * 		|--
+ *		|
+ * 		| (...)
+ * 		|
+ * 	|---------                  --|
  * 	|(__nr_t)                     |
  * 	|--                           |
  * 	|                             |
- * 	| Statistics structure(s)     | * <count>
+ * 	| Statistics structure(s)     | x <count>
  * 	|                             |
  * 	|--                           |
  * 	|(__nr_t)                     |
@@ -375,8 +436,19 @@ struct svg_hdr_parm {
  *
  * If the record header's type is R_COMMENT then we find only a comment
  * following the record_header structure.
+ *
  * If the record_header's type is R_RESTART then we find only the number of CPU
  * (of type __nr_t) of the machine following the record_header structure.
+ * This number is 1 for 1 CPU and not an SMP kernel (CPU "all"),
+ * 2 for 1 CPU and SMP kernel (CPU "all" and CPU 0), etc.
+ * Of course we display the real number of CPU (e.g. "1" for 1 CPU and SMP
+ * kernel) with the LINUX RESTART message.
+ *
+ * If the record_header's type is R_EXTRA* then we find only a list of extra
+ * structures following the record_header structure but no statistics ones.
+ * Note that extra structures may exist for all record_header types
+ * (R_STATS, R_COMMENT, R_RESTART...). For R_COMMENT and R_RESTART records,
+ * the extra structures will be found after the comment or the number of CPU.
  ***************************************************************************
  */
 
@@ -490,6 +562,10 @@ struct file_header {
 	unsigned int act_size;
 	unsigned int rec_size;
 	/*
+	 * TRUE if an extra_desc structure exists.
+	 */
+	unsigned int extra_next;
+	/*
 	 * Current day and month.
 	 * No need to save DST (Daylight Saving Time) flag, since it is not taken
 	 * into account by the strftime() function used to print the timestamp.
@@ -517,12 +593,16 @@ struct file_header {
 	 * Machine architecture.
 	 */
 	char sa_machine[UTSNAME_LEN];
+	/*
+	 * Timezone value.
+	 */
+	char sa_tzname[TZNAME_LEN];
 };
 
 #define FILE_HEADER_SIZE	(sizeof(struct file_header))
 #define FILE_HEADER_ULL_NR	1	/* Nr of unsigned long long in file_header structure */
 #define FILE_HEADER_UL_NR	1	/* Nr of unsigned long in file_header structure */
-#define FILE_HEADER_U_NR	11	/* Nr of [unsigned] int in file_header structure */
+#define FILE_HEADER_U_NR	12	/* Nr of [unsigned] int in file_header structure */
 /* The values below are used for sanity check */
 #define MIN_FILE_HEADER_SIZE	0
 #define MAX_FILE_HEADER_SIZE	8192
@@ -579,6 +659,37 @@ struct file_activity {
 #define FILE_ACTIVITY_UL_NR	0	/* Nr of unsigned long in file_activity structure */
 #define FILE_ACTIVITY_U_NR	9	/* Nr of [unsigned] int in file_activity structure */
 
+/*
+ * Description of an extra structure.
+ * The composition of this structure should not change in time.
+ */
+struct extra_desc {
+	/*
+	 * Number of extra structures to read.
+	 */
+	unsigned int extra_nr;
+	/*
+	 * Size of an extra structure.
+	 */
+	unsigned int extra_size;
+	/*
+	 * TRUE if another extra_desc structure exists after
+	 * all the extra structures.
+	 */
+	unsigned int extra_next;
+	/*
+	 * Description of an extra structure
+	 * (nr of "long long", nr of "long" and nr of "int").
+	 */
+	unsigned int extra_types_nr[3];
+};
+
+#define EXTRA_DESC_SIZE		(sizeof(struct extra_desc))
+#define EXTRA_DESC_ULL_NR	0	/* Nr of unsigned long long in extra_desc structure */
+#define EXTRA_DESC_UL_NR	0	/* Nr of unsigned long in extra_desc structure */
+#define EXTRA_DESC_U_NR		6	/* Nr of [unsigned] int in extra_desc structure */
+#define MAX_EXTRA_NR		8192
+#define MAX_EXTRA_SIZE		1024
 
 /* Record type */
 /*
@@ -602,6 +713,12 @@ struct file_activity {
  * a comment.
  */
 #define R_COMMENT	4
+/*
+ * R_EXTRA* records means that extra structures are following current
+ * record_header structure, but no statistics structures.
+ */
+#define R_EXTRA_MIN	5
+#define R_EXTRA_MAX	15
 
 /* Maximum length of a comment */
 #define MAX_COMMENT_LEN	64
@@ -617,12 +734,17 @@ struct record_header {
 	 */
 	unsigned long long ust_time;
 	/*
+	 * TRUE if an extra_desc structure exists.
+	 */
+	unsigned int extra_next;
+	/*
 	 * Record type: R_STATS, R_RESTART,...
 	 */
 	unsigned char record_type;
 	/*
 	 * Timestamp: Hour (0-23), minute (0-59) and second (0-59).
-	 * Used to determine TRUE time (immutable, non locale dependent time).
+	 * Used to determine TRUE time.
+	 * Hour value depends in fact on timezone (TZ variable) value.
 	 */
 	unsigned char hour;
 	unsigned char minute;
@@ -633,7 +755,7 @@ struct record_header {
 #define MAX_RECORD_HEADER_SIZE	512	/* Used for sanity check */
 #define RECORD_HEADER_ULL_NR	2	/* Nr of unsigned long long in record_header structure */
 #define RECORD_HEADER_UL_NR	0	/* Nr of unsigned long in record_header structure */
-#define RECORD_HEADER_U_NR	0	/* Nr of unsigned int in record_header structure */
+#define RECORD_HEADER_U_NR	1	/* Nr of unsigned int in record_header structure */
 
 
 /*
@@ -663,13 +785,14 @@ struct record_header {
  * Indicate that activity's metrics have persistent values when devices
  * are registered again (this means that when the device is registered again,
  * the metrics pick the values they had when they had been unregistered).
- * Exclusively used for CPU related statistics at the present time.
+ * Exclusively used for CPU related statistics at the present time
+ * (e.g. A_CPU and A_NET_SOFT).
  */
 #define AO_PERSISTENT		0x08
 /*
  * This flag should be set for every activity closing a markup used
  * by several activities. Used by sadf f_xml_print() functions to
- * display XML output.
+ * display XML output, and also by f_json_print() functions to display JSON output.
  */
 #define AO_CLOSE_MARKUP		0x10
 /*
@@ -694,16 +817,34 @@ struct record_header {
  * line for this activity (see options --dev=, --iface=, ...)
  */
 #define AO_LIST_ON_CMDLINE	0x100
+/*
+ * Indicate that the number of items for this activity should always
+ * be counted, even if the activity is not collected.
+ */
+#define AO_ALWAYS_COUNTED	0x200
+/*
+ * Indicate that corresponding activity should be collected only
+ * if a test has been successfully passed before.
+ * The test corresponds to the count() function (see @f_count_index).
+ * This is intended for activities with a fixed number of items but
+ * whose {/proc|/sys} files are not necessarily available, e.g. depending
+ * on the kernel version used. Unlike activities with AO_COUNTED flag,
+ * those having AO_DETECTED flag won't have a @has_nr number preceding
+ * their statistics structures in datafile.
+ */
+#define AO_DETECTED		0x400
 
 #define IS_COLLECTED(m)		(((m) & AO_COLLECTED)        == AO_COLLECTED)
 #define IS_SELECTED(m)		(((m) & AO_SELECTED)         == AO_SELECTED)
 #define HAS_COUNT_FUNCTION(m)	(((m) & AO_COUNTED)          == AO_COUNTED)
+#define HAS_DETECT_FUNCTION(m)	(((m) & AO_DETECTED)         == AO_DETECTED)
 #define HAS_PERSISTENT_VALUES(m) (((m) & AO_PERSISTENT)      == AO_PERSISTENT)
 #define CLOSE_MARKUP(m)		(((m) & AO_CLOSE_MARKUP)     == AO_CLOSE_MARKUP)
 #define HAS_MULTIPLE_OUTPUTS(m)	(((m) & AO_MULTIPLE_OUTPUTS) == AO_MULTIPLE_OUTPUTS)
 #define ONE_GRAPH_PER_ITEM(m)	(((m) & AO_GRAPH_PER_ITEM)   == AO_GRAPH_PER_ITEM)
 #define IS_MATRIX(m)		(((m) & AO_MATRIX)           == AO_MATRIX)
 #define HAS_LIST_ON_CMDLINE(m)	(((m) & AO_LIST_ON_CMDLINE)  == AO_LIST_ON_CMDLINE)
+#define ALWAYS_COUNT_ITEMS(m)	(((m) & AO_ALWAYS_COUNTED)   == AO_ALWAYS_COUNTED)
 
 #define _buf0	buf[0]
 #define _nr0	nr[0]
@@ -748,16 +889,21 @@ struct activity {
 	unsigned int group;
 	/*
 	 * Index in f_count[] array to determine function used to count
-	 * the number of items (serial lines, network interfaces, etc.) -> @nr
+	 * the number of items (serial lines, network interfaces, etc.) for
+	 * activities with AO_COUNTED flag. Determine @nr value.
 	 * Such a function should _always_ return a value greater than
 	 * or equal to 0.
 	 *
 	 * A value of -1 indicates that the number of items
-	 * is a constant (and @nr is set to this value).
+	 * is a constant (and @nr_ini is set to this value).
 	 *
-	 * These functions are called even if corresponding activities have not
-	 * been selected, to make sure that all items have been calculated
-	 * (including #CPU, etc.)
+	 * This function may be called even if corresponding activity has not
+	 * been selected if flag AO_ALWAYS_COUNTED is set, to make sure that
+	 * all items have been calculated (e.g. #CPU)
+	 *
+	 * The count() function may also be used to know if an activity (with
+	 * AO_DETECTED flag) can actually be collected based on the presence of
+	 * {/proc|/sys} files.
 	 */
 	int f_count_index;
 	/*
@@ -807,13 +953,18 @@ struct activity {
 	 */
 	__print_funct_t (*f_raw_print) (struct activity *, char *, int);
 	/*
+	 * This function is used by sadf to display activity statistics in PCP format.
+	 */
+	__print_funct_t (*f_pcp_print) (struct activity *, int, unsigned long long,
+					struct record_header *);
+	/*
 	 * This function is used by sadf to count the number of new items in current
 	 * sample and add them to the linked list @item_list.
 	 */
 	__nr_t (*f_count_new) (struct activity *, int);
 	/*
 	 * Linked list containing item names. This is either all the different items
-	 * found in a file for activities that have a @f_count_function() (used by sadf),
+	 * found in a file for activities that have a @f_count_new() function (used by sadf),
 	 * or a list entered on the command line (used by sadf and sar).
 	 */
 	struct sa_item *item_list;
@@ -862,7 +1013,7 @@ struct activity {
 	/*
 	 * Number of items on the system, as counted when the system is initialized.
 	 * A negative value (-1) is the default value and indicates that this number
-	 * has still not been calculated by the f_count() function.
+	 * has still not been calculated by the function whose index is in @f_count_index.
 	 * A value of 0 means that this number has been calculated, but no items have
 	 * been found.
 	 * A positive value (>0) has either been calculated or is a constant.
@@ -878,11 +1029,11 @@ struct activity {
 	 * been found.
 	 * A positive value (>0) has either been calculated or is a constant.
 	 * Rules:
-	 * 1) IF @nr2 = 0 THEN @nr = 0
-	 *    Note: If @nr = 0, then @nr2 is undetermined (may be -1, 0 or >0).
-	 * 2) IF @nr > 0 THEN @nr2 > 0.
-	 *    Note: If @nr2 > 0 then @nr is undetermined (may be -1, 0 or >0).
-	 * 3) IF @nr <= 0 THEN @nr2 = -1 (this is the default value for @nr2,
+	 * 1) IF @nr2 = 0 THEN @nr_ini = 0
+	 *    Note: If @nr_ini = 0, then @nr2 is undetermined (may be -1, 0 or >0).
+	 * 2) IF @nr_ini > 0 THEN @nr2 > 0.
+	 *    Note: If @nr2 > 0 then @nr_ini is undetermined (may be -1, 0 or >0).
+	 * 3) IF @nr_ini <= 0 THEN @nr2 = -1 (this is the default value for @nr2,
 	 * meaning that it has not been calculated).
 	 */
 	__nr_t nr2;
@@ -919,7 +1070,7 @@ struct activity {
 	 * Optional flags for activity. This is eg. used when AO_MULTIPLE_OUTPUTS
 	 * option is set.
 	 * 0x0001 - 0x0080 : Multiple outputs (eg. AO_F_MEMORY, AO_F_SWAP...)
-	 * 0x0100 - 0x8000 : If bit set then display complete header (hdr_line) for
+	 * 0x0100 - 0x8000 : If bit set then display complete header (@hdr_line) for
 	 *                   corresponding output
 	 * 0x010000+       : Optional flags
 	 */
@@ -999,24 +1150,32 @@ struct report_format {
 				      struct activity * [], unsigned int [], struct file_activity *);
 	/*
 	 * This function defines the statistics part of the report.
-	 * Used only with textual (XML-like) reports.
+	 * Used only with textual (XML-like) reports and PCP archives.
 	 */
-	__printf_funct_t (*f_statistics) (int *, int);
+	__printf_funct_t (*f_statistics) (int *, int, struct activity * [], unsigned int []);
 	/*
 	 * This function defines the timestamp part of the report.
 	 * Used only with textual (XML-like) reports.
 	 */
 	__tm_funct_t (*f_timestamp) (void *, int, char *, char *, unsigned long long,
-				     struct file_header *, unsigned int);
+				     struct record_header *, struct file_header *, unsigned int);
 	/*
 	 * This function displays the restart messages.
 	 */
-	__printf_funct_t (*f_restart) (int *, int, char *, char *, int, struct file_header *);
+	__printf_funct_t (*f_restart) (int *, int, char *, char *, int,
+				       struct file_header *, struct record_header *);
 	/*
 	 * This function displays the comments.
 	 */
-	__printf_funct_t (*f_comment) (int *, int, char *, char *, int, char *, struct file_header *);
+	__printf_funct_t (*f_comment) (int *, int, char *, char *, int, char *,
+				       struct file_header *, struct record_header *);
+	/*
+	 * This is the main function used to display all the statistics for current format.
+	 */
+	void (*f_display) (int, char *, struct file_activity *, struct file_magic *,
+			   struct tm *, void *);
 };
+
 
 /* Possible actions for functions used to display reports */
 #define F_BEGIN	0x01
@@ -1096,6 +1255,23 @@ struct report_format {
 
 /* Maximum number of horizontal lines for the background grid */
 #define MAX_HLINES_NR	10
+
+/* Color palette constants */
+#define SVG_COLORS_IDX_MASK	0x0f
+#define SVG_COL_PALETTE_SIZE	24
+#define SVG_COL_PALETTE_NR	3
+#define SVG_COL_BCKGRD_IDX	16
+#define SVG_COL_AXIS_IDX	17
+#define SVG_COL_GRID_IDX	18
+#define SVG_COL_TITLE_IDX	19
+#define SVG_COL_INFO_IDX	20
+#define SVG_COL_DEFAULT_IDX	21
+#define SVG_COL_HEADER_IDX	22
+#define SVG_COL_ERROR_IDX	23
+
+#define SVG_DEFAULT_COL_PALETTE	0
+#define SVG_CUSTOM_COL_PALETTE	1
+#define SVG_BW_COL_PALETTE	2
 
 #define MAYBE	0x80
 
@@ -1184,6 +1360,8 @@ __nr_t wrap_get_filesystem_nr
 	(struct activity *);
 __nr_t wrap_get_fchost_nr
 	(struct activity *);
+__nr_t wrap_detect_psi
+	(struct activity *);
 
 /* Functions used to read activities statistics */
 __read_funct_t wrap_read_stat_cpu
@@ -1264,6 +1442,12 @@ __read_funct_t wrap_read_fchost
 	(struct activity *);
 __read_funct_t wrap_read_softnet
 	(struct activity *);
+__read_funct_t wrap_read_psicpu
+	(struct activity *);
+__read_funct_t wrap_read_psiio
+	(struct activity *);
+__read_funct_t wrap_read_psimem
+	(struct activity *);
 
 /* Other functions */
 int check_alt_sa_dir
@@ -1280,6 +1464,8 @@ void print_collect_error
 	(void);
 int set_default_file
 	(char *, int, int);
+int skip_extra_struct
+	(int, int, int);
 int write_all
 	(int, const void *, int);
 
@@ -1293,8 +1479,8 @@ void allocate_structures
 int check_disk_reg
 	(struct activity *, int, int, int);
 void check_file_actlst
-	(int *, char *, struct activity * [], struct file_magic *, struct file_header *,
-	 struct file_activity **, unsigned int [], int, int *, int *);
+	(int *, char *, struct activity * [], uint64_t, struct file_magic *,
+	 struct file_header *, struct file_activity **, unsigned int [], int *, int *);
 int check_net_dev_reg
 	(struct activity *, int, int, int);
 int check_net_edev_reg
@@ -1304,7 +1490,7 @@ double compute_ifutil
 void copy_structures
 	(struct activity * [], unsigned int [],	struct record_header [], int, int);
 int datecmp
-	(struct tm *, struct tstamp *);
+	(struct tm *, struct tstamp *, int);
 void display_sa_file_version
 	(FILE *, struct file_magic *);
 void free_bitmaps
@@ -1312,58 +1498,66 @@ void free_bitmaps
 void free_structures
 	(struct activity * []);
 char *get_devname
-	(unsigned int, unsigned int, int);
+	(unsigned int, unsigned int);
 char *get_sa_devname
-	(unsigned int, unsigned int, unsigned int);
+	(unsigned int, unsigned int, unsigned long long [], unsigned int, uint64_t);
 void get_file_timestamp_struct
-	(unsigned int, struct tm *, struct file_header *);
+	(uint64_t, struct tm *, struct file_header *);
+char *get_fs_name_to_display
+	(struct activity *, uint64_t, struct stats_filesystem *);
 unsigned long long get_global_cpu_statistics
-	(struct activity *, int, int, unsigned int, unsigned char []);
+	(struct activity *, int, int, uint64_t, unsigned char []);
 void get_global_soft_statistics
-	(struct activity *, int, int, unsigned int, unsigned char []);
+	(struct activity *, int, int, uint64_t, unsigned char []);
 void get_itv_value
 	(struct record_header *, struct record_header *, unsigned long long *);
+void init_custom_color_palette
+	(void);
 int next_slice
 	(unsigned long long, unsigned long long, int, long);
 void parse_sa_devices
 	(char *, struct activity *, int, int *, int);
 int parse_sar_opt
-	(char * [], int *, struct activity * [], unsigned int *, int);
+	(char * [], int *, struct activity * [], uint64_t *, int);
 int parse_sar_I_opt
-	(char * [], int *, struct activity * []);
+	(char * [], int *, uint64_t *, struct activity * []);
 int parse_sa_P_opt
-	(char * [], int *, unsigned int *, struct activity * []);
+	(char * [], int *, uint64_t *, struct activity * []);
 int parse_sar_m_opt
 	(char * [], int *, struct activity * []);
 int parse_sar_n_opt
 	(char * [], int *, struct activity * []);
+int parse_sar_q_opt
+	(char * [], int *, struct activity * []);
 int parse_timestamp
 	(char * [], int *, struct tstamp *, const char *);
 void print_report_hdr
-	(unsigned int, struct tm *, struct file_header *);
+	(uint64_t, struct tm *, struct file_header *);
 void print_sar_comment
-	(int *, int, char *, char *, int, char *, struct file_header *);
+	(int *, int, char *, char *, int, char *, struct file_header *,
+	 struct record_header *);
 __printf_funct_t print_sar_restart
-	(int *, int, char *, char *, int, struct file_header *);
+	(int *, int, char *, char *, int, struct file_header *, struct record_header *);
 int print_special_record
-	(struct record_header *, unsigned int, struct tstamp *, struct tstamp *,
-	 int, int, struct tm *, struct tm *, char *, int, struct file_magic *,
+	(struct record_header *, uint64_t, struct tstamp *, struct tstamp *,
+	 int, int, struct tm *, char *, int, struct file_magic *,
 	 struct file_header *, struct activity * [], struct report_format *, int, int);
-void read_file_stat_bunch
+int read_file_stat_bunch
 	(struct activity * [], int, int, int, struct file_activity *, int, int,
-	 char *, struct file_magic *);
+	 char *, struct file_magic *, int);
 __nr_t read_nr_value
 	(int, char *, struct file_magic *, int, int, int);
 int read_record_hdr
-	(int, void *, struct record_header *, struct file_header *, int, int, size_t);
+	(int, void *, struct record_header *, struct file_header *, int, int,
+	 int, size_t, uint64_t);
 void reallocate_all_buffers
 	(struct activity *, __nr_t);
 void replace_nonprintable_char
 	(int, char *);
 int sa_fread
-	(int, void *, size_t, int);
+	(int, void *, size_t, int, int);
 int sa_get_record_timestamp_struct
-	(unsigned int, struct record_header *, struct tm *, struct tm *);
+	(uint64_t, struct record_header *, struct tm *);
 int sa_open_read_magic
 	(int *, char *, struct file_magic *, int, int *, int);
 int search_list_item
@@ -1372,12 +1566,12 @@ void select_all_activities
 	(struct activity * []);
 void select_default_activity
 	(struct activity * []);
-void set_bitmap
-	(unsigned char [], unsigned char, unsigned int);
+void set_bitmaps
+	(struct activity * [], uint64_t *);
 void set_hdr_rectime
 	(unsigned int, struct tm *, struct file_header *);
 void set_record_timestamp_string
-	(unsigned int, struct record_header *, char *, char *, int, struct tm *);
+	(uint64_t, struct record_header *, char *, char *, int, struct tm *);
 void swap_struct
 	(unsigned int [], void *, int);
 #endif /* SOURCE_SADC undefined */

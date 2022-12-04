@@ -1,6 +1,6 @@
 /*
  * activity.c: Define system activities available for sar/sadc.
- * (C) 1999-2020 by Sebastien GODARD (sysstat <at> orange.fr)
+ * (C) 1999-2022 by Sebastien GODARD (sysstat <at> orange.fr)
  *
  ***************************************************************************
  * This program is free software; you can redistribute it and/or modify it *
@@ -53,12 +53,6 @@ struct act_bitmap cpu_bitmap = {
 	.b_size		= NR_CPUS
 };
 
-/* Interrupts bitmap */
-struct act_bitmap irq_bitmap = {
-	.b_array	= NULL,
-	.b_size		= NR_IRQS
-};
-
 
 /*
  * CPU statistics.
@@ -74,7 +68,7 @@ struct activity cpu_act = {
 	.group		= G_DEFAULT,
 #ifdef SOURCE_SADC
 	.f_count_index	= 0,	/* wrap_get_cpu_nr() */
-	.f_count2	= NULL,
+	.f_count2_index	= -1,
 	.f_read		= wrap_read_stat_cpu,
 #endif
 #ifdef SOURCE_SAR
@@ -121,7 +115,7 @@ struct activity pcsw_act = {
 	.group		= G_DEFAULT,
 #ifdef SOURCE_SADC
 	.f_count_index	= -1,
-	.f_count2	= NULL,
+	.f_count2_index	= -1,
 	.f_read		= wrap_read_stat_pcsw,
 #endif
 #ifdef SOURCE_SAR
@@ -162,12 +156,12 @@ struct activity pcsw_act = {
 /* Interrupts statistics */
 struct activity irq_act = {
 	.id		= A_IRQ,
-	.options	= AO_COUNTED,
-	.magic		= ACTIVITY_MAGIC_BASE + 1,
+	.options	= AO_COUNTED + AO_MATRIX + AO_PERSISTENT,
+	.magic		= ACTIVITY_MAGIC_BASE + 2,
 	.group		= G_INT,
 #ifdef SOURCE_SADC
-	.f_count_index	= 1,	/* wrap_get_irq_nr() */
-	.f_count2	= NULL,
+	.f_count_index	= 0,	/* wrap_get_cpu_nr() */
+	.f_count2_index	= 1,	/* wrap_get_irq_nr() */
 	.f_read		= wrap_read_stat_irq,
 #endif
 #ifdef SOURCE_SAR
@@ -175,7 +169,7 @@ struct activity irq_act = {
 	.f_print_avg	= print_irq_stats,
 #endif
 #if defined(SOURCE_SAR) || defined(SOURCE_SADF)
-	.hdr_line	= "INTR;intr/s",
+	.hdr_line	= "INTR;CPU*",
 #endif
 	.gtypes_nr	= {STATS_IRQ_ULL, STATS_IRQ_UL, STATS_IRQ_U},
 	.ftypes_nr	= {0, 0, 0},
@@ -186,7 +180,7 @@ struct activity irq_act = {
 	.f_svg_print	= NULL,
 	.f_raw_print	= raw_print_irq_stats,
 	.f_pcp_print	= pcp_print_irq_stats,
-	.f_count_new	= NULL,
+	.f_count_new	= count_new_int,
 	.item_list	= NULL,
 	.desc		= "Interrupts statistics",
 #endif
@@ -194,15 +188,15 @@ struct activity irq_act = {
 	.item_list_sz	= 0,
 	.g_nr		= 0,
 	.nr_ini		= -1,
-	.nr2		= 1,
-	.nr_max		= NR_IRQS + 1,
+	.nr2		= -1,
+	.nr_max		= NR_CPUS + 1,
 	.nr		= {-1, -1, -1},
 	.nr_allocated	= 0,
 	.fsize		= STATS_IRQ_SIZE,
 	.msize		= STATS_IRQ_SIZE,
 	.opt_flags	= 0,
 	.buf		= {NULL, NULL, NULL},
-	.bitmap		= &irq_bitmap
+	.bitmap		= &cpu_bitmap
 };
 
 /* Swapping activity */
@@ -213,7 +207,7 @@ struct activity swap_act = {
 	.group		= G_DEFAULT,
 #ifdef SOURCE_SADC
 	.f_count_index	= -1,
-	.f_count2	= NULL,
+	.f_count2_index	= -1,
 	.f_read		= wrap_read_swap,
 #endif
 #ifdef SOURCE_SAR
@@ -259,7 +253,7 @@ struct activity paging_act = {
 	.group		= G_DEFAULT,
 #ifdef SOURCE_SADC
 	.f_count_index	= -1,
-	.f_count2	= NULL,
+	.f_count2_index	= -1,
 	.f_read		= wrap_read_paging,
 #endif
 #ifdef SOURCE_SAR
@@ -306,7 +300,7 @@ struct activity io_act = {
 	.group		= G_DEFAULT,
 #ifdef SOURCE_SADC
 	.f_count_index	= -1,
-	.f_count2	= NULL,
+	.f_count2_index	= -1,
 	.f_read		= wrap_read_io,
 #endif
 #ifdef SOURCE_SAR
@@ -352,7 +346,7 @@ struct activity memory_act = {
 	.group		= G_DEFAULT,
 #ifdef SOURCE_SADC
 	.f_count_index	= -1,
-	.f_count2	= NULL,
+	.f_count2_index	= -1,
 	.f_read		= wrap_read_meminfo,
 #endif
 #ifdef SOURCE_SAR
@@ -399,7 +393,7 @@ struct activity ktables_act = {
 	.group		= G_DEFAULT,
 #ifdef SOURCE_SADC
 	.f_count_index	= -1,
-	.f_count2	= NULL,
+	.f_count2_index	= -1,
 	.f_read		= wrap_read_kernel_tables,
 #endif
 #ifdef SOURCE_SAR
@@ -445,7 +439,7 @@ struct activity queue_act = {
 	.group		= G_DEFAULT,
 #ifdef SOURCE_SADC
 	.f_count_index	= -1,
-	.f_count2	= NULL,
+	.f_count2_index	= -1,
 	.f_read		= wrap_read_loadavg,
 #endif
 #ifdef SOURCE_SAR
@@ -491,7 +485,7 @@ struct activity serial_act = {
 	.group		= G_DEFAULT,
 #ifdef SOURCE_SADC
 	.f_count_index	= 2,	/* wrap_get_serial_nr() */
-	.f_count2	= NULL,
+	.f_count2_index	= -1,
 	.f_read		= wrap_read_tty_driver_serial,
 #endif
 #ifdef SOURCE_SAR
@@ -537,7 +531,7 @@ struct activity disk_act = {
 	.group		= G_DISK,
 #ifdef SOURCE_SADC
 	.f_count_index	= 3,	/* wrap_get_disk_nr() */
-	.f_count2	= NULL,
+	.f_count2_index	= -1,
 	.f_read		= wrap_read_disk,
 #endif
 #ifdef SOURCE_SAR
@@ -583,7 +577,7 @@ struct activity net_dev_act = {
 	.group		= G_DEFAULT,
 #ifdef SOURCE_SADC
 	.f_count_index	= 4,	/* wrap_get_iface_nr() */
-	.f_count2	= NULL,
+	.f_count2_index	= -1,
 	.f_read		= wrap_read_net_dev,
 #endif
 #ifdef SOURCE_SAR
@@ -629,7 +623,7 @@ struct activity net_edev_act = {
 	.group		= G_DEFAULT,
 #ifdef SOURCE_SADC
 	.f_count_index	= 4,	/* wrap_get_iface_nr() */
-	.f_count2	= NULL,
+	.f_count2_index	= -1,
 	.f_read		= wrap_read_net_edev,
 #endif
 #ifdef SOURCE_SAR
@@ -676,7 +670,7 @@ struct activity net_nfs_act = {
 	.group		= G_DEFAULT,
 #ifdef SOURCE_SADC
 	.f_count_index	= -1,
-	.f_count2	= NULL,
+	.f_count2_index	= -1,
 	.f_read		= wrap_read_net_nfs,
 #endif
 #ifdef SOURCE_SAR
@@ -722,7 +716,7 @@ struct activity net_nfsd_act = {
 	.group		= G_DEFAULT,
 #ifdef SOURCE_SADC
 	.f_count_index	= -1,
-	.f_count2	= NULL,
+	.f_count2_index	= -1,
 	.f_read		= wrap_read_net_nfsd,
 #endif
 #ifdef SOURCE_SAR
@@ -769,7 +763,7 @@ struct activity net_sock_act = {
 	.group		= G_DEFAULT,
 #ifdef SOURCE_SADC
 	.f_count_index	= -1,
-	.f_count2	= NULL,
+	.f_count2_index	= -1,
 	.f_read		= wrap_read_net_sock,
 #endif
 #ifdef SOURCE_SAR
@@ -815,7 +809,7 @@ struct activity net_ip_act = {
 	.group		= G_SNMP,
 #ifdef SOURCE_SADC
 	.f_count_index	= -1,
-	.f_count2	= NULL,
+	.f_count2_index	= -1,
 	.f_read		= wrap_read_net_ip,
 #endif
 #ifdef SOURCE_SAR
@@ -861,7 +855,7 @@ struct activity net_eip_act = {
 	.group		= G_SNMP,
 #ifdef SOURCE_SADC
 	.f_count_index	= -1,
-	.f_count2	= NULL,
+	.f_count2_index	= -1,
 	.f_read		= wrap_read_net_eip,
 #endif
 #ifdef SOURCE_SAR
@@ -907,7 +901,7 @@ struct activity net_icmp_act = {
 	.group		= G_SNMP,
 #ifdef SOURCE_SADC
 	.f_count_index	= -1,
-	.f_count2	= NULL,
+	.f_count2_index	= -1,
 	.f_read		= wrap_read_net_icmp,
 #endif
 #ifdef SOURCE_SAR
@@ -954,7 +948,7 @@ struct activity net_eicmp_act = {
 	.group		= G_SNMP,
 #ifdef SOURCE_SADC
 	.f_count_index	= -1,
-	.f_count2	= NULL,
+	.f_count2_index	= -1,
 	.f_read		= wrap_read_net_eicmp,
 #endif
 #ifdef SOURCE_SAR
@@ -1001,7 +995,7 @@ struct activity net_tcp_act = {
 	.group		= G_SNMP,
 #ifdef SOURCE_SADC
 	.f_count_index	= -1,
-	.f_count2	= NULL,
+	.f_count2_index	= -1,
 	.f_read		= wrap_read_net_tcp,
 #endif
 #ifdef SOURCE_SAR
@@ -1047,7 +1041,7 @@ struct activity net_etcp_act = {
 	.group		= G_SNMP,
 #ifdef SOURCE_SADC
 	.f_count_index	= -1,
-	.f_count2	= NULL,
+	.f_count2_index	= -1,
 	.f_read		= wrap_read_net_etcp,
 #endif
 #ifdef SOURCE_SAR
@@ -1093,7 +1087,7 @@ struct activity net_udp_act = {
 	.group		= G_SNMP,
 #ifdef SOURCE_SADC
 	.f_count_index	= -1,
-	.f_count2	= NULL,
+	.f_count2_index	= -1,
 	.f_read		= wrap_read_net_udp,
 #endif
 #ifdef SOURCE_SAR
@@ -1139,7 +1133,7 @@ struct activity net_sock6_act = {
 	.group		= G_IPV6,
 #ifdef SOURCE_SADC
 	.f_count_index	= -1,
-	.f_count2	= NULL,
+	.f_count2_index	= -1,
 	.f_read		= wrap_read_net_sock6,
 #endif
 #ifdef SOURCE_SAR
@@ -1185,7 +1179,7 @@ struct activity net_ip6_act = {
 	.group		= G_IPV6,
 #ifdef SOURCE_SADC
 	.f_count_index	= -1,
-	.f_count2	= NULL,
+	.f_count2_index	= -1,
 	.f_read		= wrap_read_net_ip6,
 #endif
 #ifdef SOURCE_SAR
@@ -1232,7 +1226,7 @@ struct activity net_eip6_act = {
 	.group		= G_IPV6,
 #ifdef SOURCE_SADC
 	.f_count_index	= -1,
-	.f_count2	= NULL,
+	.f_count2_index	= -1,
 	.f_read		= wrap_read_net_eip6,
 #endif
 #ifdef SOURCE_SAR
@@ -1279,7 +1273,7 @@ struct activity net_icmp6_act = {
 	.group		= G_IPV6,
 #ifdef SOURCE_SADC
 	.f_count_index	= -1,
-	.f_count2	= NULL,
+	.f_count2_index	= -1,
 	.f_read		= wrap_read_net_icmp6,
 #endif
 #ifdef SOURCE_SAR
@@ -1327,7 +1321,7 @@ struct activity net_eicmp6_act = {
 	.group		= G_IPV6,
 #ifdef SOURCE_SADC
 	.f_count_index	= -1,
-	.f_count2	= NULL,
+	.f_count2_index	= -1,
 	.f_read		= wrap_read_net_eicmp6,
 #endif
 #ifdef SOURCE_SAR
@@ -1374,7 +1368,7 @@ struct activity net_udp6_act = {
 	.group		= G_IPV6,
 #ifdef SOURCE_SADC
 	.f_count_index	= -1,
-	.f_count2	= NULL,
+	.f_count2_index	= -1,
 	.f_read		= wrap_read_net_udp6,
 #endif
 #ifdef SOURCE_SAR
@@ -1420,7 +1414,7 @@ struct activity pwr_cpufreq_act = {
 	.group		= G_POWER,
 #ifdef SOURCE_SADC
 	.f_count_index	= 0,	/* wrap_get_cpu_nr() */
-	.f_count2	= NULL,
+	.f_count2_index	= -1,
 	.f_read		= wrap_read_cpuinfo,
 #endif
 #ifdef SOURCE_SAR
@@ -1466,7 +1460,7 @@ struct activity pwr_fan_act = {
 	.group		= G_POWER,
 #ifdef SOURCE_SADC
 	.f_count_index	= 5,	/* wrap_get_fan_nr() */
-	.f_count2	= NULL,
+	.f_count2_index	= -1,
 	.f_read		= wrap_read_fan,
 #endif
 #ifdef SOURCE_SAR
@@ -1512,7 +1506,7 @@ struct activity pwr_temp_act = {
 	.group		= G_POWER,
 #ifdef SOURCE_SADC
 	.f_count_index	= 6,	/* wrap_get_temp_nr() */
-	.f_count2	= NULL,
+	.f_count2_index	= -1,
 	.f_read		= wrap_read_temp,
 #endif
 #ifdef SOURCE_SAR
@@ -1558,7 +1552,7 @@ struct activity pwr_in_act = {
 	.group		= G_POWER,
 #ifdef SOURCE_SADC
 	.f_count_index	= 7,	/* wrap_get_in_nr() */
-	.f_count2	= NULL,
+	.f_count2_index	= -1,
 	.f_read		= wrap_read_in,
 #endif
 #ifdef SOURCE_SAR
@@ -1604,7 +1598,7 @@ struct activity huge_act = {
 	.group		= G_DEFAULT,
 #ifdef SOURCE_SADC
 	.f_count_index	= -1,
-	.f_count2	= NULL,
+	.f_count2_index	= -1,
 	.f_read		= wrap_read_meminfo_huge,
 #endif
 #ifdef SOURCE_SAR
@@ -1650,7 +1644,7 @@ struct activity pwr_wghfreq_act = {
 	.group		= G_POWER,
 #ifdef SOURCE_SADC
 	.f_count_index	= 0,	/* wrap_get_cpu_nr() */
-	.f_count2	= wrap_get_freq_nr,
+	.f_count2_index	= 12,	/* wrap_get_freq_nr() */
 	.f_read		= wrap_read_cpu_wghfreq,
 #endif
 #ifdef SOURCE_SAR
@@ -1695,7 +1689,7 @@ struct activity pwr_usb_act = {
 	.group		= G_POWER,
 #ifdef SOURCE_SADC
 	.f_count_index	= 8,	/* wrap_get_usb_nr() */
-	.f_count2	= NULL,
+	.f_count2_index	= -1,
 	.f_read		= wrap_read_bus_usb_dev,
 #endif
 #ifdef SOURCE_SAR
@@ -1741,7 +1735,7 @@ struct activity filesystem_act = {
 	.group		= G_XDISK,
 #ifdef SOURCE_SADC
 	.f_count_index	= 9,	/* wrap_get_filesystem_nr() */
-	.f_count2	= NULL,
+	.f_count2_index	= -1,
 	.f_read		= wrap_read_filesystem,
 #endif
 #ifdef SOURCE_SAR
@@ -1788,7 +1782,7 @@ struct activity fchost_act = {
 	.group		= G_DISK,
 #ifdef SOURCE_SADC
 	.f_count_index	= 10,	/* wrap_get_fchost_nr() */
-	.f_count2	= NULL,
+	.f_count2_index	= -1,
 	.f_read		= wrap_read_fchost,
 #endif
 #ifdef SOURCE_SAR
@@ -1835,15 +1829,15 @@ struct activity softnet_act = {
 	.group		= G_DEFAULT,
 #ifdef SOURCE_SADC
 	.f_count_index	= 0,	/* wrap_get_cpu_nr() */
-	.f_count2	= NULL,
+	.f_count2_index	= -1,
 	.f_read		= wrap_read_softnet,
 #endif
 #ifdef SOURCE_SAR
 	.f_print	= print_softnet_stats,
-	.f_print_avg	= print_softnet_stats,
+	.f_print_avg	= print_avg_softnet_stats,
 #endif
 #if defined(SOURCE_SAR) || defined(SOURCE_SADF)
-	.hdr_line	= "CPU;total/s;dropd/s;squeezd/s;rx_rps/s;flw_lim/s",
+	.hdr_line	= "CPU;total/s;dropd/s;squeezd/s;rx_rps/s;flw_lim/s;blg_len",
 #endif
 	.gtypes_nr	= {STATS_SOFTNET_ULL, STATS_SOFTNET_UL, STATS_SOFTNET_U},
 	.ftypes_nr	= {0, 0, 0},
@@ -1860,7 +1854,7 @@ struct activity softnet_act = {
 #endif
 	.name		= "A_NET_SOFT",
 	.item_list_sz	= 0,
-	.g_nr		= 2,
+	.g_nr		= 3,
 	.nr_ini		= -1,
 	.nr2		= 1,
 	.nr_max		= NR_CPUS + 1,
@@ -1880,8 +1874,8 @@ struct activity psi_cpu_act = {
 	.magic		= ACTIVITY_MAGIC_BASE,
 	.group		= G_DEFAULT,
 #ifdef SOURCE_SADC
-	.f_count_index	= 11,
-	.f_count2	= NULL,
+	.f_count_index	= 11,	/* wrap_detect_psi() */
+	.f_count2_index	= -1,
 	.f_read		= wrap_read_psicpu,
 #endif
 #ifdef SOURCE_SAR
@@ -1926,8 +1920,8 @@ struct activity psi_io_act = {
 	.magic		= ACTIVITY_MAGIC_BASE,
 	.group		= G_DEFAULT,
 #ifdef SOURCE_SADC
-	.f_count_index	= 11,
-	.f_count2	= NULL,
+	.f_count_index	= 11,	/* wrap_detect_psi() */
+	.f_count2_index	= -1,
 	.f_read		= wrap_read_psiio,
 #endif
 #ifdef SOURCE_SAR
@@ -1972,8 +1966,8 @@ struct activity psi_mem_act = {
 	.magic		= ACTIVITY_MAGIC_BASE,
 	.group		= G_DEFAULT,
 #ifdef SOURCE_SADC
-	.f_count_index	= 11,
-	.f_count2	= NULL,
+	.f_count_index	= 11,	/* wrap_detect_psi() */
+	.f_count2_index	= -1,
 	.f_read		= wrap_read_psimem,
 #endif
 #ifdef SOURCE_SAR
@@ -2010,24 +2004,25 @@ struct activity psi_mem_act = {
 	.buf		= {NULL, NULL, NULL},
 	.bitmap		= NULL
 };
-
+/* wrap_detect_psi */
 #ifdef SOURCE_SADC
 /*
  * Array of functions used to count number of items.
  */
 __nr_t (*f_count[NR_F_COUNT]) (struct activity *) = {
-	wrap_get_cpu_nr,
-	wrap_get_irq_nr,
-	wrap_get_serial_nr,
-	wrap_get_disk_nr,
-	wrap_get_iface_nr,
-	wrap_get_fan_nr,
-	wrap_get_temp_nr,
-	wrap_get_in_nr,
-	wrap_get_usb_nr,
-	wrap_get_filesystem_nr,
-	wrap_get_fchost_nr,
-	wrap_detect_psi
+	wrap_get_cpu_nr,	/* 0 */
+	wrap_get_irq_nr,	/* 1 */
+	wrap_get_serial_nr,	/* 2 */
+	wrap_get_disk_nr,	/* 3 */
+	wrap_get_iface_nr,	/* 4 */
+	wrap_get_fan_nr,	/* 5 */
+	wrap_get_temp_nr,	/* 6 */
+	wrap_get_in_nr,		/* 7 */
+	wrap_get_usb_nr,	/* 8 */
+	wrap_get_filesystem_nr,	/* 9 */
+	wrap_get_fchost_nr,	/* 10 */
+	wrap_detect_psi,	/* 11 */
+	wrap_get_freq_nr	/* 12 */
 };
 #endif
 

@@ -1,6 +1,6 @@
 /*
- * svg_stats.c: Funtions used by sadf to display statistics in SVG format.
- * (C) 2016-2020 by Sebastien GODARD (sysstat <at> orange.fr)
+ * svg_stats.c: Functions used by sadf to display statistics in SVG format.
+ * (C) 2016-2022 by Sebastien GODARD (sysstat <at> orange.fr)
  *
  ***************************************************************************
  * This program is free software; you can redistribute it and/or modify it *
@@ -37,7 +37,7 @@
 #define _(string) (string)
 #endif
 
-extern unsigned int flags;
+extern uint64_t flags;
 extern int palette;
 
 unsigned int svg_colors[SVG_COL_PALETTE_NR][SVG_COL_PALETTE_SIZE] =
@@ -86,8 +86,8 @@ unsigned int svg_colors[SVG_COL_PALETTE_NR][SVG_COL_PALETTE_SIZE] =
  *		the fields in the statistics structure.
  *
  * OUT:
- * @spmin	Array containg the possible new min values for current activity.
- * @spmax	Array containg the possible new max values for current activity.
+ * @spmin	Array containing the possible new min values for current activity.
+ * @spmax	Array containing the possible new max values for current activity.
  ***************************************************************************
  */
 void save_extrema(unsigned int types_nr[], void *cs, void *ps, unsigned long long itv,
@@ -174,7 +174,7 @@ void save_extrema(unsigned int types_nr[], void *cs, void *ps, unsigned long lon
  ***************************************************************************
  * Find the min and max values of all the graphs that will be drawn in the
  * same view. The graphs have their own min and max values in
- * spmin[pos...pos+n-1] and spmax[pos...pos+n-1]. 
+ * spmin[pos...pos+n-1] and spmax[pos...pos+n-1].
  *
  * IN:
  * @pos		Position in array for the first graph extrema value.
@@ -341,8 +341,8 @@ void lnappend(unsigned long long timetag, double value, char **out, int *outsize
 	char data[128];
 
 	/* Prepare additional graph definition data */
-	snprintf(data, 128, " %c%llu,%.2f", restart ? 'M' : 'L', timetag, value);
-	data[127] = '\0';
+	snprintf(data, sizeof(data), " %c%llu,%.2f", restart ? 'M' : 'L', timetag, value);
+	data[sizeof(data) - 1] = '\0';
 
 	save_svg_data(data, out, outsize);
 }
@@ -374,8 +374,8 @@ void lniappend(unsigned long long timetag, unsigned long long value, char **out,
 	char data[128];
 
 	/* Prepare additional graph definition data */
-	snprintf(data, 128, " %c%llu,%llu", restart ? 'M' : 'L', timetag, value);
-	data[127] = '\0';
+	snprintf(data, sizeof(data), " %c%llu,%llu", restart ? 'M' : 'L', timetag, value);
+	data[sizeof(data) - 1] = '\0';
 
 	save_svg_data(data, out, outsize);
 }
@@ -416,9 +416,9 @@ void brappend(unsigned long long timetag, double offset, double value, char **ou
 		t = timetag -dt;
 	}
 
-	snprintf(data, 128, "<rect x=\"%llu\" y=\"%.2f\" height=\"%.2f\" width=\"%llu\"/>",
+	snprintf(data, sizeof(data), "<rect x=\"%llu\" y=\"%.2f\" height=\"%.2f\" width=\"%llu\"/>",
 		 t, MINIMUM(offset, 100.0), MINIMUM(value, (100.0 - offset)), dt);
-	data[127] = '\0';
+	data[sizeof(data) - 1] = '\0';
 
 	save_svg_data(data, out, outsize);
 
@@ -581,7 +581,7 @@ void gr_autoscaling(unsigned int asfactor[], int asf_nr, int group, int g_type, 
 			if (!*(spmax + pos + j) || (*(spmax + pos + j) == gmax))
 				continue;
 
-			snprintf(val, 32, "%u", (unsigned int) (gmax / *(spmax + pos + j)));
+			snprintf(val, sizeof(val), "%u", (unsigned int) (gmax / *(spmax + pos + j)));
 			if (strlen(val) > 0) {
 				asfactor[j] = pwr10(strlen(val) - 1);
 			}
@@ -604,6 +604,11 @@ void display_hgrid(double ypos, double yfactor, double lmax, int dp)
 {
 	int j = 0;
 	char stmp[32];
+
+	/* Print marker in debug mode */
+	if (DISPLAY_DEBUG_MODE(flags)) {
+		printf("<!-- Hgrid -->\n");
+	}
 
 	do {
 		/* Display horizontal lines (except on X axis) */
@@ -652,6 +657,11 @@ void display_vgrid(long int xpos, double xfactor, int v_gridnr, struct svg_parm 
 
 	stamp.ust_time = svg_p->ust_time_ref; /* Only ust_time field needs to be set. TRUE_TIME not allowed */
 
+	/* Print marker in debug mode */
+	if (DISPLAY_DEBUG_MODE(flags)) {
+		printf("<!-- Vgrid -->\n");
+	}
+
 	/*
 	 * What really matters to know when we should stop drawing vertical lines
 	 * is the time end. v_gridnr is only informative and used to calculate
@@ -660,7 +670,12 @@ void display_vgrid(long int xpos, double xfactor, int v_gridnr, struct svg_parm 
 	for (j = 0; (j <= (2 * v_gridnr)) && (stamp.ust_time <= svg_p->ust_time_end); j++) {
 
 		/* Display vertical lines */
-		sa_get_record_timestamp_struct(flags, &stamp, &rectime);
+		if (sa_get_record_timestamp_struct(flags, &stamp, &rectime)) {
+#ifdef DEBUG
+			fprintf(stderr, "%s: ust_time: %llu\n", __FUNCTION__, stamp.ust_time);
+#endif
+			exit(1);
+		}
 		set_record_timestamp_string(flags, &stamp, NULL, cur_time, TIMESTAMP_LEN, &rectime);
 		printf("<polyline points=\"%ld,0 %ld,%d\" style=\"vector-effect: non-scaling-stroke; "
 		       "stroke: #%06x\" transform=\"scale(%f,1)\"/>\n",
@@ -727,8 +742,8 @@ double ygrid(double lmax, int *dp)
 		*dp = 2;
 		return (lmax / SVG_H_GRIDNR);
 	}
-	snprintf(val, 32, "%ld", n);
-	val[31] = '\0';
+	snprintf(val, sizeof(val), "%ld", n);
+	val[sizeof(val) - 1] = '\0';
 	l = strlen(val);
 	if (l < 2)
 		return n;
@@ -841,7 +856,7 @@ void skip_current_view(char **out, int *pos, int group)
  * @skip_void	Set to <> 0 if graphs with no data should be skipped.
  *		This is typicallly used to not display CPU offline on the
  *		whole period.
- * @id		Current activity id.
+ * @a		Current activity structure.
  * @xid		Current activity extra id number.
  *
  * RETURNS:
@@ -851,7 +866,7 @@ void skip_current_view(char **out, int *pos, int group)
 int draw_activity_graphs(int g_nr, int g_type[], char *title[], char *g_title[], char *item_name,
 			 int group[], double *spmin, double *spmax, char **out, int *outsize,
 			 struct svg_parm *svg_p, struct record_header *record_hdr, int skip_void,
-			 unsigned int id, unsigned int xid)
+			 struct activity *a, unsigned int xid)
 {
 	char *out_p;
 	int i, j, dp, pos = 0, views_nr = 0, displayed = FALSE, palpos;
@@ -861,9 +876,20 @@ int draw_activity_graphs(int g_nr, int g_type[], char *title[], char *g_title[],
 	double lmax, xfactor, yfactor, ypos, gmin, gmax;
 	char val[32], cur_date[TIMESTAMP_LEN];
 	struct tm rectime;
+	time_t t = svg_p->file_hdr->sa_ust_time;
+
+	/* Print activity name in debug mode */
+	if (DISPLAY_DEBUG_MODE(flags)) {
+		printf("<!-- Name: %s -->\n", a->name);
+	}
 
 	/* For each view which is part of current activity */
 	for (i = 0; i < g_nr; i++) {
+
+		/* Print view number in debug mode */
+		if (DISPLAY_DEBUG_MODE(flags)) {
+			printf("<!-- View %d -->\n", i + 1);
+		}
 
 		/* Used as index in color palette */
 		palpos = (palette == SVG_BW_COL_PALETTE ? 0 : pos);
@@ -883,7 +909,7 @@ int draw_activity_graphs(int g_nr, int g_type[], char *title[], char *g_title[],
 		if (!displayed) {
 			/* Translate to proper position for current activity */
 			printf("<g id=\"g%d-%d\" transform=\"translate(0,%d)\">\n",
-			       id, xid,
+			       a->id, xid,
 			       SVG_H_YSIZE +
 			       SVG_C_YSIZE * (DISPLAY_TOC(flags) ? svg_p->nr_act_dispd : 0) +
 			       SVG_T_YSIZE * svg_p->graph_no);
@@ -951,7 +977,7 @@ int draw_activity_graphs(int g_nr, int g_type[], char *title[], char *g_title[],
 		for (j = 0; j < group[i]; j++) {
 			/* Set dp to TRUE (1) if current metric is based on integer values */
 			dp = (g_title[pos + j][0] == '~');
-			snprintf(val, 32, "x%u ", asfactor[j]);
+			snprintf(val, sizeof(val), "x%u ", asfactor[j]);
 			printf("<text x=\"%d\" y=\"%d\" style=\"fill: #%06x; stroke: none; font-size: 12px\">"
 			       "%s %s(%.*f, %.*f)</text>\n",
 			       xv + 5 + SVG_M_XSIZE + SVG_G_XSIZE, yv + SVG_M_YSIZE + j * 15,
@@ -971,7 +997,7 @@ int draw_activity_graphs(int g_nr, int g_type[], char *title[], char *g_title[],
 			       svg_p->file_hdr->sa_nodename);
 
 			/* Get report date */
-			set_report_date(localtime_r((const time_t *) &(svg_p->file_hdr->sa_ust_time), &rectime),
+			set_report_date(localtime_r(&t, &rectime),
 					cur_date, sizeof(cur_date));
 			printf("<tspan x=\"%d\" y=\"%d\" "
 			       "style=\"fill: #%06x; text-anchor: end; stroke: none; font-size: 14px\">"
@@ -1028,6 +1054,11 @@ int draw_activity_graphs(int g_nr, int g_type[], char *title[], char *g_title[],
 		/* Display vertical lines and graduations */
 		display_vgrid(xpos, xfactor, v_gridnr, svg_p);
 
+		/* Print marker in debug mode */
+		if (DISPLAY_DEBUG_MODE(flags)) {
+			printf("<!-- Graphs -->\n");
+		}
+
 		/* Draw current graphs set */
 		for (j = 0; j < group[i]; j++) {
 			out_p = *(out + pos + j);
@@ -1081,6 +1112,7 @@ int draw_activity_graphs(int g_nr, int g_type[], char *title[], char *g_title[],
  * @record_hdr	Pointer on record header of current stats sample.
  ***************************************************************************
  */
+#define CPU_ARRAY_SZ	10
 __print_funct_t svg_print_cpu_stats(struct activity *a, int curr, int action, struct svg_parm *svg_p,
 				    unsigned long long itv, struct record_header *record_hdr)
 {
@@ -1105,7 +1137,7 @@ __print_funct_t svg_print_cpu_stats(struct activity *a, int curr, int action, st
 		 * Allocate arrays that will contain the graphs data
 		 * and the min/max values.
 		 */
-		out = allocate_graph_lines(10 * a->item_list_sz, &outsize, &spmin, &spmax);
+		out = allocate_graph_lines(CPU_ARRAY_SZ * a->item_list_sz, &outsize, &spmin, &spmax);
 	}
 
 	if (action & F_MAIN) {
@@ -1136,7 +1168,7 @@ __print_funct_t svg_print_cpu_stats(struct activity *a, int curr, int action, st
 			scc = (struct stats_cpu *) ((char *) a->buf[curr]  + i * a->msize);
 			scp = (struct stats_cpu *) ((char *) a->buf[!curr] + i * a->msize);
 
-			pos = i * 10;
+			pos = i * CPU_ARRAY_SZ;
 			offset = 0.0;
 
 			if (i == 0) {
@@ -1311,10 +1343,10 @@ __print_funct_t svg_print_cpu_stats(struct activity *a, int curr, int action, st
 				/* No */
 				continue;
 
-			pos = i * 10;
+			pos = i * CPU_ARRAY_SZ;
 			if (!i) {
 				/* This is CPU "all" */
-				strcpy(item_name, "all");
+				strcpy(item_name, K_LOWERALL);
 			}
 			else {
 				sprintf(item_name, "%d", i - 1);
@@ -1324,13 +1356,13 @@ __print_funct_t svg_print_cpu_stats(struct activity *a, int curr, int action, st
 				displayed = draw_activity_graphs(a->g_nr, g_type,
 								 title, g_title1, item_name, group1,
 								 spmin + pos, spmax + pos, out + pos, outsize + pos,
-								 svg_p, record_hdr, i, a->id, xid);
+								 svg_p, record_hdr, i, a, xid);
 			}
 			else {
 				displayed = draw_activity_graphs(a->g_nr, g_type,
 								 title, g_title2, item_name, group2,
 								 spmin + pos, spmax + pos, out + pos, outsize + pos,
-								 svg_p, record_hdr, i, a->id, xid);
+								 svg_p, record_hdr, i, a, xid);
 			}
 			if (displayed) {
 				xid++;
@@ -1398,7 +1430,7 @@ __print_funct_t svg_print_pcsw_stats(struct activity *a, int curr, int action, s
 
 	if (action & F_END) {
 		draw_activity_graphs(a->g_nr, g_type, title, g_title, NULL, group,
-				     spmin, spmax, out, outsize, svg_p, record_hdr, FALSE, a->id, 0);
+				     spmin, spmax, out, outsize, svg_p, record_hdr, FALSE, a, 0);
 
 		/* Free remaining structures */
 		free_graphs(out, outsize, spmin, spmax);
@@ -1460,7 +1492,7 @@ __print_funct_t svg_print_swap_stats(struct activity *a, int curr, int action, s
 
 	if (action & F_END) {
 		draw_activity_graphs(a->g_nr, g_type, title, g_title, NULL, group,
-				     spmin, spmax, out, outsize, svg_p, record_hdr, FALSE, a->id, 0);
+				     spmin, spmax, out, outsize, svg_p, record_hdr, FALSE, a, 0);
 
 		/* Free remaining structures */
 		free_graphs(out, outsize, spmin, spmax);
@@ -1548,7 +1580,7 @@ __print_funct_t svg_print_paging_stats(struct activity *a, int curr, int action,
 
 	if (action & F_END) {
 		draw_activity_graphs(a->g_nr, g_type, title, g_title, NULL, group,
-				     spmin, spmax, out, outsize, svg_p, record_hdr, FALSE, a->id, 0);
+				     spmin, spmax, out, outsize, svg_p, record_hdr, FALSE, a, 0);
 
 		/* Free remaining structures */
 		free_graphs(out, outsize, spmin, spmax);
@@ -1656,7 +1688,7 @@ __print_funct_t svg_print_io_stats(struct activity *a, int curr, int action, str
 
 	if (action & F_END) {
 		draw_activity_graphs(a->g_nr, g_type, title, g_title, NULL, group,
-				     spmin, spmax, out, outsize, svg_p, record_hdr, FALSE, a->id, 0);
+				     spmin, spmax, out, outsize, svg_p, record_hdr, FALSE, a, 0);
 
 		/* Free remaining structures */
 		free_graphs(out, outsize, spmin, spmax);
@@ -1883,7 +1915,7 @@ __print_funct_t svg_print_memory_stats(struct activity *a, int curr, int action,
 			if (draw_activity_graphs(DISPLAY_MEM_ALL(a->opt_flags) ? 6 : 5,
 						 g_type1, title1, g_title1, NULL, group1,
 						 spmin, spmax, out, outsize, svg_p, record_hdr,
-						 FALSE, a->id, xid)) {
+						 FALSE, a, xid)) {
 				xid++;
 			}
 		}
@@ -1891,7 +1923,7 @@ __print_funct_t svg_print_memory_stats(struct activity *a, int curr, int action,
 		if (DISPLAY_SWAP(a->opt_flags)) {
 			draw_activity_graphs(3, g_type2, title2, g_title2, NULL, group2,
 					     spmin + 16, spmax + 16, out + 16, outsize + 16,
-					     svg_p, record_hdr, FALSE, a->id, xid);
+					     svg_p, record_hdr, FALSE, a, xid);
 		}
 
 		/* Free remaining structures */
@@ -1962,7 +1994,7 @@ __print_funct_t svg_print_ktables_stats(struct activity *a, int curr, int action
 
 	if (action & F_END) {
 		draw_activity_graphs(a->g_nr, g_type, title, g_title, NULL, group,
-				     spmin, spmax, out, outsize, svg_p, record_hdr, FALSE, a->id, 0);
+				     spmin, spmax, out, outsize, svg_p, record_hdr, FALSE, a, 0);
 
 		/* Free remaining structures */
 		free_graphs(out, outsize, spmin, spmax);
@@ -2046,7 +2078,7 @@ __print_funct_t svg_print_queue_stats(struct activity *a, int curr, int action, 
 		*(spmin + 5) /= 100; *(spmax + 5) /= 100;
 
 		draw_activity_graphs(a->g_nr, g_type, title, g_title, NULL, group,
-				     spmin, spmax, out, outsize, svg_p, record_hdr, FALSE, a->id, 0);
+				     spmin, spmax, out, outsize, svg_p, record_hdr, FALSE, a, 0);
 
 		/* Free remaining structures */
 		free_graphs(out, outsize, spmin, spmax);
@@ -2069,6 +2101,7 @@ __print_funct_t svg_print_queue_stats(struct activity *a, int curr, int action, 
  * @record_hdr	Pointer on record header of current stats sample.
  ***************************************************************************
  */
+#define DISK_ARRAY_SZ	9
 __print_funct_t svg_print_disk_stats(struct activity *a, int curr, int action, struct svg_parm *svg_p,
 				     unsigned long long itv, struct record_header *record_hdr)
 {
@@ -2086,7 +2119,6 @@ __print_funct_t svg_print_disk_stats(struct activity *a, int curr, int action, s
 			   "await",
 			   "%util"};
 	int g_fields[] = {0, 1, 2};
-	int nr_arrays = 9;
 	unsigned int local_types_nr[] = {1, 0, 0};
 	static double *spmin, *spmax;
 	static char **out;
@@ -2104,18 +2136,17 @@ __print_funct_t svg_print_disk_stats(struct activity *a, int curr, int action, s
 		 * outsize + 8 will contain a positive value (TRUE) if the device
 		 * has either still not been registered, or has been unregistered.
 		 */
-		out = allocate_graph_lines(nr_arrays * a->item_list_sz, &outsize, &spmin, &spmax);
+		out = allocate_graph_lines(DISK_ARRAY_SZ * a->item_list_sz, &outsize, &spmin, &spmax);
 	}
 
 	if (action & F_MAIN) {
 		memset(&sdpzero, 0, STATS_DISK_SIZE);
-		restart = svg_p->restart;
 		/*
 		 * Mark previously registered devices as now
 		 * possibly unregistered for all graphs.
 		 */
 		for (k = 0; k < a->item_list_sz; k++) {
-			unregistered = outsize + k * nr_arrays + 8;
+			unregistered = outsize + k * DISK_ARRAY_SZ + 8;
 			if (*unregistered == FALSE) {
 				*unregistered = MAYBE;
 			}
@@ -2124,6 +2155,7 @@ __print_funct_t svg_print_disk_stats(struct activity *a, int curr, int action, s
 		/* For each device structure */
 		for (i = 0; i < a->nr[curr]; i++) {
 			sdc = (struct stats_disk *) ((char *) a->buf[curr] + i * a->msize);
+			restart = svg_p->restart;
 
 			/* Get device name  */
 			dev_name = get_device_name(sdc->major, sdc->minor, sdc->wwn, sdc->part_nr,
@@ -2139,7 +2171,7 @@ __print_funct_t svg_print_disk_stats(struct activity *a, int curr, int action, s
 
 			/* Look for corresponding graph */
 			for (k = 0; k < a->item_list_sz; k++) {
-				item_name = *(out + k * nr_arrays + 8);
+				item_name = *(out + k * DISK_ARRAY_SZ + 8);
 				if (!strcmp(dev_name, item_name))
 					/* Graph found! */
 					break;
@@ -2147,7 +2179,7 @@ __print_funct_t svg_print_disk_stats(struct activity *a, int curr, int action, s
 			if (k == a->item_list_sz) {
 				/* Graph not found: Look for first free entry */
 				for (k = 0; k < a->item_list_sz; k++) {
-					item_name = *(out + k * nr_arrays + 8);
+					item_name = *(out + k * DISK_ARRAY_SZ + 8);
 					if (!strcmp(item_name, ""))
 						break;
 				}
@@ -2160,7 +2192,7 @@ __print_funct_t svg_print_disk_stats(struct activity *a, int curr, int action, s
 					continue;
 				}
 			}
-			pos = k * nr_arrays;
+			pos = k * DISK_ARRAY_SZ;
 			unregistered = outsize + pos + 8;
 
 			/*
@@ -2184,6 +2216,7 @@ __print_funct_t svg_print_disk_stats(struct activity *a, int curr, int action, s
 			if (j < 0) {
 				/* This is a newly registered interface. Previous stats are zero */
 				sdp = &sdpzero;
+				restart = TRUE;
 			}
 			else {
 				sdp = (struct stats_disk *) ((char *) a->buf[!curr] + j * a->msize);
@@ -2278,7 +2311,7 @@ __print_funct_t svg_print_disk_stats(struct activity *a, int curr, int action, s
 
 		/* Mark devices not seen here as now unregistered */
 		for (k = 0; k < a->item_list_sz; k++) {
-			unregistered = outsize + k * nr_arrays + 8;
+			unregistered = outsize + k * DISK_ARRAY_SZ + 8;
 			if (*unregistered != FALSE) {
 				*unregistered = TRUE;
 			}
@@ -2290,7 +2323,7 @@ __print_funct_t svg_print_disk_stats(struct activity *a, int curr, int action, s
 
 		for (i = 0; i < a->item_list_sz; i++) {
 			/* Check if there is something to display */
-			pos = i * nr_arrays;
+			pos = i * DISK_ARRAY_SZ;
 			if (!**(out + pos))
 				continue;
 
@@ -2298,7 +2331,7 @@ __print_funct_t svg_print_disk_stats(struct activity *a, int curr, int action, s
 			if (draw_activity_graphs(a->g_nr, g_type,
 						 title, g_title, item_name, group,
 						 spmin + pos, spmax + pos, out + pos, outsize + pos,
-						 svg_p, record_hdr, FALSE, a->id, xid)) {
+						 svg_p, record_hdr, FALSE, a, xid)) {
 				xid++;
 			}
 		}
@@ -2324,6 +2357,7 @@ __print_funct_t svg_print_disk_stats(struct activity *a, int curr, int action, s
  * @record_hdr	Pointer on record header of current stats sample.
  ***************************************************************************
  */
+#define NET_DEV_ARRAY_SZ	9
 __print_funct_t svg_print_net_dev_stats(struct activity *a, int curr, int action, struct svg_parm *svg_p,
 					unsigned long long itv, struct record_header *record_hdr)
 {
@@ -2355,18 +2389,17 @@ __print_funct_t svg_print_net_dev_stats(struct activity *a, int curr, int action
 		 * outsize + 8 will contain a positive value (TRUE) if the interface
 		 * has either still not been registered, or has been unregistered.
 		 */
-		out = allocate_graph_lines(9 * a->item_list_sz, &outsize, &spmin, &spmax);
+		out = allocate_graph_lines(NET_DEV_ARRAY_SZ * a->item_list_sz, &outsize, &spmin, &spmax);
 	}
 
 	if (action & F_MAIN) {
 		memset(&sndzero, 0, STATS_NET_DEV_SIZE);
-		restart = svg_p->restart;
 		/*
 		 * Mark previously registered interfaces as now
 		 * possibly unregistered for all graphs.
 		 */
 		for (k = 0; k < a->item_list_sz; k++) {
-			unregistered = outsize + k * 9 + 8;
+			unregistered = outsize + k * NET_DEV_ARRAY_SZ + 8;
 			if (*unregistered == FALSE) {
 				*unregistered = MAYBE;
 			}
@@ -2375,6 +2408,7 @@ __print_funct_t svg_print_net_dev_stats(struct activity *a, int curr, int action
 		/* For each network interfaces structure */
 		for (i = 0; i < a->nr[curr]; i++) {
 			sndc = (struct stats_net_dev *) ((char *) a->buf[curr] + i * a->msize);
+			restart = svg_p->restart;
 
 			if (a->item_list != NULL) {
 				/* A list of devices has been entered on the command line */
@@ -2385,7 +2419,7 @@ __print_funct_t svg_print_net_dev_stats(struct activity *a, int curr, int action
 
 			/* Look for corresponding graph */
 			for (k = 0; k < a->item_list_sz; k++) {
-				item_name = *(out + k * 9 + 8);
+				item_name = *(out + k * NET_DEV_ARRAY_SZ + 8);
 				if (!strcmp(sndc->interface, item_name))
 					/* Graph found! */
 					break;
@@ -2393,7 +2427,7 @@ __print_funct_t svg_print_net_dev_stats(struct activity *a, int curr, int action
 			if (k == a->item_list_sz) {
 				/* Graph not found: Look for first free entry */
 				for (k = 0; k < a->item_list_sz; k++) {
-					item_name = *(out + k * 9 + 8);
+					item_name = *(out + k * NET_DEV_ARRAY_SZ + 8);
 					if (!strcmp(item_name, ""))
 						break;
 				}
@@ -2406,13 +2440,14 @@ __print_funct_t svg_print_net_dev_stats(struct activity *a, int curr, int action
 					continue;
 				}
 			}
-			pos = k * 9;
+			pos = k * NET_DEV_ARRAY_SZ;
 			unregistered = outsize + pos + 8;
 
 			j = check_net_dev_reg(a, curr, !curr, i);
 			if (j < 0) {
 				/* This is a newly registered interface. Previous stats are zero */
 				sndp = &sndzero;
+				restart = TRUE;
 			}
 			else {
 				sndp = (struct stats_net_dev *) ((char *) a->buf[!curr] + j * a->msize);
@@ -2485,7 +2520,7 @@ __print_funct_t svg_print_net_dev_stats(struct activity *a, int curr, int action
 
 		/* Mark interfaces not seen here as now unregistered */
 		for (k = 0; k < a->item_list_sz; k++) {
-			unregistered = outsize + k * 9 + 8;
+			unregistered = outsize + k * NET_DEV_ARRAY_SZ + 8;
 			if (*unregistered != FALSE) {
 				*unregistered = TRUE;
 			}
@@ -2501,7 +2536,7 @@ __print_funct_t svg_print_net_dev_stats(struct activity *a, int curr, int action
 			 * Don't test sndc->interface because maybe the network
 			 * interface has been registered later.
 			 */
-			pos = i * 9;
+			pos = i * NET_DEV_ARRAY_SZ;
 			if (!**(out + pos))
 				continue;
 
@@ -2515,7 +2550,7 @@ __print_funct_t svg_print_net_dev_stats(struct activity *a, int curr, int action
 			if (draw_activity_graphs(a->g_nr, g_type,
 						 title, g_title, item_name, group,
 						 spmin + pos, spmax + pos, out + pos, outsize + pos,
-						 svg_p, record_hdr, FALSE, a->id, xid)) {
+						 svg_p, record_hdr, FALSE, a, xid)) {
 				xid++;
 			}
 		}
@@ -2541,6 +2576,7 @@ __print_funct_t svg_print_net_dev_stats(struct activity *a, int curr, int action
  * @record_hdr	Pointer on record header of current stats sample.
  ***************************************************************************
  */
+#define NET_EDEV_ARRAY_SZ	10
 __print_funct_t svg_print_net_edev_stats(struct activity *a, int curr, int action, struct svg_parm *svg_p,
 					 unsigned long long itv, struct record_header *record_hdr)
 {
@@ -2570,18 +2606,17 @@ __print_funct_t svg_print_net_edev_stats(struct activity *a, int curr, int actio
 		 * outsize + 9 will contain a positive value (TRUE) if the interface
 		 * has either still not been registered, or has been unregistered.
 		 */
-		out = allocate_graph_lines(10 * a->item_list_sz, &outsize, &spmin, &spmax);
+		out = allocate_graph_lines(NET_EDEV_ARRAY_SZ * a->item_list_sz, &outsize, &spmin, &spmax);
 	}
 
 	if (action & F_MAIN) {
 		memset(&snedzero, 0, STATS_NET_EDEV_SIZE);
-		restart = svg_p->restart;
 		/*
 		 * Mark previously registered interfaces as now
 		 * possibly unregistered for all graphs.
 		 */
 		for (k = 0; k < a->item_list_sz; k++) {
-			unregistered = outsize + k * 10 + 9;
+			unregistered = outsize + k * NET_EDEV_ARRAY_SZ + 9;
 			if (*unregistered == FALSE) {
 				*unregistered = MAYBE;
 			}
@@ -2590,9 +2625,7 @@ __print_funct_t svg_print_net_edev_stats(struct activity *a, int curr, int actio
 		/* For each network interfaces structure */
 		for (i = 0; i < a->nr[curr]; i++) {
 			snedc = (struct stats_net_edev *) ((char *) a->buf[curr] + i * a->msize);
-			if (!strcmp(snedc->interface, ""))
-				/* Empty structure: This is the end of the list */
-				break;
+			restart = svg_p->restart;
 
 			if (a->item_list != NULL) {
 				/* A list of devices has been entered on the command line */
@@ -2603,7 +2636,7 @@ __print_funct_t svg_print_net_edev_stats(struct activity *a, int curr, int actio
 
 			/* Look for corresponding graph */
 			for (k = 0; k < a->item_list_sz; k++) {
-				item_name = *(out + k * 10 + 9);
+				item_name = *(out + k * NET_EDEV_ARRAY_SZ + 9);
 				if (!strcmp(snedc->interface, item_name))
 					/* Graph found! */
 					break;
@@ -2611,7 +2644,7 @@ __print_funct_t svg_print_net_edev_stats(struct activity *a, int curr, int actio
 			if (k == a->item_list_sz) {
 				/* Graph not found: Look for first free entry */
 				for (k = 0; k < a->item_list_sz; k++) {
-					item_name = *(out + k * 10 + 9);
+					item_name = *(out + k * NET_EDEV_ARRAY_SZ + 9);
 					if (!strcmp(item_name, ""))
 						break;
 				}
@@ -2625,13 +2658,14 @@ __print_funct_t svg_print_net_edev_stats(struct activity *a, int curr, int actio
 				}
 			}
 
-			pos = k * 10;
+			pos = k * NET_EDEV_ARRAY_SZ;
 			unregistered = outsize + pos + 9;
 
 			j = check_net_edev_reg(a, curr, !curr, i);
 			if (j < 0) {
 				/* This is a newly registered interface. Previous stats are zero */
 				snedp = &snedzero;
+				restart = TRUE;
 			}
 			else {
 				snedp = (struct stats_net_edev *) ((char *) a->buf[!curr] + j * a->msize);
@@ -2698,7 +2732,7 @@ __print_funct_t svg_print_net_edev_stats(struct activity *a, int curr, int actio
 
 		/* Mark interfaces not seen here as now unregistered */
 		for (k = 0; k < a->item_list_sz; k++) {
-			unregistered = outsize + k * 10 + 9;
+			unregistered = outsize + k * NET_EDEV_ARRAY_SZ + 9;
 			if (*unregistered != FALSE) {
 				*unregistered = TRUE;
 			}
@@ -2714,7 +2748,7 @@ __print_funct_t svg_print_net_edev_stats(struct activity *a, int curr, int actio
 			 * Don't test snedc->interface because maybe the network
 			 * interface has been registered later.
 			 */
-			pos = i * 10;
+			pos = i * NET_EDEV_ARRAY_SZ;
 			if (!**(out + pos))
 				continue;
 
@@ -2722,7 +2756,7 @@ __print_funct_t svg_print_net_edev_stats(struct activity *a, int curr, int actio
 			if (draw_activity_graphs(a->g_nr, g_type,
 						 title, g_title, item_name, group,
 						 spmin + pos, spmax + pos, out + pos, outsize + pos,
-						 svg_p, record_hdr, FALSE, a->id, xid)) {
+						 svg_p, record_hdr, FALSE, a, xid)) {
 				xid++;
 			}
 		}
@@ -2807,7 +2841,7 @@ __print_funct_t svg_print_net_nfs_stats(struct activity *a, int curr, int action
 
 	if (action & F_END) {
 		draw_activity_graphs(a->g_nr, g_type, title, g_title, NULL, group,
-				     spmin, spmax, out, outsize, svg_p, record_hdr, FALSE, a->id, 0);
+				     spmin, spmax, out, outsize, svg_p, record_hdr, FALSE, a, 0);
 
 		/* Free remaining structures */
 		free_graphs(out, outsize, spmin, spmax);
@@ -2913,7 +2947,7 @@ __print_funct_t svg_print_net_nfsd_stats(struct activity *a, int curr, int actio
 
 	if (action & F_END) {
 		draw_activity_graphs(a->g_nr, g_type, title, g_title, NULL, group,
-				     spmin, spmax, out, outsize, svg_p, record_hdr, FALSE, a->id, 0);
+				     spmin, spmax, out, outsize, svg_p, record_hdr, FALSE, a, 0);
 
 		/* Free remaining structures */
 		free_graphs(out, outsize, spmin, spmax);
@@ -2991,7 +3025,7 @@ __print_funct_t svg_print_net_sock_stats(struct activity *a, int curr, int actio
 
 	if (action & F_END) {
 		draw_activity_graphs(a->g_nr, g_type, title, g_title, NULL, group,
-				     spmin, spmax, out, outsize, svg_p, record_hdr, FALSE, a->id, 0);
+				     spmin, spmax, out, outsize, svg_p, record_hdr, FALSE, a, 0);
 
 		/* Free remaining structures */
 		free_graphs(out, outsize, spmin, spmax);
@@ -3080,7 +3114,7 @@ __print_funct_t svg_print_net_ip_stats(struct activity *a, int curr, int action,
 
 	if (action & F_END) {
 		draw_activity_graphs(a->g_nr, g_type, title, g_title, NULL, group,
-				     spmin, spmax, out, outsize, svg_p, record_hdr, FALSE, a->id, 0);
+				     spmin, spmax, out, outsize, svg_p, record_hdr, FALSE, a, 0);
 
 		/* Free remaining structures */
 		free_graphs(out, outsize, spmin, spmax);
@@ -3170,7 +3204,7 @@ __print_funct_t svg_print_net_eip_stats(struct activity *a, int curr, int action
 
 	if (action & F_END) {
 		draw_activity_graphs(a->g_nr, g_type, title, g_title, NULL, group,
-				     spmin, spmax, out, outsize, svg_p, record_hdr, FALSE, a->id, 0);
+				     spmin, spmax, out, outsize, svg_p, record_hdr, FALSE, a, 0);
 
 		/* Free remaining structures */
 		free_graphs(out, outsize, spmin, spmax);
@@ -3286,7 +3320,7 @@ __print_funct_t svg_print_net_icmp_stats(struct activity *a, int curr, int actio
 
 	if (action & F_END) {
 		draw_activity_graphs(a->g_nr, g_type, title, g_title, NULL, group,
-				     spmin, spmax, out, outsize, svg_p, record_hdr, FALSE, a->id, 0);
+				     spmin, spmax, out, outsize, svg_p, record_hdr, FALSE, a, 0);
 
 		/* Free remaining structures */
 		free_graphs(out, outsize, spmin, spmax);
@@ -3397,7 +3431,7 @@ __print_funct_t svg_print_net_eicmp_stats(struct activity *a, int curr, int acti
 
 	if (action & F_END) {
 		draw_activity_graphs(a->g_nr, g_type, title, g_title, NULL, group,
-				     spmin, spmax, out, outsize, svg_p, record_hdr, FALSE, a->id, 0);
+				     spmin, spmax, out, outsize, svg_p, record_hdr, FALSE, a, 0);
 
 		/* Free remaining structures */
 		free_graphs(out, outsize, spmin, spmax);
@@ -3469,7 +3503,7 @@ __print_funct_t svg_print_net_tcp_stats(struct activity *a, int curr, int action
 
 	if (action & F_END) {
 		draw_activity_graphs(a->g_nr, g_type, title, g_title, NULL, group,
-				     spmin, spmax, out, outsize, svg_p, record_hdr, FALSE, a->id, 0);
+				     spmin, spmax, out, outsize, svg_p, record_hdr, FALSE, a, 0);
 
 		/* Free remaining structures */
 		free_graphs(out, outsize, spmin, spmax);
@@ -3545,7 +3579,7 @@ __print_funct_t svg_print_net_etcp_stats(struct activity *a, int curr, int actio
 
 	if (action & F_END) {
 		draw_activity_graphs(a->g_nr, g_type, title, g_title, NULL, group,
-				     spmin, spmax, out, outsize, svg_p, record_hdr, FALSE, a->id, 0);
+				     spmin, spmax, out, outsize, svg_p, record_hdr, FALSE, a, 0);
 
 		/* Free remaining structures */
 		free_graphs(out, outsize, spmin, spmax);
@@ -3617,7 +3651,7 @@ __print_funct_t svg_print_net_udp_stats(struct activity *a, int curr, int action
 
 	if (action & F_END) {
 		draw_activity_graphs(a->g_nr, g_type, title, g_title, NULL, group,
-				     spmin, spmax, out, outsize, svg_p, record_hdr, FALSE, a->id, 0);
+				     spmin, spmax, out, outsize, svg_p, record_hdr, FALSE, a, 0);
 
 		/* Free remaining structures */
 		free_graphs(out, outsize, spmin, spmax);
@@ -3686,7 +3720,7 @@ __print_funct_t svg_print_net_sock6_stats(struct activity *a, int curr, int acti
 
 	if (action & F_END) {
 		draw_activity_graphs(a->g_nr, g_type, title, g_title, NULL, group,
-				     spmin, spmax, out, outsize, svg_p, record_hdr, FALSE, a->id, 0);
+				     spmin, spmax, out, outsize, svg_p, record_hdr, FALSE, a, 0);
 
 		/* Free remaining structures */
 		free_graphs(out, outsize, spmin, spmax);
@@ -3786,7 +3820,7 @@ __print_funct_t svg_print_net_ip6_stats(struct activity *a, int curr, int action
 
 	if (action & F_END) {
 		draw_activity_graphs(a->g_nr, g_type, title, g_title, NULL, group,
-				     spmin, spmax, out, outsize, svg_p, record_hdr, FALSE, a->id, 0);
+				     spmin, spmax, out, outsize, svg_p, record_hdr, FALSE, a, 0);
 
 		/* Free remaining structures */
 		free_graphs(out, outsize, spmin, spmax);
@@ -3891,7 +3925,7 @@ __print_funct_t svg_print_net_eip6_stats(struct activity *a, int curr, int actio
 
 	if (action & F_END) {
 		draw_activity_graphs(a->g_nr, g_type, title, g_title, NULL, group,
-				     spmin, spmax, out, outsize, svg_p, record_hdr, FALSE, a->id, 0);
+				     spmin, spmax, out, outsize, svg_p, record_hdr, FALSE, a, 0);
 
 		/* Free remaining structures */
 		free_graphs(out, outsize, spmin, spmax);
@@ -4021,7 +4055,7 @@ __print_funct_t svg_print_net_icmp6_stats(struct activity *a, int curr, int acti
 
 	if (action & F_END) {
 		draw_activity_graphs(a->g_nr, g_type, title, g_title, NULL, group,
-				     spmin, spmax, out, outsize, svg_p, record_hdr, FALSE, a->id, 0);
+				     spmin, spmax, out, outsize, svg_p, record_hdr, FALSE, a, 0);
 
 		/* Free remaining structures */
 		free_graphs(out, outsize, spmin, spmax);
@@ -4128,7 +4162,7 @@ __print_funct_t svg_print_net_eicmp6_stats(struct activity *a, int curr, int act
 
 	if (action & F_END) {
 		draw_activity_graphs(a->g_nr, g_type, title, g_title, NULL, group,
-				     spmin, spmax, out, outsize, svg_p, record_hdr, FALSE, a->id, 0);
+				     spmin, spmax, out, outsize, svg_p, record_hdr, FALSE, a, 0);
 
 		/* Free remaining structures */
 		free_graphs(out, outsize, spmin, spmax);
@@ -4200,7 +4234,7 @@ __print_funct_t svg_print_net_udp6_stats(struct activity *a, int curr, int actio
 
 	if (action & F_END) {
 		draw_activity_graphs(a->g_nr, g_type, title, g_title, NULL, group,
-				     spmin, spmax, out, outsize, svg_p, record_hdr, FALSE, a->id, 0);
+				     spmin, spmax, out, outsize, svg_p, record_hdr, FALSE, a, 0);
 
 		/* Free remaining structures */
 		free_graphs(out, outsize, spmin, spmax);
@@ -4283,7 +4317,7 @@ __print_funct_t svg_print_pwr_cpufreq_stats(struct activity *a, int curr, int ac
 
 			if (!i) {
 				/* This is CPU "all" */
-				strcpy(item_name, "all");
+				strcpy(item_name, K_LOWERALL);
 			}
 			else {
 				/*
@@ -4300,7 +4334,7 @@ __print_funct_t svg_print_pwr_cpufreq_stats(struct activity *a, int curr, int ac
 			if (draw_activity_graphs(a->g_nr, g_type,
 						 title, g_title, item_name, group,
 						 spmin + i, spmax + i, out + i, outsize + i,
-						 svg_p, record_hdr, i, a->id, xid)) {
+						 svg_p, record_hdr, i, a, xid)) {
 				xid++;
 			}
 		}
@@ -4377,7 +4411,7 @@ __print_funct_t svg_print_pwr_fan_stats(struct activity *a, int curr, int action
 			if (draw_activity_graphs(a->g_nr, g_type,
 						 title, g_title, item_name, group,
 						 spmin + i, spmax + i, out + i, outsize + i,
-						 svg_p, record_hdr, FALSE, a->id, xid)) {
+						 svg_p, record_hdr, FALSE, a, xid)) {
 				xid++;
 			}
 		}
@@ -4403,6 +4437,7 @@ __print_funct_t svg_print_pwr_fan_stats(struct activity *a, int curr, int action
  * @record_hdr	Pointer on record header of current stats sample.
  ***************************************************************************
  */
+#define TEMP_ARRAY_SZ	2
 __print_funct_t svg_print_pwr_temp_stats(struct activity *a, int curr, int action, struct svg_parm *svg_p,
 					 unsigned long long itv, struct record_header *record_hdr)
 {
@@ -4425,7 +4460,7 @@ __print_funct_t svg_print_pwr_temp_stats(struct activity *a, int curr, int actio
 		 * Allocate arrays that will contain the graphs data
 		 * and the min/max values.
 		 */
-		out = allocate_graph_lines(2 * a->item_list_sz, &outsize, &spmin, &spmax);
+		out = allocate_graph_lines(TEMP_ARRAY_SZ * a->item_list_sz, &outsize, &spmin, &spmax);
 	}
 
 	if (action & F_MAIN) {
@@ -4435,30 +4470,30 @@ __print_funct_t svg_print_pwr_temp_stats(struct activity *a, int curr, int actio
 			spc = (struct stats_pwr_temp *) ((char *) a->buf[curr] + i * a->msize);
 
 			/* Look for min/max values */
-			if (spc->temp < *(spmin + 2 * i)) {
-				*(spmin + 2 * i) = spc->temp;
+			if (spc->temp < *(spmin + TEMP_ARRAY_SZ * i)) {
+				*(spmin + TEMP_ARRAY_SZ * i) = spc->temp;
 			}
-			if (spc->temp > *(spmax + 2 * i)) {
-				*(spmax + 2 * i) = spc->temp;
+			if (spc->temp > *(spmax + TEMP_ARRAY_SZ * i)) {
+				*(spmax + TEMP_ARRAY_SZ * i) = spc->temp;
 			}
 			tval = (spc->temp_max - spc->temp_min) ?
 			       (spc->temp - spc->temp_min) / (spc->temp_max - spc->temp_min) * 100 :
 			       0.0;
-			if (tval < *(spmin + 2 * i + 1)) {
-				*(spmin + 2 * i + 1) = tval;
+			if (tval < *(spmin + TEMP_ARRAY_SZ * i + 1)) {
+				*(spmin + TEMP_ARRAY_SZ * i + 1) = tval;
 			}
-			if (tval > *(spmax + 2 * i + 1)) {
-				*(spmax + 2 * i + 1) = tval;
+			if (tval > *(spmax + TEMP_ARRAY_SZ * i + 1)) {
+				*(spmax + TEMP_ARRAY_SZ * i + 1) = tval;
 			}
 
 			/* degC */
 			lnappend(record_hdr->ust_time - svg_p->ust_time_ref,
 				 (double) spc->temp,
-				 out + 2 * i, outsize + 2 * i, svg_p->restart);
+				 out + TEMP_ARRAY_SZ * i, outsize + TEMP_ARRAY_SZ * i, svg_p->restart);
 			/* %temp */
 			brappend(record_hdr->ust_time - svg_p->ust_time_ref,
 				 0.0, tval,
-				 out + 2 * i + 1, outsize + 2 * i + 1, svg_p->dt);
+				 out + TEMP_ARRAY_SZ * i + 1, outsize + TEMP_ARRAY_SZ * i + 1, svg_p->dt);
 		}
 	}
 
@@ -4474,8 +4509,9 @@ __print_funct_t svg_print_pwr_temp_stats(struct activity *a, int curr, int actio
 
 			if (draw_activity_graphs(a->g_nr, g_type,
 						 title, g_title, item_name, group,
-						 spmin + 2 * i, spmax + 2 * i, out + 2 * i, outsize + 2 * i,
-						 svg_p, record_hdr, FALSE, a->id, xid)) {
+						 spmin + TEMP_ARRAY_SZ * i, spmax + TEMP_ARRAY_SZ * i,
+						 out + TEMP_ARRAY_SZ * i, outsize + TEMP_ARRAY_SZ * i,
+						 svg_p, record_hdr, FALSE, a, xid)) {
 				xid++;
 			}
 		}
@@ -4501,6 +4537,7 @@ __print_funct_t svg_print_pwr_temp_stats(struct activity *a, int curr, int actio
  * @record_hdr	Pointer on record header of current stats sample.
  ***************************************************************************
  */
+#define IN_ARRAY_SZ	2
 __print_funct_t svg_print_pwr_in_stats(struct activity *a, int curr, int action, struct svg_parm *svg_p,
 				       unsigned long long itv, struct record_header *record_hdr)
 {
@@ -4523,7 +4560,7 @@ __print_funct_t svg_print_pwr_in_stats(struct activity *a, int curr, int action,
 		 * Allocate arrays that will contain the graphs data
 		 * and the min/max values.
 		 */
-		out = allocate_graph_lines(2 * a->item_list_sz, &outsize, &spmin, &spmax);
+		out = allocate_graph_lines(IN_ARRAY_SZ * a->item_list_sz, &outsize, &spmin, &spmax);
 	}
 
 	if (action & F_MAIN) {
@@ -4533,30 +4570,30 @@ __print_funct_t svg_print_pwr_in_stats(struct activity *a, int curr, int action,
 			spc = (struct stats_pwr_in *) ((char *) a->buf[curr] + i * a->msize);
 
 			/* Look for min/max values */
-			if (spc->in < *(spmin + 2 * i)) {
-				*(spmin + 2 * i) = spc->in;
+			if (spc->in < *(spmin + IN_ARRAY_SZ * i)) {
+				*(spmin + IN_ARRAY_SZ * i) = spc->in;
 			}
-			if (spc->in > *(spmax + 2 * i)) {
-				*(spmax + 2 * i) = spc->in;
+			if (spc->in > *(spmax + IN_ARRAY_SZ * i)) {
+				*(spmax + IN_ARRAY_SZ * i) = spc->in;
 			}
 			tval = (spc->in_max - spc->in_min) ?
 			       (spc->in - spc->in_min) / (spc->in_max - spc->in_min) * 100 :
 			       0.0;
-			if (tval < *(spmin + 2 * i + 1)) {
-				*(spmin + 2 * i + 1) = tval;
+			if (tval < *(spmin + IN_ARRAY_SZ * i + 1)) {
+				*(spmin + IN_ARRAY_SZ * i + 1) = tval;
 			}
-			if (tval > *(spmax + 2 * i + 1)) {
-				*(spmax + 2 * i + 1) = tval;
+			if (tval > *(spmax + IN_ARRAY_SZ * i + 1)) {
+				*(spmax + IN_ARRAY_SZ * i + 1) = tval;
 			}
 
 			/* inV */
 			lnappend(record_hdr->ust_time - svg_p->ust_time_ref,
 				 (double) spc->in,
-				 out + 2 * i, outsize + 2 * i, svg_p->restart);
+				 out + IN_ARRAY_SZ * i, outsize + IN_ARRAY_SZ * i, svg_p->restart);
 			/* %in */
 			brappend(record_hdr->ust_time - svg_p->ust_time_ref,
 				 0.0, tval,
-				 out + 2 * i + 1, outsize + 2 * i + 1, svg_p->dt);
+				 out + IN_ARRAY_SZ * i + 1, outsize + IN_ARRAY_SZ * i + 1, svg_p->dt);
 		}
 	}
 
@@ -4572,8 +4609,9 @@ __print_funct_t svg_print_pwr_in_stats(struct activity *a, int curr, int action,
 
 			if (draw_activity_graphs(a->g_nr, g_type,
 						 title, g_title, item_name, group,
-						 spmin + 2 * i, spmax + 2 * i, out + 2 * i, outsize + 2 * i,
-						 svg_p, record_hdr, FALSE, a->id, xid)) {
+						 spmin + IN_ARRAY_SZ * i, spmax + IN_ARRAY_SZ * i,
+						 out + IN_ARRAY_SZ * i, outsize + IN_ARRAY_SZ * i,
+						 svg_p, record_hdr, FALSE, a, xid)) {
 				xid++;
 			}
 		}
@@ -4670,7 +4708,7 @@ __print_funct_t svg_print_huge_stats(struct activity *a, int curr, int action, s
 	if (action & F_END) {
 		draw_activity_graphs(a->g_nr, g_type,
 				     title, g_title, NULL, group,
-				     spmin, spmax, out, outsize, svg_p, record_hdr, FALSE, a->id, 0);
+				     spmin, spmax, out, outsize, svg_p, record_hdr, FALSE, a, 0);
 
 		/* Free remaining structures */
 		free_graphs(out, outsize, spmin, spmax);
@@ -4693,6 +4731,7 @@ __print_funct_t svg_print_huge_stats(struct activity *a, int curr, int action, s
  * @record_hdr	Pointer on record header of current stats sample.
  ***************************************************************************
  */
+#define FS_ARRAY_SZ	8
 __print_funct_t svg_print_filesystem_stats(struct activity *a, int curr, int action, struct svg_parm *svg_p,
 					   unsigned long long itv, struct record_header *record_hdr)
 {
@@ -4706,7 +4745,6 @@ __print_funct_t svg_print_filesystem_stats(struct activity *a, int curr, int act
 			   "%ufsused", "%fsused",
 			   "Ifree/1000", "Iused/1000",
 			   "%Iused"};
-	int nr_arrays = 8;
 	static double *spmin, *spmax;
 	static char **out;
 	static int *outsize;
@@ -4721,7 +4759,7 @@ __print_funct_t svg_print_filesystem_stats(struct activity *a, int curr, int act
 		 * Also allocate an additional arrays (#7) for each filesystem:
                  * out + 7 will contain the persistent or standard fs name, or mount point.
 		 */
-		out = allocate_graph_lines(nr_arrays * a->item_list_sz, &outsize, &spmin, &spmax);
+		out = allocate_graph_lines(FS_ARRAY_SZ * a->item_list_sz, &outsize, &spmin, &spmax);
 	}
 
 	if (action & F_MAIN) {
@@ -4741,7 +4779,7 @@ __print_funct_t svg_print_filesystem_stats(struct activity *a, int curr, int act
 
 			/* Look for corresponding graph */
 			for (k = 0; k < a->item_list_sz; k++) {
-				item_name = *(out + k * nr_arrays + 7);
+				item_name = *(out + k * FS_ARRAY_SZ + 7);
 				if (!strcmp(dev_name, item_name))
 					/* Graph found! */
 					break;
@@ -4750,7 +4788,7 @@ __print_funct_t svg_print_filesystem_stats(struct activity *a, int curr, int act
 			if (k == a->item_list_sz) {
 				/* Graph not found: Look for first free entry */
 				for (k = 0; k < a->item_list_sz; k++) {
-					item_name = *(out + k * nr_arrays + 7);
+					item_name = *(out + k * FS_ARRAY_SZ + 7);
 					if (!strcmp(item_name, ""))
 						break;
 				}
@@ -4764,7 +4802,7 @@ __print_funct_t svg_print_filesystem_stats(struct activity *a, int curr, int act
 				}
 			}
 
-			pos = k * nr_arrays;
+			pos = k * FS_ARRAY_SZ;
 
 			item_name = *(out + pos + 7);
 			if (!item_name[0]) {
@@ -4887,7 +4925,7 @@ __print_funct_t svg_print_filesystem_stats(struct activity *a, int curr, int act
 		for (i = 0; i < a->item_list_sz; i++) {
 
 			/* Check if there is something to display */
-			pos = i * nr_arrays;
+			pos = i * FS_ARRAY_SZ;
 			if (!**(out + pos))
 				continue;
 
@@ -4903,7 +4941,7 @@ __print_funct_t svg_print_filesystem_stats(struct activity *a, int curr, int act
 
 			if (draw_activity_graphs(a->g_nr, g_type, title, g_title, item_name, group,
 						 spmin + pos, spmax + pos, out + pos, outsize + pos,
-						 svg_p, record_hdr, FALSE, a->id, xid)) {
+						 svg_p, record_hdr, FALSE, a, xid)) {
 				xid++;
 			}
 		}
@@ -4929,6 +4967,7 @@ __print_funct_t svg_print_filesystem_stats(struct activity *a, int curr, int act
  * @record_hdr	Pointer on record header of current stats sample.
  ***************************************************************************
  */
+#define FC_ARRAY_SZ	5
 __print_funct_t svg_print_fchost_stats(struct activity *a, int curr, int action, struct svg_parm *svg_p,
 				       unsigned long long itv, struct record_header *record_hdr)
 {
@@ -4954,18 +4993,17 @@ __print_funct_t svg_print_fchost_stats(struct activity *a, int curr, int action,
 		 * has either still not been registered, or has been unregistered
 		 * (outsize + 4).
 		 */
-		out = allocate_graph_lines(5 * a->item_list_sz, &outsize, &spmin, &spmax);
+		out = allocate_graph_lines(FC_ARRAY_SZ * a->item_list_sz, &outsize, &spmin, &spmax);
 	}
 
 	if (action & F_MAIN) {
 		memset(&sfczero, 0, sizeof(struct stats_fchost));
-		restart = svg_p->restart;
 		/*
 		 * Mark previously registered interfaces as now
 		 * possibly unregistered for all graphs.
 		 */
 		for (k = 0; k < a->item_list_sz; k++) {
-			unregistered = outsize + k * 5 + 4;
+			unregistered = outsize + k * FC_ARRAY_SZ + 4;
 			if (*unregistered == FALSE) {
 				*unregistered = MAYBE;
 			}
@@ -4976,10 +5014,11 @@ __print_funct_t svg_print_fchost_stats(struct activity *a, int curr, int action,
 
 			found = FALSE;
 			sfcc = (struct stats_fchost *) ((char *) a->buf[curr] + i * a->msize);
+			restart = svg_p->restart;
 
 			/* Look for corresponding graph */
 			for (k = 0; k < a->item_list_sz; k++) {
-				item_name = *(out + k * 5 + 4);
+				item_name = *(out + k * FC_ARRAY_SZ + 4);
 				if (!strcmp(sfcc->fchost_name, item_name))
 					/* Graph found! */
 					break;
@@ -4987,7 +5026,7 @@ __print_funct_t svg_print_fchost_stats(struct activity *a, int curr, int action,
 			if (k == a->item_list_sz) {
 				/* Graph not found: Look for first free entry */
 				for (k = 0; k < a->item_list_sz; k++) {
-					item_name = *(out + k * 5 + 4);
+					item_name = *(out + k * FC_ARRAY_SZ + 4);
 					if (!strcmp(item_name, ""))
 						break;
 				}
@@ -5001,7 +5040,7 @@ __print_funct_t svg_print_fchost_stats(struct activity *a, int curr, int action,
 				}
 			}
 
-			pos = k * 5;
+			pos = k * FC_ARRAY_SZ;
 			unregistered = outsize + pos + 4;
 
 			if (a->nr[!curr] > 0) {
@@ -5030,6 +5069,7 @@ __print_funct_t svg_print_fchost_stats(struct activity *a, int curr, int action,
 			if (!found) {
 				/* This is a newly registered host */
 				sfcp = &sfczero;
+				restart = TRUE;
 			}
 
 			/*
@@ -5073,7 +5113,7 @@ __print_funct_t svg_print_fchost_stats(struct activity *a, int curr, int action,
 
 		/* Mark interfaces not seen here as now unregistered */
 		for (k = 0; k < a->item_list_sz; k++) {
-			unregistered = outsize + k * 5 + 4;
+			unregistered = outsize + k * FC_ARRAY_SZ + 4;
 			if (*unregistered != FALSE) {
 				*unregistered = TRUE;
 			}
@@ -5084,7 +5124,7 @@ __print_funct_t svg_print_fchost_stats(struct activity *a, int curr, int action,
 		for (i = 0; i < a->item_list_sz; i++) {
 
 			/* Check if there is something to display */
-			pos = i * 5;
+			pos = i * FC_ARRAY_SZ;
 			if (!**(out + pos))
 				continue;
 
@@ -5092,7 +5132,7 @@ __print_funct_t svg_print_fchost_stats(struct activity *a, int curr, int action,
 			draw_activity_graphs(a->g_nr, g_type,
 					     title, g_title, item_name, group,
 					     spmin + pos, spmax + pos, out + pos, outsize + pos,
-					     svg_p, record_hdr, FALSE, a->id, i);
+					     svg_p, record_hdr, FALSE, a, i);
 		}
 
 		/* Free remaining structures */
@@ -5116,17 +5156,21 @@ __print_funct_t svg_print_fchost_stats(struct activity *a, int curr, int action,
  * @record_hdr	Pointer on record header of current stats sample.
  ***************************************************************************
  */
+#define SOFT_ARRAY_SZ	6
 __print_funct_t svg_print_softnet_stats(struct activity *a, int curr, int action, struct svg_parm *svg_p,
 					unsigned long long itv, struct record_header *record_hdr)
 {
 	struct stats_softnet *ssnc, *ssnp, ssnczero;
-	int group[] = {2, 3};
-	int g_type[] = {SVG_LINE_GRAPH, SVG_LINE_GRAPH};
+	int group[] = {2, 3, 1};
+	int g_type[] = {SVG_LINE_GRAPH, SVG_LINE_GRAPH, SVG_LINE_GRAPH};
 	char *title[] = {"Software-based network processing statistics (1)",
-			 "Software-based network processing statistics (2)"};
+			 "Software-based network processing statistics (2)",
+			 "Software-based network processing statistics (3)"};
 	char *g_title[] = {"total/s", "dropd/s",
-			   "squeezd/s", "rx_rps/s", "flw_lim/s"};
+			   "squeezd/s", "rx_rps/s", "flw_lim/s",
+			   "~blg_len"};
 	int g_fields[] = {0, 1, 2, 3, 4};
+	unsigned int local_types_nr[] = {0, 0, 5};
 	static double *spmin, *spmax;
 	static char **out;
 	static int *outsize;
@@ -5139,7 +5183,7 @@ __print_funct_t svg_print_softnet_stats(struct activity *a, int curr, int action
 		 * Allocate arrays that will contain the graphs data
 		 * and the min/max values.
 		 */
-		out = allocate_graph_lines(5 * a->item_list_sz, &outsize, &spmin, &spmax);
+		out = allocate_graph_lines(SOFT_ARRAY_SZ * a->item_list_sz, &outsize, &spmin, &spmax);
 	}
 
 	if (action & F_MAIN) {
@@ -5182,11 +5226,17 @@ __print_funct_t svg_print_softnet_stats(struct activity *a, int curr, int action
 					ssnc = &ssnczero;
 				}
 			}
-			pos = i * 5;
+			pos = i * SOFT_ARRAY_SZ;
 
 			/* Check for min/max values */
-			save_extrema(a->gtypes_nr, (void *) ssnc, (void *) ssnp,
+			save_extrema(local_types_nr, (void *) ssnc, (void *) ssnp,
 				     itv, spmin + pos, spmax + pos, g_fields);
+			if (ssnc->backlog_len < *(spmin + pos + 5)) {
+				*(spmin + pos + 5) = ssnc->backlog_len;
+			}
+			if (ssnc->backlog_len > *(spmax + pos + 5)) {
+				*(spmax + pos + 5) = ssnc->backlog_len;
+			}
 
 			/* total/s */
 			lnappend(record_hdr->ust_time - svg_p->ust_time_ref,
@@ -5208,6 +5258,10 @@ __print_funct_t svg_print_softnet_stats(struct activity *a, int curr, int action
 			lnappend(record_hdr->ust_time - svg_p->ust_time_ref,
 				 S_VALUE(ssnp->flow_limit, ssnc->flow_limit, itv),
 				 out + pos + 4, outsize + pos + 4, restart);
+			/* blg_len */
+			lniappend(record_hdr->ust_time - svg_p->ust_time_ref,
+				  (unsigned long long) ssnc->backlog_len,
+				  out + pos + 5, outsize + pos + 5, restart);
 		}
 	}
 
@@ -5219,11 +5273,11 @@ __print_funct_t svg_print_softnet_stats(struct activity *a, int curr, int action
 				/* No */
 				continue;
 
-			pos = i * 5;
+			pos = i * SOFT_ARRAY_SZ;
 
 			if (!i) {
 				/* This is CPU "all" */
-				strcpy(item_name, "all");
+				strcpy(item_name, K_LOWERALL);
 			}
 			else {
 				sprintf(item_name, "%d", i - 1);
@@ -5232,7 +5286,7 @@ __print_funct_t svg_print_softnet_stats(struct activity *a, int curr, int action
 			draw_activity_graphs(a->g_nr, g_type,
 					     title, g_title, item_name, group,
 					     spmin + pos, spmax + pos, out + pos, outsize + pos,
-					     svg_p, record_hdr, FALSE, a->id, i);
+					     svg_p, record_hdr, FALSE, a, i);
 		}
 
 		/* Free remaining structures */
@@ -5334,7 +5388,7 @@ __print_funct_t svg_print_psicpu_stats(struct activity *a, int curr, int action,
 		*(spmin + 2) /= 100; *(spmax + 2) /= 100;
 
 		draw_activity_graphs(a->g_nr, g_type, title, g_title, NULL, group,
-				     spmin, spmax, out, outsize, svg_p, record_hdr, FALSE, a->id, 0);
+				     spmin, spmax, out, outsize, svg_p, record_hdr, FALSE, a, 0);
 
 		/* Free remaining structures */
 		free_graphs(out, outsize, spmin, spmax);
@@ -5486,7 +5540,7 @@ __print_funct_t svg_print_psiio_stats(struct activity *a, int curr, int action, 
 		*(spmin + 6) /= 100; *(spmax + 6) /= 100;
 
 		draw_activity_graphs(a->g_nr, g_type, title, g_title, NULL, group,
-				     spmin, spmax, out, outsize, svg_p, record_hdr, FALSE, a->id, 0);
+				     spmin, spmax, out, outsize, svg_p, record_hdr, FALSE, a, 0);
 
 		/* Free remaining structures */
 		free_graphs(out, outsize, spmin, spmax);
@@ -5638,7 +5692,7 @@ __print_funct_t svg_print_psimem_stats(struct activity *a, int curr, int action,
 		*(spmin + 6) /= 100; *(spmax + 6) /= 100;
 
 		draw_activity_graphs(a->g_nr, g_type, title, g_title, NULL, group,
-				     spmin, spmax, out, outsize, svg_p, record_hdr, FALSE, a->id, 0);
+				     spmin, spmax, out, outsize, svg_p, record_hdr, FALSE, a, 0);
 
 		/* Free remaining structures */
 		free_graphs(out, outsize, spmin, spmax);

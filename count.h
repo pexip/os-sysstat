@@ -1,7 +1,7 @@
 /*
  * count.h: Include file used to count items for which
  * statistics will be collected.
- * (C) 1999-2020 by Sebastien Godard (sysstat <at> orange.fr)
+ * (C) 1999-2022 by Sebastien Godard (sysstat <at> orange.fr)
  */
 
 #ifndef _COUNT_H
@@ -21,8 +21,6 @@ __nr_t get_irqcpu_nr
 	(char *, int, int);
 __nr_t get_diskstats_dev_nr
 	(int, int);
-__nr_t get_irq_nr
-	(void);
 __nr_t get_serial_nr
 	(void);
 __nr_t get_iface_nr

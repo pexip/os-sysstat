@@ -1,6 +1,6 @@
 /*
  * mpstat: per-processor statistics
- * (C) 2000-2020 by Sebastien GODARD (sysstat <at> orange.fr)
+ * (C) 2000-2022 by Sebastien GODARD (sysstat <at> orange.fr)
  *
  ***************************************************************************
  * This program is free software; you can redistribute it and/or modify it *
@@ -31,7 +31,6 @@
 
 #include "version.h"
 #include "mpstat.h"
-#include "rd_stats.h"
 #include "count.h"
 
 #include <locale.h>	/* For setlocale() */
@@ -61,7 +60,7 @@ struct stats_cpu *st_node[3];
  * Structure used to save total number of interrupts received
  * among all CPU and for each CPU.
  */
-struct stats_irq *st_irq[3];
+struct stats_global_irq *st_irq[3];
 
 /*
  * Structures used to save, for each interrupt, the number
@@ -198,12 +197,12 @@ void salloc_mp_struct(int nr_cpus)
 		}
 		memset(st_node[i], 0, STATS_CPU_SIZE * nr_cpus);
 
-		if ((st_irq[i] = (struct stats_irq *) malloc(STATS_IRQ_SIZE * nr_cpus))
+		if ((st_irq[i] = (struct stats_global_irq *) malloc(STATS_GLOBAL_IRQ_SIZE * nr_cpus))
 		    == NULL) {
 			perror("malloc");
 			exit(4);
 		}
-		memset(st_irq[i], 0, STATS_IRQ_SIZE * nr_cpus);
+		memset(st_irq[i], 0, STATS_GLOBAL_IRQ_SIZE * nr_cpus);
 
 		if ((st_irqcpu[i] = (struct stats_irqcpu *) malloc(STATS_IRQCPU_SIZE * nr_cpus * irqcpu_nr))
 		    == NULL) {
@@ -269,6 +268,40 @@ void sfree_mp_struct(void)
 	free(node_bitmap);
 	free(cpu_per_node);
 	free(cpu2node);
+}
+
+/*
+ ***************************************************************************
+ * Set interrupt values for current sample to those of previous sample.
+ *
+ * IN:
+ * @st_ic	Array for per-CPU interrupts statistics.
+ * @c		Fist CPU to process.
+ * @last	Last CPU to process.
+ * @ic_nr	Number of interrupts (hard or soft) per CPU.
+ * @curr	Position in array where current statistics will be saved.
+ **************************************************************************
+ */
+void fwd_irq_values(struct stats_irqcpu *st_ic[], unsigned int c,
+		    unsigned int last, int ic_nr, int curr)
+{
+	struct stats_global_irq *st_irq_i, *st_irq_j;
+	struct stats_irqcpu *p, *q;
+	int j;
+
+	while (c < last) {
+
+		st_irq_i = st_irq[curr] + c + 1;
+		st_irq_j = st_irq[!curr] + c + 1;
+		st_irq_i->irq_nr = st_irq_j->irq_nr;
+
+		for (j = 0; j < ic_nr; j++) {
+			p = st_ic[curr] + c * ic_nr + j;
+			q = st_ic[!curr] + c * ic_nr + j;
+			p->interrupt = q->interrupt;
+		}
+		c++;
+	}
 }
 
 /*
@@ -541,7 +574,7 @@ unsigned long long get_global_cpu_mpstats(int prev, int curr,
 				scp->cpu_steal + scp->cpu_softirq;
 
 		/*
-		 * If the CPU is offline then it is omited from /proc/stat:
+		 * If the CPU is offline then it is omitted from /proc/stat:
 		 * All the fields couldn't have been read and the sum of them is zero.
 		 */
 		if (tot_jiffies_c == 0) {
@@ -760,21 +793,21 @@ void write_json_cpu_stats(int tab, unsigned long long deltot_jiffies, int prev, 
 
 		if (i == 0) {
 			/* This is CPU "all" */
-			strcpy(cpu_name, "all");
+			strcpy(cpu_name, K_LOWERALL);
 
 			if (DISPLAY_TOPOLOGY(flags)) {
-				snprintf(topology, 1024,
+				snprintf(topology, sizeof(topology),
 					 ", \"core\": \"\", \"socket\": \"\", \"node\": \"\"");
 			}
 
 		}
 		else {
-			snprintf(cpu_name, 16, "%d", i - 1);
-			cpu_name[15] = '\0';
+			snprintf(cpu_name, sizeof(cpu_name), "%d", i - 1);
+			cpu_name[sizeof(cpu_name) - 1] = '\0';
 
 			if (DISPLAY_TOPOLOGY(flags)) {
 				cpu_topo_i = st_cpu_topology + i - 1;
-				snprintf(topology, 1024,
+				snprintf(topology, sizeof(topology),
 					 ", \"core\": \"%d\", \"socket\": \"%d\", \"node\": \"%d\"",
 					 cpu_topo_i->logical_core_id, cpu_topo_i->phys_package_id, cpu2node[i - 1]);
 			}
@@ -1034,11 +1067,11 @@ void write_json_node_stats(int tab, unsigned long long deltot_jiffies,
 
 		if (node == 0) {
 			/* This is node "all", i.e. CPU "all" */
-			strcpy(node_name, "all");
+			strcpy(node_name, K_LOWERALL);
 		}
 		else {
-			snprintf(node_name, 16, "%d", node - 1);
-			node_name[15] = '\0';
+			snprintf(node_name, sizeof(node_name), "%d", node - 1);
+			node_name[sizeof(node_name) -1] = '\0';
 
 			/* Recalculate interval for current node */
 			deltot_jiffies = 0;
@@ -1161,13 +1194,15 @@ void write_node_stats(int dis, unsigned long long deltot_jiffies, int prev, int 
  * @curr_string	String displayed at the beginning of current sample stats.
  * 		This is the timestamp of the current sample, or "Average"
  * 		when displaying average stats.
+ * @offline_cpu_bitmap
+ *		CPU bitmap for offline CPU.
  ***************************************************************************
  */
 void write_plain_isumcpu_stats(int dis, unsigned long long itv, int prev, int curr,
-			       char *prev_string, char *curr_string)
+			       char *prev_string, char *curr_string, unsigned char offline_cpu_bitmap[])
 {
 	struct stats_cpu *scc, *scp;
-	struct stats_irq *sic, *sip;
+	struct stats_global_irq *sic, *sip;
 	unsigned long long pc_itv;
 	int cpu;
 
@@ -1193,16 +1228,9 @@ void write_plain_isumcpu_stats(int dis, unsigned long long itv, int prev, int cu
 		scp = st_cpu[prev] + cpu;
 
 		/* Check if we want stats about this CPU */
-		if (!(*(cpu_bitmap + (cpu >> 3)) & (1 << (cpu & 0x07))))
+		if (!(*(cpu_bitmap + (cpu >> 3)) & (1 << (cpu & 0x07))) ||
+		    offline_cpu_bitmap[cpu >> 3] & (1 << (cpu & 0x07)))
 			continue;
-
-		if ((scc->cpu_user    + scc->cpu_nice + scc->cpu_sys   +
-		     scc->cpu_iowait  + scc->cpu_idle + scc->cpu_steal +
-		     scc->cpu_hardirq + scc->cpu_softirq) == 0) {
-
-			/* This is an offline CPU */
-			continue;
-		}
 
 		printf("%-11s", curr_string);
 		cprintf_in(IS_INT, " %4d", "", cpu - 1);
@@ -1235,12 +1263,15 @@ void write_plain_isumcpu_stats(int dis, unsigned long long itv, int prev, int cu
  *		Stats used as reference may be the previous ones read, or
  *		the very first ones when calculating the average.
  * @curr	Position in array where current statistics will be saved.
+ * @offline_cpu_bitmap
+ *		CPU bitmap for offline CPU.
  ***************************************************************************
  */
-void write_json_isumcpu_stats(int tab, unsigned long long itv, int prev, int curr)
+void write_json_isumcpu_stats(int tab, unsigned long long itv, int prev, int curr,
+			      unsigned char offline_cpu_bitmap[])
 {
 	struct stats_cpu *scc, *scp;
-	struct stats_irq *sic, *sip;
+	struct stats_global_irq *sic, *sip;
 	unsigned long long pc_itv;
 	int cpu, next = FALSE;
 
@@ -1263,21 +1294,14 @@ void write_json_isumcpu_stats(int tab, unsigned long long itv, int prev, int cur
 		scp = st_cpu[prev] + cpu;
 
 		/* Check if we want stats about this CPU */
-		if (!(*(cpu_bitmap + (cpu >> 3)) & (1 << (cpu & 0x07))))
+		if (!(*(cpu_bitmap + (cpu >> 3)) & (1 << (cpu & 0x07))) ||
+		    offline_cpu_bitmap[cpu >> 3] & (1 << (cpu & 0x07)))
 			continue;
 
 		if (next) {
 			printf(",\n");
 		}
 		next = TRUE;
-
-		if ((scc->cpu_user    + scc->cpu_nice + scc->cpu_sys   +
-		     scc->cpu_iowait  + scc->cpu_idle + scc->cpu_steal +
-		     scc->cpu_hardirq + scc->cpu_softirq) == 0) {
-
-			/* This is an offline CPU */
-			continue;
-		}
 
 		/* Recalculate itv for current proc */
 		pc_itv = get_per_cpu_interval(scc, scp);
@@ -1318,20 +1342,24 @@ void write_json_isumcpu_stats(int tab, unsigned long long itv, int prev, int cur
  * @tab		Number of tabs to print (JSON format only).
  * @next	TRUE is a previous activity has been displayed (JSON format
  * 		only).
+ * @offline_cpu_bitmap
+ *		CPU bitmap for offline CPU.
  ***************************************************************************
  */
 void write_isumcpu_stats(int dis, unsigned long long itv, int prev, int curr,
-		     char *prev_string, char *curr_string, int tab, int *next)
+			 char *prev_string, char *curr_string, int tab, int *next,
+			 unsigned char offline_cpu_bitmap[])
 {
 	if (DISPLAY_JSON_OUTPUT(flags)) {
 		if (*next) {
 			printf(",\n");
 		}
 		*next = TRUE;
-		write_json_isumcpu_stats(tab, itv, prev, curr);
+		write_json_isumcpu_stats(tab, itv, prev, curr, offline_cpu_bitmap);
 	}
 	else {
-		write_plain_isumcpu_stats(dis, itv, prev, curr, prev_string, curr_string);
+		write_plain_isumcpu_stats(dis, itv, prev, curr, prev_string, curr_string,
+					  offline_cpu_bitmap);
 	}
 }
 
@@ -1354,13 +1382,14 @@ void write_isumcpu_stats(int dis, unsigned long long itv, int prev, int curr,
  * @curr_string	String displayed at the beginning of current sample stats.
  * 		This is the timestamp of the current sample, or "Average"
  * 		when displaying average stats.
+ * @offline_cpu_bitmap
+ *		CPU bitmap for offline CPU.
  ***************************************************************************
  */
 void write_plain_irqcpu_stats(struct stats_irqcpu *st_ic[], int ic_nr, int dis,
 			      unsigned long long itv, int prev, int curr,
-			      char *prev_string, char *curr_string)
+			      char *prev_string, char *curr_string, unsigned char offline_cpu_bitmap[])
 {
-	struct stats_cpu *scc;
 	int j = ic_nr, offset, cpu, colwidth[NR_IRQS];
 	struct stats_irqcpu *p, *q, *p0, *q0;
 
@@ -1418,20 +1447,13 @@ void write_plain_irqcpu_stats(struct stats_irqcpu *st_ic[], int ic_nr, int dis,
 
 	for (cpu = 1; cpu <= cpu_nr; cpu++) {
 
-		scc = st_cpu[curr] + cpu;
-
 		/*
 		 * Check if we want stats about this CPU.
 		 * CPU must have been explicitly selected using option -P,
-		 * else we display every CPU.
+		 * else we display every CPU (unless it's offline).
 		 */
-		if (!(*(cpu_bitmap + (cpu >> 3)) & (1 << (cpu & 0x07))) && USE_OPTION_P(flags))
-			continue;
-
-		if ((scc->cpu_user    + scc->cpu_nice + scc->cpu_sys   +
-		     scc->cpu_iowait  + scc->cpu_idle + scc->cpu_steal +
-		     scc->cpu_hardirq + scc->cpu_softirq) == 0)
-			/* Offline CPU found */
+		if ((!(*(cpu_bitmap + (cpu >> 3)) & (1 << (cpu & 0x07))) && USE_OPTION_P(flags)) ||
+		    offline_cpu_bitmap[cpu >> 3] & (1 << (cpu & 0x07)))
 			continue;
 
 		printf("%-11s", curr_string);
@@ -1499,12 +1521,14 @@ void write_plain_irqcpu_stats(struct stats_irqcpu *st_ic[], int ic_nr, int dis,
  *		the very first ones when calculating the average.
  * @curr	Position in array where current statistics will be saved.
  * @type	Activity (M_D_IRQ_CPU or M_D_SOFTIRQS).
+ * @offline_cpu_bitmap
+ *		CPU bitmap for offline CPU.
  ***************************************************************************
  */
 void write_json_irqcpu_stats(int tab, struct stats_irqcpu *st_ic[], int ic_nr,
-			     unsigned long long itv, int prev, int curr, int type)
+			     unsigned long long itv, int prev, int curr, int type,
+			     unsigned char offline_cpu_bitmap[])
 {
-	struct stats_cpu *scc;
 	int j = ic_nr, offset, cpu;
 	struct stats_irqcpu *p, *q, *p0, *q0;
 	int nextcpu = FALSE, nextirq;
@@ -1518,20 +1542,13 @@ void write_json_irqcpu_stats(int tab, struct stats_irqcpu *st_ic[], int ic_nr,
 
 	for (cpu = 1; cpu <= cpu_nr; cpu++) {
 
-		scc = st_cpu[curr] + cpu;
-
 		/*
 		 * Check if we want stats about this CPU.
 		 * CPU must have been explicitly selected using option -P,
-		 * else we display every CPU.
+		 * else we display every CPU (unless it's offline).
 		 */
-		if (!(*(cpu_bitmap + (cpu >> 3)) & (1 << (cpu & 0x07))) && USE_OPTION_P(flags))
-			continue;
-
-		if ((scc->cpu_user    + scc->cpu_nice + scc->cpu_sys   +
-		     scc->cpu_iowait  + scc->cpu_idle + scc->cpu_steal +
-		     scc->cpu_hardirq + scc->cpu_softirq) == 0)
-			/* Offline CPU found */
+		if ((!(*(cpu_bitmap + (cpu >> 3)) & (1 << (cpu & 0x07))) && USE_OPTION_P(flags)) ||
+		    offline_cpu_bitmap[cpu >> 3] & (1 << (cpu & 0x07)))
 			continue;
 
 		if (nextcpu) {
@@ -1623,23 +1640,26 @@ void write_json_irqcpu_stats(int tab, struct stats_irqcpu *st_ic[], int ic_nr,
  * @next	TRUE is a previous activity has been displayed (JSON format
  * 		only).
  * @type	Activity (M_D_IRQ_CPU or M_D_SOFTIRQS).
+ * @offline_cpu_bitmap
+ *		CPU bitmap for offline CPU.
  ***************************************************************************
  */
 void write_irqcpu_stats(struct stats_irqcpu *st_ic[], int ic_nr, int dis,
 			unsigned long long itv, int prev, int curr,
 			char *prev_string, char *curr_string, int tab,
-			int *next, int type)
+			int *next, int type, unsigned char offline_cpu_bitmap[])
 {
 	if (DISPLAY_JSON_OUTPUT(flags)) {
 		if (*next) {
 			printf(",\n");
 		}
 		*next = TRUE;
-		write_json_irqcpu_stats(tab, st_ic, ic_nr, itv, prev, curr, type);
+		write_json_irqcpu_stats(tab, st_ic, ic_nr, itv, prev, curr, type,
+					offline_cpu_bitmap);
 	}
 	else {
 		write_plain_irqcpu_stats(st_ic, ic_nr, dis, itv, prev, curr,
-					 prev_string, curr_string);
+					 prev_string, curr_string, offline_cpu_bitmap);
 	}
 }
 
@@ -1701,17 +1721,19 @@ void write_stats_core(int prev, int curr, int dis,
 	/* Print total number of interrupts per processor */
 	if (DISPLAY_IRQ_SUM(actflags)) {
 		write_isumcpu_stats(dis, itv, prev, curr, prev_string, curr_string,
-				    tab, &next);
+				    tab, &next, offline_cpu_bitmap);
 	}
 
 	/* Display each interrupt value for each CPU */
 	if (DISPLAY_IRQ_CPU(actflags)) {
 		write_irqcpu_stats(st_irqcpu, irqcpu_nr, dis, itv, prev, curr,
-				   prev_string, curr_string, tab, &next, M_D_IRQ_CPU);
+				   prev_string, curr_string, tab, &next, M_D_IRQ_CPU,
+				   offline_cpu_bitmap);
 	}
 	if (DISPLAY_SOFTIRQS(actflags)) {
 		write_irqcpu_stats(st_softirqcpu, softirqcpu_nr, dis, itv, prev, curr,
-				   prev_string, curr_string, tab, &next, M_D_SOFTIRQS);
+				   prev_string, curr_string, tab, &next, M_D_SOFTIRQS,
+				   offline_cpu_bitmap);
 	}
 
 	if (DISPLAY_JSON_OUTPUT(flags)) {
@@ -1772,6 +1794,39 @@ void write_stats(int curr, int dis)
 
 /*
  ***************************************************************************
+ * Read total number of interrupts from /proc/stat.
+ *
+ * IN:
+ * @st_irq	Structure where total number of interrupts will be saved.
+ *
+ * OUT:
+ * @st_irq	Structure with total number of interrupts.
+ ***************************************************************************
+ */
+void read_stat_total_irq(struct stats_global_irq *st_irq)
+{
+	FILE *fp;
+	char line[1024];
+	unsigned long long irq_nr;
+
+	if ((fp = fopen(STAT, "r")) == NULL)
+		return;
+
+	while (fgets(line, sizeof(line), fp) != NULL) {
+
+		if (!strncmp(line, "intr ", 5)) {
+			/* Read total number of interrupts received since system boot */
+			sscanf(line + 5, "%llu", &irq_nr);
+			st_irq->irq_nr = (unsigned int) irq_nr;
+
+			break;
+		}
+	}
+
+	fclose(fp);
+}
+/*
+ ***************************************************************************
  * Read stats from /proc/interrupts or /proc/softirqs.
  *
  * IN:
@@ -1786,19 +1841,13 @@ void write_stats(int curr, int dis)
 void read_interrupts_stat(char *file, struct stats_irqcpu *st_ic[], int ic_nr, int curr)
 {
 	FILE *fp;
-	struct stats_irq *st_irq_i;
+	struct stats_global_irq *st_irq_i;
 	struct stats_irqcpu *p;
 	char *line = NULL, *li;
 	unsigned long irq = 0;
-	unsigned int cpu;
+	unsigned int cpu, c = 0;
 	int cpu_index[cpu_nr], index = 0, len;
 	char *cp, *next;
-
-	/* Reset total number of interrupts received by each CPU */
-	for (cpu = 0; cpu < cpu_nr; cpu++) {
-		st_irq_i = st_irq[curr] + cpu + 1;
-		st_irq_i->irq_nr = 0;
-	}
 
 	if ((fp = fopen(file, "r")) != NULL) {
 
@@ -1808,15 +1857,36 @@ void read_interrupts_stat(char *file, struct stats_irqcpu *st_ic[], int ic_nr, i
 		 * Parse header line to see which CPUs are online
 		 */
 		while (fgets(line, INTERRUPTS_LINE + 11 * cpu_nr, fp) != NULL) {
+
 			next = line;
 			while (((cp = strstr(next, "CPU")) != NULL) && (index < cpu_nr)) {
+
 				cpu = strtol(cp + 3, &next, 10);
+				if (cpu >= cpu_nr)
+					break;
 				cpu_index[index++] = cpu;
+
+				/*
+				 * Reset total number of interrupts received by a CPU
+				 * only for online CPU. Only needed for st_irq structures.
+				 */
+				st_irq_i = st_irq[curr] + cpu + 1;
+				st_irq_i->irq_nr = 0;
+
+				/*
+				 * For offline CPU, pick up previous values so that when the
+				 * CPU goes back online, values won't jump from zero.
+				 */
+				fwd_irq_values(st_ic, c, cpu, ic_nr, curr);
+				c = cpu + 1;
 			}
 			if (index)
 				/* Header line found */
 				break;
 		}
+
+		/* Process possible offline CPU at the end of the list */
+		fwd_irq_values(st_ic, c, cpu_nr, ic_nr, curr);
 
 		/* Parse each line of interrupts statistics data */
 		while ((fgets(line, INTERRUPTS_LINE + 11 * cpu_nr, fp) != NULL) &&
@@ -1850,8 +1920,9 @@ void read_interrupts_stat(char *file, struct stats_irqcpu *st_ic[], int ic_nr, i
 				/*
 				 * No need to set (st_irqcpu + cpu * irqcpu_nr)->irq_name:
 				 * This is the same as st_irqcpu->irq_name.
-				 * Now save current interrupt value for current CPU (in stats_irqcpu structure)
-				 * and total number of interrupts received by current CPU (in stats_irq structure).
+				 * Now save current interrupt value for current CPU (in
+				 * stats_irqcpu structure) and total number of interrupts
+				 * received by current CPU (in stats_global_irq structure).
 				 */
 				p->interrupt = strtoul(cp, &next, 10);
 				st_irq_i->irq_nr += p->interrupt;
@@ -1927,7 +1998,7 @@ void rw_mpstat_loop(int dis_hdr, int rows)
 	 * (this is the first value on the line "intr:" in the /proc/stat file).
 	 */
 	if (DISPLAY_IRQ_SUM(actflags)) {
-		read_stat_irq(st_irq[0], 1);
+		read_stat_total_irq(st_irq[0]);
 	}
 
 	/*
@@ -1947,7 +2018,7 @@ void rw_mpstat_loop(int dis_hdr, int rows)
 		mp_tstamp[1] = mp_tstamp[0];
 		memset(st_cpu[1], 0, STATS_CPU_SIZE * (cpu_nr + 1));
 		memset(st_node[1], 0, STATS_CPU_SIZE * (cpu_nr + 1));
-		memset(st_irq[1], 0, STATS_IRQ_SIZE * (cpu_nr + 1));
+		memset(st_irq[1], 0, STATS_GLOBAL_IRQ_SIZE * (cpu_nr + 1));
 		memset(st_irqcpu[1], 0, STATS_IRQCPU_SIZE * (cpu_nr + 1) * irqcpu_nr);
 		if (DISPLAY_SOFTIRQS(actflags)) {
 			memset(st_softirqcpu[1], 0, STATS_IRQCPU_SIZE * (cpu_nr + 1) * softirqcpu_nr);
@@ -1970,7 +2041,7 @@ void rw_mpstat_loop(int dis_hdr, int rows)
 	uptime_cs[2] = uptime_cs[0];
 	memcpy(st_cpu[2], st_cpu[0], STATS_CPU_SIZE * (cpu_nr + 1));
 	memcpy(st_node[2], st_node[0], STATS_CPU_SIZE * (cpu_nr + 1));
-	memcpy(st_irq[2], st_irq[0], STATS_IRQ_SIZE * (cpu_nr + 1));
+	memcpy(st_irq[2], st_irq[0], STATS_GLOBAL_IRQ_SIZE * (cpu_nr + 1));
 	memcpy(st_irqcpu[2], st_irqcpu[0], STATS_IRQCPU_SIZE * (cpu_nr + 1) * irqcpu_nr);
 	if (DISPLAY_SOFTIRQS(actflags)) {
 		memcpy(st_softirqcpu[2], st_softirqcpu[0],
@@ -2011,7 +2082,7 @@ void rw_mpstat_loop(int dis_hdr, int rows)
 
 		/* Read total number of interrupts received among all CPU */
 		if (DISPLAY_IRQ_SUM(actflags)) {
-			read_stat_irq(st_irq[curr], 1);
+			read_stat_total_irq(st_irq[curr]);
 		}
 
 		/*

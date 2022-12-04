@@ -11,12 +11,12 @@ issue:
  1 file changed, 1 insertion(+), 1 deletion(-)
 
 diff --git a/contrib/irqstat/irqstat b/contrib/irqstat/irqstat
-index 2efee7e..f58b1e1 100755
+index 8d08520..656e024 100755
 --- a/contrib/irqstat/irqstat
 +++ b/contrib/irqstat/irqstat
 @@ -1,4 +1,4 @@
 -#!/usr/bin/python
 +#!/usr/bin/python2
  
- """
- A better way to watch /proc/interrupts, especially on large NUMA machines with
+ # The MIT License (MIT)
+ #

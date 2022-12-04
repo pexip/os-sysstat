@@ -22,7 +22,7 @@ index 4f69727..e169815 100644
  Update isag script if sar is located elsewhere.
  
 diff --git a/contrib/isag/isag b/contrib/isag/isag
-index 026d2bc..d61d6a5 100755
+index 79ac4a4..e8a7405 100755
 --- a/contrib/isag/isag
 +++ b/contrib/isag/isag
 @@ -272,11 +272,11 @@ proc out_msg {title text} {

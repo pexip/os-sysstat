@@ -1,12 +1,13 @@
 /*
  * mpstat: per-processor statistics
- * (C) 2000-2020 by Sebastien Godard (sysstat <at> orange.fr)
+ * (C) 2000-2022 by Sebastien Godard (sysstat <at> orange.fr)
  */
 
 #ifndef _MPSTAT_H
 #define _MPSTAT_H
 
 #include "common.h"
+#include "rd_stats.h"
 
 /*
  ***************************************************************************
@@ -86,15 +87,21 @@
  * ...
  */
 struct stats_irqcpu {
-	unsigned int interrupt        __attribute__ ((aligned (4)));
+	unsigned int interrupt;
 	char         irq_name[MAX_IRQ_LEN];
 };
+
+#define STATS_IRQCPU_SIZE      (sizeof(struct stats_irqcpu))
+
+struct stats_global_irq {
+	unsigned long long irq_nr;
+};
+
+#define STATS_GLOBAL_IRQ_SIZE	(sizeof(struct stats_global_irq))
 
 struct cpu_topology {
 	int phys_package_id;
 	int logical_core_id;
 };
-
-#define STATS_IRQCPU_SIZE      (sizeof(struct stats_irqcpu))
 
 #endif

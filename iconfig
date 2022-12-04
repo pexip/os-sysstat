@@ -1,6 +1,6 @@
 #!/bin/sh
 #@(#) Configuration script for sysstat
-# (C) 2000-2020 Sebastien GODARD (sysstat <at> orange.fr)
+# (C) 2000-2022 Sebastien GODARD (sysstat <at> orange.fr)
 
 ASK="sh build/Ask.sh"
 
@@ -10,7 +10,7 @@ echo
 echo This script enables you to set the parameters value used by ./configure.
 echo Please enter the value for the parameters listed below.
 echo Press Return to tell ./configure to use the default value or to try to guess the proper one.
-echo "Defaut value for yes/no questions is no (parameter is NOT set)."
+echo "Default value for yes/no questions is no (parameter is NOT set)."
 echo You can enter a ? to display a help message at any time...
 echo
 
@@ -62,6 +62,15 @@ if [ "${NLS}" = "y" ]; then
 else
 	NLS=""
 	echo "Parameter --disable-nls is NOT set"
+fi
+
+# Link Time Optimization support
+LTO=`${ASK} 'Compile with Link Time Optimizations (LTO)? (y/n)' "--enable-lto" "lto"`
+if [ "${LTO}" = "y" ]; then
+	LTO="--enable-lto "
+else
+	LTO=""
+	echo "Parameter --enable-lto is NOT set"
 fi
 
 # Sensors support
@@ -228,7 +237,7 @@ fi
 
 echo
 echo -n "./configure ${PREFIX}${SA_LIB_DIR}${SA_DIR}${SYSCONFIG_DIR}${SYSCONFIG_FILE} \
-${CLEAN_SA_DIR}${NLS}${HISTORY}${DELAY_RANGE}${COMPRESSAFTER}${MAN}${IGNORE_FILE_ATTR} \
+${CLEAN_SA_DIR}${NLS}${LTO}${HISTORY}${DELAY_RANGE}${COMPRESSAFTER}${MAN}${IGNORE_FILE_ATTR} \
 ${CRON}${USE_CROND}${RCDIR}"
 if [ "${SADC_OPT}" != "" ];
 then
@@ -238,7 +247,7 @@ echo "${COMPRESSMANPG}${INSTALL_DOC}${DEBUGINFO}${SENSORS}${PCP}${STRIP}${COPY_O
 echo
 
 ./configure ${PREFIX}${SA_LIB_DIR}${SA_DIR}${SYSCONFIG_DIR}${SYSCONFIG_FILE} \
-${CLEAN_SA_DIR}${NLS} \
+${CLEAN_SA_DIR}${NLS}${LTO} \
 ${HISTORY}${DELAY_RANGE}${COMPRESSAFTER}${MAN}${IGNORE_FILE_ATTR}${CRON}${USE_CROND}${RCDIR} \
 sadc_options="${SADC_OPT}" ${COMPRESSMANPG}${INSTALL_DOC}${DEBUGINFO}${SENSORS} \
 ${PCP}${STRIP}${COPY_ONLY}

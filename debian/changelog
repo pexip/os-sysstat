@@ -1,3 +1,26 @@
+sysstat (12.6.1-1) unstable; urgency=medium
+
+  * New upstream stable version: fixes size_t overflow in sa_common.c
+    on 32-bit systems (CVE-2022-39377, closes: #1023832).
+  * Update lintian-overrides to fix mismatched overrides reported by
+    latest version of lintian.
+  * Update URL to upstream homepage.
+  * Standards-Version: 4.6.1 (no changes).
+
+ -- Robert Luberda <robert@debian.org>  Sun, 04 Dec 2022 22:23:25 +0100
+
+sysstat (12.5.6-1) unstable; urgency=low
+
+  * New upstream development version.
+  * Add 15-sa2-bash.patch to fix lintian's complain about usage of $RAMDOM
+    variable in sa2.
+  * debian/rules: pass --enable-lto to configure.
+  * Update year in debian/copyright, and remove incorrect fields from
+    upstream/metadata (lintian).
+  * Standards-Version: 4.6.0 (no changes).
+
+ -- Robert Luberda <robert@debian.org>  Mon, 21 Mar 2022 22:40:51 +0100
+
 sysstat (12.5.2-2) unstable; urgency=medium
 
   * Hopefully fix failures of autopkgtests introduced in previous upload:
@@ -14,7 +37,7 @@ sysstat (12.5.2-2) unstable; urgency=medium
 
 sysstat (12.5.2-1) unstable; urgency=low
 
-  * New upstream stable version.
+  * New upstream development version.
   * Add autopkgtest checks (LP: #1679406) consisting of:
     + basic check of sinlge-run of commands provided by the package;
     + run of upstream-provided tests, that require recompilation of binaries

@@ -7,6 +7,7 @@
 [1.1.](#1_1) When I compile sysstat, it fails with the following message: `make: msgfmt: Command not found`  
 [1.2.](#1_2) When I try to compile sysstat, it fails and says it cannot find some include files.  
 [1.3.](#1_3) I don't understand why sysstat displays the time sometimes as `HH:MM:SS` and sometimes as `HH:MM:SS AM/PM`...  
+[1.4.](#1_4) What are the units actually used by sysstat commands?  
 
 **[2. Questions related to sar, sadc and sadf](#sar)**
 
@@ -127,6 +128,19 @@ Moyenne:          all      0,24      0,00     89,64      0,00     10,12
 ```
 As you can notice, the time format but also the date, the decimal point, and
 even some words (like "Average") have changed according to the specified locale.
+
+---
+
+1.4.<a name="1_4"></a> What are the units actually used by sysstat commands?
+
+
+A: Although sysstat commands use the following abbreviations: kB, MB, etc.
+as part of the metrics names (e.g. kB_read/s, wkB/s, or even sometimes with a
+lower 'b': kbmemfree, kbavail...), and the manual pages speak of kilobytes,
+megabytes, etc., we always actually refer to kibibytes (kiB), mebibytes (MiB),...  
+A kibibyte is equal to 1024 bytes, and a mebibyte is equal to 1024 kibibytes.  
+Metrics names have been defined many years ago. We don't modify them to avoid
+breaking third-party programs parsing sysstat commands' output.
 
 ---
 ### 2. Questions related to sar, sadc and sadf<a name="sar"></a>
@@ -305,8 +319,8 @@ You can also find: kSar (a Java application capable of visualizing a sar file
 with static graphs), sarjitsu (a more sophisticated application producing
 dynamic visualizations based on Grafana), sarvant, sar2gp, loadgraph,
 SysStat Charts, sarplot...
-[rrd.cgi](http://haroon.sis.utoronto.ca/rrd/scripts/) is a perl front-end for
-rrdtool and can be used to make some graphs (see a demo [here](http://haroon.sis.utoronto.ca/perl/rrd.cgi/sar_stats/)).  
+[rrd.cgi](http://haroon.easi.utoronto.ca/rrd/scripts/) is a perl front-end for
+rrdtool and can be used to make some graphs (see a demo [here](http://haroon.easi.utoronto.ca/perl/rrd.cgi/sar_stats/)).
 [sysstat_mail_report](https://github.com/desbma/sysstat_mail_report) is a script
 that automatically generates and sends an email report every day/week/month
 with graphs generated from sysstat data.  
@@ -609,6 +623,11 @@ being corrupted. This could possibly happen when several instances of
 sadc are trying to update the same data file, especially around midnight
 when making a file rotation. See question 2.12 to know how to make such
 a file rotation properly.
+
+Last this issue can also be triggered when the system is rebooted forcibly
+without data in cache being written to disk. You can use switch -f with sadc
+to make sure data are written to disk immediately. Of course sync'ing each
+data sample to disk implies a (probably slight) performance penalty.
 
 ---
 ### 3. Questions related to iostat<a name="iostat"></a>

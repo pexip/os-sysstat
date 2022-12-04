@@ -1,6 +1,6 @@
 /*
  * sar, sadc, sadf, mpstat and iostat common routines.
- * (C) 1999-2020 by Sebastien GODARD (sysstat <at> orange.fr)
+ * (C) 1999-2022 by Sebastien GODARD (sysstat <at> orange.fr)
  *
  ***************************************************************************
  * This program is free software; you can redistribute it and/or modify it *
@@ -67,7 +67,10 @@ char sc_sa_restart[MAX_SGR_LEN] = C_LIGHT_RED;
 char sc_sa_comment[MAX_SGR_LEN] = C_LIGHT_YELLOW;
 char sc_normal[MAX_SGR_LEN] = C_NORMAL;
 
-/* Type of persistent device names used in sar and iostat */
+/*
+ * Type of persistent device names in lowercase letters
+ * (e.g. "uuid", "label", "path"...) Used in sar and iostat.
+ */
 char persistent_name_type[MAX_FILE_LEN];
 
 /*
@@ -431,39 +434,31 @@ int check_dir(char *dirname)
 	return 0;
 }
 
-
-#ifndef SOURCE_SADC
 /*
- ***************************************************************************
- * Count number of comma-separated values in arguments list. For example,
- * the number will be 3 for the list "foobar -p 1 -p 2,3,4 2 5".
+ * **************************************************************************
+ * Check if the multiplication of the 3 values may be greater than UINT_MAX.
  *
  * IN:
- * @arg_c	Number of arguments in the list.
- * @arg_v	Arguments list.
- *
- * RETURNS:
- * Number of comma-separated values in the list.
+ * @val1	First value.
+ * @val2	Second value.
+ * @val3	Third value.
  ***************************************************************************
  */
-int count_csvalues(int arg_c, char **arg_v)
+void check_overflow(unsigned int val1, unsigned int val2,
+		    unsigned int val3)
 {
-	int opt = 1;
-	int nr = 0;
-	char *t;
-
-	while (opt < arg_c) {
-		if (strchr(arg_v[opt], ',')) {
-			for (t = arg_v[opt]; t; t = strchr(t + 1, ',')) {
-				nr++;
-			}
+	if ((unsigned long long) val1 * (unsigned long long) val2 *
+	    (unsigned long long) val3 > UINT_MAX) {
+#ifdef DEBUG
+		fprintf(stderr, "%s: Overflow detected (%llu). Aborting...\n",
+			__FUNCTION__, (unsigned long long) val1 * (unsigned long long) val2 *
+			(unsigned long long) val3);
+#endif
+	exit(4);
 		}
-		opt++;
-	}
-
-	return nr;
 }
 
+#ifndef SOURCE_SADC
 /*
  ***************************************************************************
  * Read /proc/devices file and get device-mapper major number.
@@ -976,6 +971,7 @@ char *get_persistent_name_from_pretty(char *pretty)
 		return (NULL);
 
 	while (persist_names[++i]) {
+
 		/* Get absolute path for current persistent name */
 		link = get_persistent_name_path(persist_names[i]);
 		if (!link)
@@ -1068,7 +1064,7 @@ char *get_devname_from_sysfs(unsigned int major, unsigned int minor)
 	char *devname;
 	ssize_t r;
 
-	snprintf(link, 256, "%s/%u:%u", SYSFS_DEV_BLOCK, major, minor);
+	snprintf(link, sizeof(link), "%s/%u:%u", SYSFS_DEV_BLOCK, major, minor);
 
 	/* Get full path to device knowing its major and minor numbers */
 	r = readlink(link, target, PATH_MAX);
@@ -1112,7 +1108,7 @@ char *get_devname(unsigned int major, unsigned int minor)
 	if ((name != NULL) && strcmp(name, K_NODEV))
 		return (name);
 
-	snprintf(buf, 32, "dev%u-%u", major, minor);
+	snprintf(buf, sizeof(buf), "dev%u-%u", major, minor);
 	return (buf);
 }
 
@@ -1538,6 +1534,7 @@ void cprintf_s(int type, char *format, char *string)
 	else if (type == IS_ZERO) {
 		printf("%s", sc_zero_int_stat);
 	}
+	/* IS_RESTART and IS_DEBUG are the same value */
 	else if (type == IS_RESTART) {
 		printf("%s", sc_sa_restart);
 	}
@@ -1583,6 +1580,59 @@ int parse_valstr(char *s, int max_val, int *val)
 
 /*
  ***************************************************************************
+ * Parse string containing a single value or a range of values
+ * (e.g. "0,2-5,10-").
+ *
+ * IN:
+ * @t		String to parse.
+ * @max_val	Upper limit that value should not reach.
+ *
+ * OUT:
+ * @val_low	Low value in range
+ * @val		High value in range. @val_low and @val are the same if it's
+ *		a single value.
+ *
+ * RETURNS:
+ * 0 on success, 1 otherwise.
+ ***************************************************************************
+ */
+int parse_range_values(char *t, int max_val, int *val_low, int *val)
+{
+	char *s, *valstr, range[16];
+
+	/* Parse value or range of values */
+	strncpy(range, t, 16);
+	range[15] = '\0';
+	valstr = t;
+
+	if ((s = strchr(range, '-')) != NULL) {
+		/* Possible range of values */
+		*s = '\0';
+		if (parse_valstr(range, max_val, val_low) || (*val_low < 0))
+			return 1;
+		valstr = s + 1;
+	}
+	if (parse_valstr(valstr, max_val, val))
+		return 1;
+	if (s && *val < 0) {
+		/* Range of values with no upper limit (e.g. "3-") */
+		*val = max_val - 1;
+	}
+	if ((!s && (*val < 0)) || (s && (*val < *val_low)))
+		/*
+		 * Individual value: string cannot be empty.
+		 * Range of values: n-m: m can be empty (e.g. "3-") but
+		 * cannot be lower than n.
+		 */
+		return 1;
+	if (!s) {
+		*val_low = *val;
+	}
+	return 0;
+}
+
+/*
+ ***************************************************************************
  * Parse string containing a set of coma-separated values or ranges of
  * values (e.g. "0,2-5,10-"). The ALL keyword is allowed and indicate that
  * all possible values are selected.
@@ -1605,7 +1655,7 @@ int parse_valstr(char *s, int max_val, int *val)
 int parse_values(char *strargv, unsigned char bitmap[], int max_val, const char *__K_VALUE0)
 {
 	int i, val_low, val;
-	char *t, *s, *valstr, range[16];
+	char *t;
 
 	if (!strcmp(strargv, K_ALL)) {
 		/* Set bit for every possible values (CPU, IRQ, etc.) */
@@ -1623,32 +1673,9 @@ int parse_values(char *strargv, unsigned char bitmap[], int max_val, const char 
 		}
 		else {
 			/* Parse value or range of values */
-			strncpy(range, t, 16);
-			range[15] = '\0';
-			valstr = t;
-			if ((s = strchr(range, '-')) != NULL) {
-				/* Possible range of values */
-				*s = '\0';
-				if (parse_valstr(range, max_val, &val_low) || (val_low < 0))
-					return 1;
-				valstr = s + 1;
-			}
-			if (parse_valstr(valstr, max_val, &val))
+			if (parse_range_values(t, max_val, &val_low, &val))
 				return 1;
-			if (s && val < 0) {
-				/* Range of values with no upper limit (e.g. "3-") */
-				val = max_val - 1;
-			}
-			if ((!s && (val < 0)) || (s && (val < val_low)))
-				/*
-				 * Individual value: string cannot be empty.
-				 * Range of values: n-m: m can be empty (e.g. "3-") but
-				 * cannot be lower than n.
-				 */
-				return 1;
-			if (!s) {
-				val_low = val;
-			}
+
 			for (i = val_low; i <= val; i++) {
 				bitmap[(i + 1) >> 3] |= 1 << ((i + 1) & 0x07);
 			}
@@ -1657,4 +1684,5 @@ int parse_values(char *strargv, unsigned char bitmap[], int max_val, const char 
 
 	return 0;
 }
+
 #endif /* SOURCE_SADC undefined */

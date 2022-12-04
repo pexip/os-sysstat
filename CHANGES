@@ -1,5 +1,125 @@
 Changes:
 
+2022/11/06: Version 12.6.1 - Sebastien Godard (sysstat <at> orange.fr)
+	* Fix possible overflow in sa_common.c (GHSL-2022-074).
+	* sa_conv.c: Make size of statistics structures from older sysstat
+	  versions immutable.
+	* [Bernhard M. Wiedemann]: Declare sadc dependency on libsyscom.a.
+	* [Steve Kay]: Fix gcc v11.2 warnings.
+	* [Steve Kay]: Various cosmetic fixes.
+	* [Jan Christoph Uhde]: sar: Remove `-I int_list` from man-page and
+	  help.
+	* [Frank Dana]: Consolidate systemctl commands in README file.
+	* [Rong Tao]: Remove whitespace characters at the end of lines.
+
+2022/05/29: Version 12.6.0 - Sebastien Godard (sysstat <at> orange.fr)
+	* sar: Fix maximum value for A_IRQ activity.
+	* sar/sadf: A_NET_SOFT: Add new metric softnet network backlog.
+	* sadc: A_NET_SOFT: Use CPU id from /proc/net/softnet_stat.
+	* Update DTD and XSD documents (softnet backlog).
+	* [Chris Bagwell]: sar/sadf: Convert 64-bit time value to time_t
+	  as needed.
+	* sadf: Add basic colorization to sadf's output.
+	* sadf: Add sanity checks on values read from file.
+	* sadf: PCP: Fix multiple metrics name problems.
+	* sa_common.c: Remove unneeded variable assignment.
+	* [Lukáš Zaoral]: Take into account LDFLAGS passer to configure
+	  script.
+	* Various janitorial fixes and updated.
+	* Update FAQ.
+	* Update sar manual page.
+	* Update NLS translations.
+	* Update non regression tests.
+
+2022/02/28: Version 12.5.6 - Sebastien Godard (sysstat <at> orange.fr)
+	* sar/sadc: Rewrite code used to collect and display interrupts
+	  statistics. Statistics are now collected from /proc/interrupts
+	  (instead of /proc/stat) and are displayed for each installed CPU.
+	* sar/sadf: Add new "--int=" option to enter a list of interrupts on
+	  the command line.
+	* sadf: Update the various output formats to deal with the new
+	  per-CPU interrupts statistics.
+	* Update DTD and XSD documents. CPU elements may be non-existent when
+	  all selected CPU are offline.
+	* Update sar and sadf manual pages.
+	* mpstat: Create its own function to read the total number of
+	  interrupts from /proc/stat file.
+	* mpstat: Remove unneeded "aligned" attribute from struct stats_irqcpu
+	  definition.
+	* sar: Fix index value used in online_cpu_bitmap array.
+	* sar/sadf: Make sure that datafiles with unknown activities can
+	  be read by sar and sadf [12.4.5].
+	* sar/sadf: Don't reallocate buffers for activities not present
+	  in file [12.4.5].
+	* sar: Make sure that all buffers are copied in copy_structures()
+	  function [12.4.5].
+	* PCP: Fix flow_limit_count metric's unit (A_NET_SOFT activity).
+	* PCP: Fix instance names for getattr call (A_NET_NFS(D) activities).
+	* Use sizeof() macro instead of hard-coded values with snprintf()
+	  functions.
+	* rndr_stats.c: Use NOVAL instead of NULL as last argument for cons()
+	  function.
+	* Use strings definitions whenever possible.
+	* Add new non regression tests. Update some existing ones.
+	* Various cosmetic fixes.
+
+2021/12/05: Version 12.5.5 - Sebastien Godard (sysstat <at> orange.fr)
+	* iostat: Add --compact option.
+	* iostat: Always display persistent names with option -j [12.4.4].
+	* iostat: Fix how device mapper names are taken into account when
+	  entered on the command line [12.4.4].
+	* iostat: Update manual page.
+	* mpstat: Don't display offline CPU [12.4.4].
+	* mpstat: Fix values displayed when an offline CPU goes back online
+	  [12.4.4].
+	* mpstat: Fix untrusted loop bound [12.4.4].
+	* mpstat: Update non regression tests [12.4.4].
+	* sar: Tell the user to convert the file when needed.
+	* sadc: Reuse count results for sub-items.
+	* [Ville Skyttä]: Use `grep -E` instead of deprecated `egrep` [12.4.4].
+	* [Ville Skyttä]: Spelling and grammar fixes [12.4.4].
+	* Update FAQ.
+	* [Nathan Naze]: Update man pages with correct spelling of
+	  "JavaScript" [12.4.4].
+	* Update non regression tests.
+
+2021/06/07: Version 12.5.4 - Sebastien Godard (sysstat <at> orange.fr)
+	* [Nathan Scott]: PCP: Update sadf to use metadata matching the same
+	  metrics from PCP.
+	* [Parth Shah]: pidstat monitors and shows statistics at the end of the
+	  program run with option -e, when no interval and count parameters
+	  have been defined.
+	* pidstat: Simplify use of P_D_PID flag.
+	* Restore mode for iconfig file.
+	* Non regression tests updated.
+	* Various cosmetic fixes.
+	* NLS translations updated.
+
+2021/02/14: Version 12.5.3 - Sebastien Godard (sysstat <at> orange.fr)
+	* Add Link Time Optimization (LTO) support.
+	* Fix LTO compilation warnings.
+	* sar: Fix return code sent by write_stats() function [12.4.3].
+	* sar/sadc: Dereference nr array pointer in struct activity [12.4.3].
+	* sadf: SVG: Make graphs discontinuous for disconnected devices
+	  [12.4.3].
+	* sadf: SVG: Fix inadequate discontinuities in some graphs [12.4.3].
+	* sadf: Raw: Display number of items in debug mode even if it's zero.
+	* sadf: SVG: Use the <count> parameter entered on the command line
+	  [12.4.3].
+	* sadf: SVG: Add 'debug' option.
+	* sadf: Update manual page.
+	* sar/sadc/sadf: Check untrusted values before use [12.4.3].
+	* sar/sadc: Don't use IFNAMSIZ value from <net/if.h> [12.4.3].
+	* sar/sadf: Test codes returned by functions.
+	* simtest: Update/enhance simulation tests environment.
+	* simtest: Add new non regression tests (USB statistics, ...)
+	* Makefile: Define TEST flag when making simulation tests [12.4.3].
+	* Makefile: Add copyyear target to make it easier to update year in (C)
+	  messages.
+	* Update NLS translations [12.4.3].
+	* Cosmetic changes in code. Some dead code removed. Code simplified.
+	* irqstat: Sync with upstream version (1.0.1-pre).
+
 2020/12/19: Version 12.5.2 - Sebastien Godard (sysstat <at> orange.fr)
 	* [Aleksei Nikiforov]: Fix alignment and structure size for 32-bit
 	  systems [12.4.2].

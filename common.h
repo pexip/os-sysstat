@@ -1,6 +1,6 @@
 /*
  * sysstat: System performance tools for Linux
- * (C) 1999-2020 by Sebastien Godard (sysstat <at> orange.fr)
+ * (C) 1999-2022 by Sebastien Godard (sysstat <at> orange.fr)
  */
 
 #ifndef _COMMON_H
@@ -64,6 +64,7 @@
 #define K_ISO		"ISO"
 #define K_ALL		"ALL"
 #define K_LOWERALL	"all"
+#define K_LOWERSUM	"sum"
 #define K_UTC		"UTC"
 #define K_JSON		"JSON"
 
@@ -112,6 +113,7 @@
 #define C_ALWAYS		"always"
 
 #define DIGITS			"0123456789"
+#define XDIGITS			"0123456789-"
 
 /*
  ***************************************************************************
@@ -210,6 +212,7 @@ extern char persistent_name_type[MAX_FILE_LEN];
 #define IS_INT		0
 #define IS_STR		1
 #define IS_RESTART	2
+#define IS_DEBUG	IS_RESTART
 #define IS_COMMENT	3
 #define IS_ZERO		4
 
@@ -253,6 +256,8 @@ int get_wwnid_from_pretty
 	(char *, unsigned long long *, unsigned int *);
 int check_dir
 	(char *);
+void check_overflow
+	(unsigned int, unsigned int, unsigned int);
 
 #ifndef SOURCE_SADC
 int count_bits
@@ -296,6 +301,8 @@ double ll_sp_value
 	(unsigned long long, unsigned long long, unsigned long long);
 int is_iso_time_fmt
 	(void);
+int parse_range_values
+	(char *t, int, int *, int *);
 int parse_values
 	(char *, unsigned char[], int, const char *);
 int print_gal_header

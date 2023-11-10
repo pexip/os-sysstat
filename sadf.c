@@ -1,6 +1,6 @@
 /*
  * sadf: system activity data formatter
- * (C) 1999-2020 by Sebastien GODARD (sysstat <at> orange.fr)
+ * (C) 1999-2022 by Sebastien GODARD (sysstat <at> orange.fr)
  *
  ***************************************************************************
  * This program is free software; you can redistribute it and/or modify it *
@@ -108,7 +108,7 @@ void usage(char *progname)
 	fprintf(stderr, _("Options are:\n"
 			  "[ -C ] [ -c | -d | -g | -j | -l | -p | -r | -x ] [ -H ] [ -h ] [ -T | -t | -U ] [ -V ]\n"
 			  "[ -O <opts> [,...] ] [ -P { <cpu> [,...] | ALL } ]\n"
-			  "[ --dev=<dev_list> ] [ --fs=<fs_list> ] [ --iface=<iface_list> ]\n"
+			  "[ --dev=<dev_list> ] [ --fs=<fs_list> ] [ --iface=<iface_list> ] [ --int=<int_list> ]\n"
 			  "[ -s [ <hh:mm[:ss]> ] ] [ -e [ <hh:mm[:ss]> ] ]\n"
 			  "[ -- <sar_options> ]\n"));
 	exit(1);
@@ -230,7 +230,7 @@ void check_format_options(void)
  *
  * RETURNS:
  * 1 if EOF has been reached,
- * 2 if an unexpected EOF has been reached,
+ * 2 if an unexpected EOF has been reached, or an error occurred.
  * 0 otherwise.
  ***************************************************************************
  */
@@ -243,7 +243,8 @@ int read_next_sample(int ifd, int action, int curr, char *file, int *rtype, int 
 
 	/* Read current record */
 	if ((rc = read_record_hdr(ifd, rec_hdr_tmp, &record_hdr[curr], &file_hdr,
-			    arch_64, endian_mismatch, oneof, sizeof(rec_hdr_tmp), flags)) != 0)
+				  arch_64, endian_mismatch, oneof, sizeof(rec_hdr_tmp), flags,
+				  fmt[f_position])) != 0)
 		/* End of sa file */
 		return rc;
 
@@ -264,8 +265,9 @@ int read_next_sample(int ifd, int action, int curr, char *file, int *rtype, int 
 				return 2;
 
 			if (action & SET_TIMESTAMPS) {
-				sa_get_record_timestamp_struct(flags, &record_hdr[curr],
-							       rectime);
+				if (sa_get_record_timestamp_struct(flags, &record_hdr[curr],
+								   rectime))
+					return 2;
 			}
 		}
 		else {
@@ -292,7 +294,8 @@ int read_next_sample(int ifd, int action, int curr, char *file, int *rtype, int 
 					return 2;
 			}
 			if (action & SET_TIMESTAMPS) {
-				sa_get_record_timestamp_struct(flags, &record_hdr[curr], rectime);
+				if (sa_get_record_timestamp_struct(flags, &record_hdr[curr], rectime))
+					return 2;
 			}
 		}
 		else {
@@ -311,7 +314,8 @@ int read_next_sample(int ifd, int action, int curr, char *file, int *rtype, int 
 		if (read_file_stat_bunch(act, curr, ifd, file_hdr.sa_act_nr, file_actlst,
 					 endian_mismatch, arch_64, file, file_magic, oneof) > 0)
 			return 2;
-		sa_get_record_timestamp_struct(flags, &record_hdr[curr], rectime);
+		if (sa_get_record_timestamp_struct(flags, &record_hdr[curr], rectime))
+			return 2;
 	}
 
 	return 0;
@@ -331,8 +335,9 @@ void list_fields(unsigned int act_id)
 	unsigned int msk;
 	char *hl;
 	char hline[HEADER_LINE_LEN] = "";
+	char out[256];
 
-	printf("# hostname;interval;timestamp");
+	cprintf_s(IS_COMMENT, "%s", "# hostname;interval;timestamp");
 
 	for (i = 0; i < NR_ACT; i++) {
 
@@ -341,9 +346,10 @@ void list_fields(unsigned int act_id)
 
 		if (IS_SELECTED(act[i]->options) && (act[i]->nr_ini > 0)) {
 			if (!HAS_MULTIPLE_OUTPUTS(act[i]->options)) {
-				printf(";%s", act[i]->hdr_line);
+				sprintf(out, ";%s", act[i]->hdr_line);
+				cprintf_s(IS_COMMENT, "%s", out);
 				if ((act[i]->nr_ini > 1) && DISPLAY_HORIZONTALLY(flags)) {
-					printf("[...]");
+					cprintf_s(IS_COMMENT, "%s", "[...]");
 				}
 			}
 			else {
@@ -357,20 +363,23 @@ void list_fields(unsigned int act_id)
 							if ((act[i]->opt_flags & 0xff00) & (msk << 8)) {
 								/* Display whole header line */
 								*(hl + j) = ';';
-								printf(";%s", hl);
+								sprintf(out, ";%s", hl);
+								cprintf_s(IS_COMMENT, "%s", out);
 							}
 							else {
 								/* Display only the first part of the header line */
 								*(hl + j) = '\0';
-								printf(";%s", hl);
+								sprintf(out, ";%s", hl);
+								cprintf_s(IS_COMMENT, "%s", out);
 							}
 							*(hl + j) = '&';
 						}
 						else {
-							printf(";%s", hl);
+							sprintf(out, ";%s", hl);
+							cprintf_s(IS_COMMENT, "%s", out);
 						}
 						if ((act[i]->nr_ini > 1) && DISPLAY_HORIZONTALLY(flags)) {
-							printf("[...]");
+							cprintf_s(IS_COMMENT, "%s", "[...]");
 						}
 					}
 				}
@@ -394,10 +403,10 @@ void list_fields(unsigned int act_id)
 time_t get_time_ref(void)
 {
 	struct tm ltm;
-	time_t t;
+	time_t t = record_hdr[2].ust_time;
 
 	if (DISPLAY_ONE_DAY(flags)) {
-		localtime_r((time_t *) &(record_hdr[2].ust_time), &ltm);
+		localtime_r(&t, &ltm);
 
 		/* Move back to midnight */
 		ltm.tm_sec = ltm.tm_min = ltm.tm_hour = 0;
@@ -655,7 +664,7 @@ int generic_write_stats(int curr, int use_tm_start, int use_tm_end, int reset,
 	if (reset_cd) {
 		/*
 		 * See note in sar.c.
-		 * NB: Reseting cross_day is needed only if datafile
+		 * NB: Resetting cross_day is needed only if datafile
 		 * may be rewinded (eg. in db or ppc output formats).
 		 */
 		cross_day = 0;
@@ -681,19 +690,14 @@ int generic_write_stats(int curr, int use_tm_start, int use_tm_end, int reset,
 	}
 
 	/* Check time (2) */
-	if (use_tm_start && (datecmp(rectime, &tm_start, cross_day) < 0))
-		/* it's too soon... */
-		return 0;
-
-	/* Get interval values in 1/100th of a second */
-	get_itv_value(&record_hdr[curr], &record_hdr[!curr], &itv);
-
-	/* Check time (3) */
 	if (use_tm_end && (datecmp(rectime, &tm_end, cross_day) > 0)) {
-		/* It's too late... */
+		/* End time exceeded */
 		*cnt = 0;
 		return 0;
 	}
+
+	/* Get interval values in 1/100th of a second */
+	get_itv_value(&record_hdr[curr], &record_hdr[!curr], &itv);
 
 	dt = itv / 100;
 	/* Correct rounding error for dt */
@@ -717,13 +721,14 @@ int generic_write_stats(int curr, int use_tm_start, int use_tm_end, int reset,
 			continue;
 
 		if ((TEST_MARKUP(fmt[f_position]->options) && CLOSE_MARKUP(act[i]->options)) ||
-		    (IS_SELECTED(act[i]->options) && (act[i]->nr > 0))) {
+		    (IS_SELECTED(act[i]->options) && (act[i]->nr[curr] > 0)) ||
+		    (format == F_RAW_OUTPUT)) {
 
 			if (format == F_JSON_OUTPUT) {
 				/* JSON output */
 				int *tab = (int *) parm;
 
-				if (IS_SELECTED(act[i]->options) && (act[i]->nr > 0)) {
+				if (IS_SELECTED(act[i]->options) && (act[i]->nr[curr] > 0)) {
 
 					if (*fmt[f_position]->f_timestamp) {
 						(*fmt[f_position]->f_timestamp)(tab, F_MAIN, cur_date, cur_time,
@@ -752,17 +757,23 @@ int generic_write_stats(int curr, int use_tm_start, int use_tm_end, int reset,
 			else if (format == F_RAW_OUTPUT) {
 				/* Raw output */
 				if (DISPLAY_DEBUG_MODE(flags)) {
-					printf("# name; %s; nr_curr; %d; nr_alloc; %d; nr_ini; %d\n", act[i]->name,
-					       act[i]->nr[curr], act[i]->nr_allocated, act[i]->nr_ini);
+					char out[128];
+
+					sprintf(out, "# name; %s; nr_curr; %d; nr_alloc; %d; nr_ini; %d\n",
+						act[i]->name, act[i]->nr[curr], act[i]->nr_allocated,
+						act[i]->nr_ini);
+					cprintf_s(IS_COMMENT, "%s", out);
 				}
 
-				(*act[i]->f_raw_print)(act[i], pre, curr);
+				if (IS_SELECTED(act[i]->options) && (act[i]->nr[curr] > 0)) {
+					(*act[i]->f_raw_print)(act[i], pre, curr);
+				}
 			}
 
 			else if (format == F_PCP_OUTPUT) {
 				/* PCP archive */
 				if (*act[i]->f_pcp_print) {
-					(*act[i]->f_pcp_print)(act[i], curr, itv, &record_hdr[curr]);
+					(*act[i]->f_pcp_print)(act[i], curr);
 				}
 			}
 
@@ -837,7 +848,10 @@ void rw_curr_act_stats(int ifd, int *curr, long *cnt, int *eosaf,
 					  *curr, file, &rtype, 0, file_magic,
 					  file_actlst, rectime, UEOF_STOP);
 
-		if (!*eosaf && (rtype != R_RESTART) && (rtype != R_COMMENT)) {
+		if (*eosaf || (rtype == R_RESTART))
+			break;
+
+		if (rtype != R_COMMENT) {
 			next = generic_write_stats(*curr, tm_start.use, tm_end.use, *reset, cnt,
 						   NULL, rectime, reset_cd, act_id);
 			reset_cd = 0;
@@ -856,7 +870,7 @@ void rw_curr_act_stats(int ifd, int *curr, long *cnt, int *eosaf,
 			*reset = FALSE;
 		}
 	}
-	while (*cnt && !*eosaf && (rtype != R_RESTART));
+	while (*cnt);
 
 	*reset = TRUE;
 }
@@ -902,7 +916,8 @@ void display_curr_act_graphs(int ifd, int *curr, long *cnt, int *eosaf,
 
 	/*
 	 * Restore the first stats collected.
-	 * Used to compute the rate displayed on the first line.
+	 * Originally used to compute the rate displayed on the first line.
+	 * Here, this is to plot the first point and start the graph.
 	 */
 	copy_structures(act, id_seq, record_hdr, !*curr, 2);
 
@@ -923,8 +938,23 @@ void display_curr_act_graphs(int ifd, int *curr, long *cnt, int *eosaf,
 		*eosaf = read_next_sample(ifd, IGNORE_RESTART | IGNORE_COMMENT | SET_TIMESTAMPS,
 					  *curr, file, &rtype, 0, file_magic,
 					  file_actlst, rectime, UEOF_CONT);
+		if (*eosaf)
+			break;
 
-		if (!*eosaf && (rtype != R_COMMENT) && (rtype != R_RESTART)) {
+		if (rtype == R_RESTART) {
+			parm.restart = TRUE;
+			*reset = TRUE;
+			/* Go to next statistics record, if possible */
+			do {
+				*eosaf = read_next_sample(ifd, IGNORE_RESTART | IGNORE_COMMENT | SET_TIMESTAMPS,
+							  *curr, file, &rtype, 0, file_magic,
+							  file_actlst, rectime, UEOF_CONT);
+			}
+			while (!*eosaf && ((rtype == R_RESTART) || (rtype == R_COMMENT)));
+
+			*curr ^= 1;
+		}
+		else if (rtype != R_COMMENT) {
 
 			next = generic_write_stats(*curr, tm_start.use, tm_end.use, *reset, cnt,
 						   &parm, rectime, reset_cd, act[p]->id);
@@ -944,21 +974,8 @@ void display_curr_act_graphs(int ifd, int *curr, long *cnt, int *eosaf,
 			}
 			*reset = FALSE;
 		}
-		if (!*eosaf && (rtype == R_RESTART)) {
-			parm.restart = TRUE;
-			*reset = TRUE;
-			/* Go to next statistics record, if possible */
-			do {
-				*eosaf = read_next_sample(ifd, IGNORE_RESTART | IGNORE_COMMENT | SET_TIMESTAMPS,
-							  *curr, file, &rtype, 0, file_magic,
-							  file_actlst, rectime, UEOF_CONT);
-			}
-			while (!*eosaf && ((rtype == R_RESTART) || (rtype == R_COMMENT)));
-
-			*curr ^= 1;
-		}
 	}
-	while (!*eosaf);
+	while (!*eosaf && *cnt);
 
 	*reset = TRUE;
 
@@ -1061,47 +1078,47 @@ void logic1_display_loop(int ifd, char *file, struct file_activity *file_actlst,
 		cnt = count;
 		reset = TRUE;
 
-		if (!eosaf) {
+		if (eosaf)
+			break;
 
-			/* Save the first stats collected. Used for example in next_slice() function */
-			copy_structures(act, id_seq, record_hdr, 2, 0);
+		/* Save the first stats collected. Used for example in next_slice() function */
+		copy_structures(act, id_seq, record_hdr, 2, 0);
 
+		do {
+			eosaf = read_next_sample(ifd, ign_flag, curr, file,
+						 &rtype, tab, file_magic, file_actlst,
+						 rectime, UEOF_CONT);
+
+			if (!eosaf && (rtype != R_COMMENT) && (rtype != R_RESTART)) {
+				if (*fmt[f_position]->f_statistics) {
+					(*fmt[f_position]->f_statistics)(&tab, F_MAIN, act, id_seq);
+				}
+
+				/* next is set to 1 when we were close enough to desired interval */
+				next = generic_write_stats(curr, tm_start.use, tm_end.use, reset,
+							  &cnt, &tab, rectime, FALSE, ALL_ACTIVITIES);
+
+				if (next) {
+					curr ^= 1;
+					if (cnt > 0) {
+						cnt--;
+					}
+				}
+				reset = FALSE;
+			}
+		}
+		while (cnt && !eosaf && (rtype != R_RESTART));
+
+		if (!cnt) {
+			/* Go to next Linux restart, if possible */
 			do {
 				eosaf = read_next_sample(ifd, ign_flag, curr, file,
 							 &rtype, tab, file_magic, file_actlst,
 							 rectime, UEOF_CONT);
-
-				if (!eosaf && (rtype != R_COMMENT) && (rtype != R_RESTART)) {
-					if (*fmt[f_position]->f_statistics) {
-						(*fmt[f_position]->f_statistics)(&tab, F_MAIN, act, id_seq);
-					}
-
-					/* next is set to 1 when we were close enough to desired interval */
-					next = generic_write_stats(curr, tm_start.use, tm_end.use, reset,
-								  &cnt, &tab, rectime, FALSE, ALL_ACTIVITIES);
-
-					if (next) {
-						curr ^= 1;
-						if (cnt > 0) {
-							cnt--;
-						}
-					}
-					reset = FALSE;
-				}
 			}
-			while (cnt && !eosaf && (rtype != R_RESTART));
-
-			if (!cnt) {
-				/* Go to next Linux restart, if possible */
-				do {
-					eosaf = read_next_sample(ifd, ign_flag, curr, file,
-								 &rtype, tab, file_magic, file_actlst,
-								 rectime, UEOF_CONT);
-				}
-				while (!eosaf && (rtype != R_RESTART));
-			}
-			reset = TRUE;
+			while (!eosaf && (rtype != R_RESTART));
 		}
+		reset = TRUE;
 	}
 	while (!eosaf);
 
@@ -1519,16 +1536,7 @@ int main(int argc, char **argv)
 	/* Process options */
 	while (opt < argc) {
 
-		if (!strcmp(argv[opt], "-I")) {
-			if (!sar_options) {
-				usage(argv[0]);
-			}
-			if (parse_sar_I_opt(argv, &opt, &flags, act)) {
-				usage(argv[0]);
-			}
-		}
-
-		else if (!strcmp(argv[opt], "-P")) {
+		if (!strcmp(argv[opt], "-P")) {
 			if (parse_sa_P_opt(argv, &opt, &flags, act)) {
 				usage(argv[0]);
 			}
@@ -1537,23 +1545,29 @@ int main(int argc, char **argv)
 		else if (!strncmp(argv[opt], "--dev=", 6)) {
 			/* Parse devices entered on the command line */
 			p = get_activity_position(act, A_DISK, EXIT_IF_NOT_FOUND);
-			parse_sa_devices(argv[opt], act[p], MAX_DEV_LEN, &opt, 6);
+			parse_sa_devices(argv[opt], act[p], MAX_DEV_LEN, &opt, 6, NO_RANGE);
 		}
 
 		else if (!strncmp(argv[opt], "--fs=", 5)) {
 			/* Parse devices entered on the command line */
 			p = get_activity_position(act, A_FS, EXIT_IF_NOT_FOUND);
-			parse_sa_devices(argv[opt], act[p], MAX_FS_LEN, &opt, 5);
+			parse_sa_devices(argv[opt], act[p], MAX_FS_LEN, &opt, 5, NO_RANGE);
 		}
 
 		else if (!strncmp(argv[opt], "--iface=", 8)) {
 			/* Parse devices entered on the command line */
 			p = get_activity_position(act, A_NET_DEV, EXIT_IF_NOT_FOUND);
-			parse_sa_devices(argv[opt], act[p], MAX_IFACE_LEN, &opt, 8);
+			parse_sa_devices(argv[opt], act[p], MAX_IFACE_LEN, &opt, 8, NO_RANGE);
 			q = get_activity_position(act, A_NET_EDEV, EXIT_IF_NOT_FOUND);
 			act[q]->item_list = act[p]->item_list;
 			act[q]->item_list_sz = act[p]->item_list_sz;
 			act[q]->options |= AO_LIST_ON_CMDLINE;
+		}
+
+		else if (!strncmp(argv[opt], "--int=", 6)) {
+			/* Parse interrupts names entered on the command line */
+			p = get_activity_position(act, A_IRQ, EXIT_IF_NOT_FOUND);
+			parse_sa_devices(argv[opt], act[p], MAX_SA_IRQ_LEN, &opt, 6, NR_IRQS);
 		}
 
 		else if (!strcmp(argv[opt], "-s")) {
@@ -1599,7 +1613,7 @@ int main(int argc, char **argv)
 					flags |= S_F_SVG_SHOW_INFO;
 				}
 				else if (!strcmp(t, K_DEBUG)) {
-					flags |= S_F_RAW_DEBUG_MODE;
+					flags |= S_F_DEBUG_MODE;
 				}
 				else if (!strncmp(t, K_HEIGHT, strlen(K_HEIGHT))) {
 					v = t + strlen(K_HEIGHT);
@@ -1839,6 +1853,9 @@ int main(int argc, char **argv)
 			}
 		}
 	}
+
+	/* Init color strings */
+	init_colors();
 
 	if (USE_OPTION_A(flags)) {
 		/* Set -P ALL -I ALL if needed */

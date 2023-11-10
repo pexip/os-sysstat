@@ -5,7 +5,7 @@
 [![Total Alerts](https://img.shields.io/lgtm/alerts/g/sysstat/sysstat.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/sysstat/sysstat/alerts)
 [![Donate](https://img.shields.io/badge/Donate-PayPal-blue.svg)](https://www.paypal.com/cgi-bin/webscr?cmd=_s-xclick&hosted_button_id=45U6F9R73ESFQ)
 
-(C) 1999-2020 Sebastien GODARD (sysstat (at) orange (dot) fr)
+(C) 1999-2022 Sebastien GODARD (sysstat (at) orange (dot) fr)
 
 ### Introduction
 
@@ -98,8 +98,7 @@ CentOS and Fedora systems call the collector process using a cron job in /etc/cr
 On recent versions, systemd is used instead of cron. You may need to enable and start the sysstat service:
 
 ```
-$ sudo systemctl enable sysstat
-$ sudo systemctl start sysstat
+$ sudo systemctl enable --now sysstat
 ```
 
 #### Install from Ubuntu
@@ -146,7 +145,7 @@ can enter the following option to activate data collecting (either using cron or
 $ ./configure --enable-install-cron
 ```
 
-Enter `./configure --help` to display all possible options.  
+Enter `./configure --help` to display all possible options.
 Note: There is another way to configure sysstat instead of entering `./configure`:
 This is the **Interactive Configuration script** (_iconfig_) which will ask you
 for the value of the main sysstat variables and parameters.

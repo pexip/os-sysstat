@@ -1,6 +1,6 @@
 /*
  * pr_stats.h: Include file used to display system statistics
- * (C) 1999-2020 by Sebastien Godard (sysstat <at> orange.fr)
+ * (C) 1999-2022 by Sebastien Godard (sysstat <at> orange.fr)
  */
 
 #ifndef _PR_STATS_H
@@ -125,6 +125,8 @@ __print_funct_t print_avg_huge_stats
 __print_funct_t print_avg_pwr_usb_stats
 	(struct activity *, int, int, unsigned long long);
 __print_funct_t print_avg_filesystem_stats
+	(struct activity *, int, int, unsigned long long);
+__print_funct_t print_avg_softnet_stats
 	(struct activity *, int, int, unsigned long long);
 __print_funct_t print_avg_psicpu_stats
 	(struct activity *, int, int, unsigned long long);

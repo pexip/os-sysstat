@@ -1,6 +1,6 @@
 /*
- * sadf_misc.c: Funtions used by sadf to display special records
- * (C) 2011-2020 by Sebastien GODARD (sysstat <at> orange.fr)
+ * sadf_misc.c: Functions used by sadf to display special records
+ * (C) 2011-2022 by Sebastien GODARD (sysstat <at> orange.fr)
  *
  ***************************************************************************
  * This program is free software; you can redistribute it and/or modify it *
@@ -41,7 +41,7 @@
 
 extern char *tzname[2];
 
-extern unsigned int flags;
+extern uint64_t flags;
 extern char *seps[];
 
 extern int palette;
@@ -61,13 +61,14 @@ void pcp_write_data(struct record_header *record_hdr, unsigned int flags)
 #ifdef HAVE_PCP
 	int rc;
 	struct tm lrectime;
+	time_t t = record_hdr->ust_time;
 	unsigned long long utc_sec = record_hdr->ust_time;
 	static long long delta_utc = LONG_MAX;
 
 	if (!PRINT_LOCAL_TIME(flags)) {
 		if (delta_utc == LONG_MAX) {
 			/* Convert a time_t value from local time to UTC */
-			if (gmtime_r((const time_t *) &(record_hdr->ust_time), &lrectime)) {
+			if (gmtime_r(&t, &lrectime)) {
 				utc_sec = mktime(&lrectime);
 				delta_utc = utc_sec - record_hdr->ust_time;
 			}
@@ -662,6 +663,7 @@ __printf_funct_t print_pcp_statistics(int *tab, int action, struct activity *act
 
 				case A_IRQ:
 					pcp_def_irq_metrics(act[p]);
+					pcp_def_cpu_metrics(act[p]);	/* For per_CPU int metrics */
 					break;
 
 				case A_SWAP:
@@ -1016,8 +1018,8 @@ __tm_funct_t print_raw_timestamp(void *parm, int action, char *cur_date,
 	static char pre[80];
 
 	if (action & F_BEGIN) {
-		snprintf(pre, 80, "%s%s", cur_time, strlen(cur_date) && utc ? " UTC" : "");
-		pre[79] = '\0';
+		snprintf(pre, sizeof(pre), "%s%s", cur_time, strlen(cur_date) && utc ? " UTC" : "");
+		pre[sizeof(pre) - 1] = '\0';
 		return pre;
 	}
 
@@ -1079,6 +1081,7 @@ __printf_funct_t print_xml_header(void *parm, int action, char *dfile,
 				  struct file_activity *file_actlst)
 {
 	struct tm rectime, loc_t;
+	time_t t = file_hdr->sa_ust_time;
 	char cur_time[TIMESTAMP_LEN];
 	int *tab = (int *) parm;
 
@@ -1110,7 +1113,7 @@ __printf_funct_t print_xml_header(void *parm, int action, char *dfile,
 		strftime(cur_time, sizeof(cur_time), "%Y-%m-%d", &rectime);
 		xprintf(*tab, "<file-date>%s</file-date>", cur_time);
 
-		if (gmtime_r((const time_t *) &file_hdr->sa_ust_time, &loc_t) != NULL) {
+		if (gmtime_r(&t, &loc_t) != NULL) {
 			strftime(cur_time, sizeof(cur_time), "%T", &loc_t);
 			xprintf(*tab, "<file-utc-time>%s</file-utc-time>", cur_time);
 		}
@@ -1148,6 +1151,7 @@ __printf_funct_t print_json_header(void *parm, int action, char *dfile,
 				   struct file_activity *file_actlst)
 {
 	struct tm rectime, loc_t;
+	time_t t = file_hdr->sa_ust_time;
 	char cur_time[TIMESTAMP_LEN];
 	int *tab = (int *) parm;
 
@@ -1169,7 +1173,7 @@ __printf_funct_t print_json_header(void *parm, int action, char *dfile,
 		strftime(cur_time, sizeof(cur_time), "%Y-%m-%d", &rectime);
 		xprintf(*tab, "\"file-date\": \"%s\",", cur_time);
 
-		if (gmtime_r((const time_t *) &file_hdr->sa_ust_time, &loc_t) != NULL) {
+		if (gmtime_r(&t, &loc_t) != NULL) {
 			strftime(cur_time, sizeof(cur_time), "%T", &loc_t);
 			xprintf(*tab, "\"file-utc-time\": \"%s\",", cur_time);
 		}
@@ -1207,6 +1211,7 @@ __printf_funct_t print_hdr_header(void *parm, int action, char *dfile,
 {
 	int i, p;
 	struct tm rectime, loc_t;
+	time_t t = file_hdr->sa_ust_time;
 	struct file_activity *fal;
 	char cur_time[TIMESTAMP_LEN];
 
@@ -1226,7 +1231,7 @@ __printf_funct_t print_hdr_header(void *parm, int action, char *dfile,
 		       file_magic->upgraded);
 
 		printf(_("Host: "));
-		print_gal_header(localtime_r((const time_t *) &(file_hdr->sa_ust_time), &rectime),
+		print_gal_header(localtime_r(&t, &rectime),
 				 file_hdr->sa_sysname, file_hdr->sa_release,
 				 file_hdr->sa_nodename, file_hdr->sa_machine,
 				 file_hdr->sa_cpu_nr > 1 ? file_hdr->sa_cpu_nr - 1 : 1,
@@ -1237,7 +1242,7 @@ __printf_funct_t print_hdr_header(void *parm, int action, char *dfile,
 		strftime(cur_time, sizeof(cur_time), "%Y-%m-%d", &rectime);
 		printf(_("File date: %s\n"), cur_time);
 
-		if (gmtime_r((const time_t *) &file_hdr->sa_ust_time, &loc_t) != NULL) {
+		if (gmtime_r(&t, &loc_t) != NULL) {
 			printf(_("File time: "));
 			strftime(cur_time, sizeof(cur_time), "%T", &loc_t);
 			printf("%s UTC (%lld)\n", cur_time, file_hdr->sa_ust_time);
@@ -1276,7 +1281,7 @@ __printf_funct_t print_hdr_header(void *parm, int action, char *dfile,
 				printf("x%d", fal->nr2);
 			}
 			printf("\t(%d,%d,%d)", fal->types_nr[0], fal->types_nr[1], fal->types_nr[2]);
-			if ((p >= 0) && (act[p]->magic == ACTIVITY_MAGIC_UNKNOWN)) {
+			if ((p >= 0) && (act[p]->magic != fal->magic)) {
 				printf(_(" \t[Unknown format]"));
 			}
 			printf("\n");
@@ -1309,6 +1314,7 @@ __printf_funct_t print_svg_header(void *parm, int action, char *dfile,
 {
 	struct svg_hdr_parm *hdr_parm = (struct svg_hdr_parm *) parm;
 	struct tm rectime;
+	time_t t = file_hdr->sa_ust_time;
 	unsigned int height = 0, ht = 0;
 	int i, p;
 
@@ -1348,7 +1354,7 @@ __printf_funct_t print_svg_header(void *parm, int action, char *dfile,
 		       svg_colors[palette][SVG_COL_DEFAULT_IDX]);
 		printf("<text x=\"0\" y=\"30\" text-anchor=\"start\" stroke=\"#%06x\">",
 		       svg_colors[palette][SVG_COL_HEADER_IDX]);
-		print_gal_header(localtime_r((const time_t *) &(file_hdr->sa_ust_time), &rectime),
+		print_gal_header(localtime_r(&t, &rectime),
 				 file_hdr->sa_sysname, file_hdr->sa_release,
 				 file_hdr->sa_nodename, file_hdr->sa_machine,
 				 file_hdr->sa_cpu_nr > 1 ? file_hdr->sa_cpu_nr - 1 : 1,
@@ -1416,6 +1422,7 @@ __printf_funct_t print_pcp_header(void *parm, int action, char *dfile,
 #ifdef HAVE_PCP
 	char buf[64];
 	struct tm lrectime;
+	time_t t = file_hdr->sa_ust_time;
 	unsigned long long utc_sec = file_hdr->sa_ust_time;
 
 	if (action & F_BEGIN) {
@@ -1434,11 +1441,29 @@ __printf_funct_t print_pcp_header(void *parm, int action, char *dfile,
 
 		/* Save number of CPU in PCP archive */
 		pmiAddMetric("hinv.ncpu",
-			     PM_IN_NULL, PM_TYPE_U32, PM_INDOM_NULL, PM_SEM_DISCRETE,
-			     pmiUnits(0, 0, 1, 0, 0, PM_COUNT_ONE));
+			     pmiID(60, 0, 32), PM_TYPE_U32, PM_INDOM_NULL,
+			     PM_SEM_DISCRETE, pmiUnits(0, 0, 0, 0, 0, 0));
 		snprintf(buf, sizeof(buf), "%u",
 			 file_hdr->sa_cpu_nr > 1 ? file_hdr->sa_cpu_nr - 1 : 1);
 		pmiPutValue("hinv.ncpu", NULL, buf);
+
+		/* Save uname(2) information */
+		pmiAddMetric("kernel.uname.release",
+			     pmiID(60, 12, 0), PM_TYPE_STRING, PM_INDOM_NULL,
+			     PM_SEM_DISCRETE, pmiUnits(0, 0, 0, 0, 0, 0));
+		pmiPutValue("kernel.uname.release", NULL, file_hdr->sa_release);
+		pmiAddMetric("kernel.uname.sysname",
+			     pmiID(60, 12, 2), PM_TYPE_STRING, PM_INDOM_NULL,
+			     PM_SEM_DISCRETE, pmiUnits(0, 0, 0, 0, 0, 0));
+		pmiPutValue("kernel.uname.sysname", NULL, file_hdr->sa_sysname);
+		pmiAddMetric("kernel.uname.machine",
+			     pmiID(60, 12, 3), PM_TYPE_STRING, PM_INDOM_NULL,
+			     PM_SEM_DISCRETE, pmiUnits(0, 0, 0, 0, 0, 0));
+		pmiPutValue("kernel.uname.machine", NULL, file_hdr->sa_machine);
+		pmiAddMetric("kernel.uname.nodename",
+			     pmiID(60, 12, 4), PM_TYPE_STRING, PM_INDOM_NULL,
+			     PM_SEM_DISCRETE, pmiUnits(0, 0, 0, 0, 0, 0));
+		pmiPutValue("kernel.uname.nodename", NULL, file_hdr->sa_nodename);
 	}
 
 	if (action & F_END) {
@@ -1446,7 +1471,7 @@ __printf_funct_t print_pcp_header(void *parm, int action, char *dfile,
 			/* Only the header data will be written to PCP archive */
 			if (!PRINT_LOCAL_TIME(flags)) {
 				/* Convert a time_t value from local time to UTC */
-				if (gmtime_r((const time_t *) &(file_hdr->sa_ust_time), &lrectime)) {
+				if (gmtime_r(&t, &lrectime)) {
 					utc_sec = mktime(&lrectime);
 				}
 			}
@@ -1603,6 +1628,43 @@ __nr_t count_new_disk(struct activity *a, int curr)
 						    DISPLAY_PRETTY(flags), DISPLAY_PERSIST_NAME_S(flags),
 						    USE_STABLE_ID(flags), NULL),
 				    MAX_DEV_LEN);
+	}
+
+	return nr;
+}
+
+/*
+ ***************************************************************************
+ * Count the number of interrupts in current sample. Add each interrupt name
+ * to the linked list starting at @a->item_list.
+ *
+ * IN:
+ * @a		Activity structure with statistics.
+ * @curr	Index in array for current sample statistics.
+ *
+ * RETURNS:
+ * Number of interrupts added to the list.
+ ***************************************************************************
+ */
+__nr_t count_new_int(struct activity *a, int curr)
+{
+	int i, nr = 0;
+	struct stats_irq *stc_cpuall_irq;
+
+	if (a->item_list)
+		/*
+		 * If a list already exists, do nothing. This means that a list has been
+		 * explicitly entered on the command line using option "--int=", or that
+		 * the list has already been created here (remember that the number of
+		 * interrupts cannot change in file: @nr2, the second matrix dimension,
+		 * is a constant).
+		 */
+		return 0;
+
+	for (i = 0; i < a->nr2; i++) {
+		stc_cpuall_irq = (struct stats_irq *) ((char *) a->buf[curr] + i * a->msize);
+
+		nr += add_list_item(&(a->item_list), stc_cpuall_irq->irq_name, MAX_SA_IRQ_LEN);
 	}
 
 	return nr;

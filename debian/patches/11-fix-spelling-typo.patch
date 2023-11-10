@@ -9,10 +9,10 @@ sed -e 's/ressource/resource' accross the code
  2 files changed, 4 insertions(+), 4 deletions(-)
 
 diff --git a/CHANGES b/CHANGES
-index 9a7f8b7..4a11900 100644
+index 697d0cc..e2ba789 100644
 --- a/CHANGES
 +++ b/CHANGES
-@@ -478,7 +478,7 @@ Changes:
+@@ -598,7 +598,7 @@ Changes:
  	* Display unit with areq-sz metric values when --human option used.
  	* Display a percent sign after values when --human option used.
  	* pidstat: Don't stop if /proc/#/schedstat files don't exist.
@@ -21,7 +21,7 @@ index 9a7f8b7..4a11900 100644
  	* Cast variables to target type before use [11.4.5] [11.2.11].
  	* Fix buffer overflow when options -s or -e are used with sar
  	  (DEBIAN bug #863197) [11.4.5] [11.2.11].
-@@ -741,8 +741,8 @@ Changes:
+@@ -861,8 +861,8 @@ Changes:
  	* Check /proc/net/snmp format to collect ICMP statistics at
  	  their right positions [11.0.6].
  	* sadc: Fix untrusted value used as argument.
@@ -33,10 +33,10 @@ index 9a7f8b7..4a11900 100644
  	* [Sampsa Kiiskinen]: Fix bug in isag [11.0.6].
  	* iostat's option -T renamed to -H.
 diff --git a/FAQ.md b/FAQ.md
-index cda3e41..e0a1233 100644
+index 1493d8d..ae8b3ad 100644
 --- a/FAQ.md
 +++ b/FAQ.md
-@@ -745,7 +745,7 @@ an individual CPU can exceed 100%...
+@@ -764,7 +764,7 @@ an individual CPU can exceed 100%...
  
  A: The CPU number displayed by pidstat is the CPU to which the task is attached
  when the statistics are actually displayed. This doesn't mean that the task

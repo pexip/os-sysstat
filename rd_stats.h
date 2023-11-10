@@ -1,6 +1,6 @@
 /*
  * rd_stats.h: Include file used to read system statistics
- * (C) 1999-2020 by Sebastien Godard (sysstat <at> orange.fr)
+ * (C) 1999-2022 by Sebastien Godard (sysstat <at> orange.fr)
  */
 
 #ifndef _RD_STATS_H
@@ -14,16 +14,10 @@
  ***************************************************************************
  */
 
-/* Get IFNAMSIZ */
-#include <net/if.h>
-#ifndef IFNAMSIZ
-#define IFNAMSIZ	16
-#endif
-
 /* Maximum length of block device name */
 #define MAX_DEV_LEN	128
 /* Maximum length of network interface name */
-#define MAX_IFACE_LEN	IFNAMSIZ
+#define MAX_IFACE_LEN	16
 /* Maximum length of USB manufacturer string */
 #define MAX_MANUF_LEN	24
 /* Maximum length of USB product string */
@@ -32,6 +26,8 @@
 #define MAX_FS_LEN	128
 /* Maximum length of FC host name */
 #define MAX_FCH_LEN	16
+/* Maximum length of interrupt name */
+#define MAX_SA_IRQ_LEN	8
 
 #define CNT_PART	1
 #define CNT_ALL_DEV	0
@@ -99,8 +95,10 @@
 
 /*
  * Structure for CPU statistics.
- * In activity buffer: First structure is for global CPU utilisation ("all").
+ * In activity buffer: First structure is for global CPU utilization ("all").
  * Following structures are for each individual CPU (0, 1, etc.)
+ *
+ * Used by: sadc, sar, sadf, iostat, mpstat, pidstat
  */
 struct stats_cpu {
 	unsigned long long cpu_user;
@@ -137,17 +135,21 @@ struct stats_pcsw {
 
 /*
  * Structure for interrupts statistics.
- * In activity buffer: First structure is for total number of interrupts ("SUM").
- * Following structures are for each individual interrupt (0, 1, etc.)
+ * In activity buffer (sadc): First structures are for global CPU utilization ("all"):
+ * interrupts sum, 0, 1,...
+ * Following structures are for each individual CPU (0, 1, etc.)
+ *
+ * Used by: sadc, sar, sadf
  */
 struct stats_irq {
-	unsigned long long irq_nr;
+	unsigned int irq_nr;
+	char	     irq_name[MAX_SA_IRQ_LEN];
 };
 
 #define STATS_IRQ_SIZE	(sizeof(struct stats_irq))
-#define STATS_IRQ_ULL	1
+#define STATS_IRQ_ULL	0
 #define STATS_IRQ_UL	0
-#define STATS_IRQ_U	0
+#define STATS_IRQ_U	1
 
 /* Structure for swapping statistics */
 struct stats_swap {
@@ -193,7 +195,11 @@ struct stats_io {
 #define STATS_IO_UL	0
 #define STATS_IO_U	0
 
-/* Structure for memory and swap space utilization statistics */
+/*
+ * Structure for memory and swap space utilization statistics.
+ *
+ * Used by: sadc, sar, sadf, pidstat
+ */
 struct stats_memory {
 	unsigned long long frmkb;
 	unsigned long long bufkb;
@@ -263,7 +269,11 @@ struct stats_serial {
 #define STATS_SERIAL_UL		0
 #define STATS_SERIAL_U		7
 
-/* Structure for block devices statistics */
+/*
+ * Structure for block devices statistics.
+ *
+ * Used by: sadc, sar, sadf, iostat
+ */
 struct stats_disk {
 	unsigned long long nr_ios;
 	unsigned long long wwn[2];
@@ -606,7 +616,7 @@ struct stats_net_udp6 {
 
 /*
  * Structure for CPU frequency statistics.
- * In activity buffer: First structure is for global CPU utilisation ("all").
+ * In activity buffer: First structure is for global CPU utilization ("all").
  * Following structures are for each individual CPU (0, 1, etc.)
  */
 struct stats_pwr_cpufreq {
@@ -633,7 +643,7 @@ struct stats_huge {
 
 /*
  * Structure for weighted CPU frequency statistics.
- * In activity buffer: First structure is for global CPU utilisation ("all").
+ * In activity buffer: First structure is for global CPU utilization ("all").
  * Following structures are for each individual CPU (0, 1, etc.)
  */
 struct stats_pwr_wghfreq {
@@ -701,12 +711,13 @@ struct stats_softnet {
 	unsigned int time_squeeze;
 	unsigned int received_rps;
 	unsigned int flow_limit;
+	unsigned int backlog_len;
 };
 
 #define STATS_SOFTNET_SIZE	(sizeof(struct stats_softnet))
 #define STATS_SOFTNET_ULL	0
 #define STATS_SOFTNET_UL	0
-#define STATS_SOFTNET_U		5
+#define STATS_SOFTNET_U		6
 
 /* Structure for pressure-stall CPU statistics */
 struct stats_psi_cpu {
@@ -769,7 +780,7 @@ unsigned long long get_per_cpu_interval
 __nr_t read_stat_cpu
 	(struct stats_cpu *, __nr_t);
 __nr_t read_stat_irq
-	(struct stats_irq *, __nr_t);
+	(struct stats_irq *, __nr_t, __nr_t);
 __nr_t read_meminfo
 	(struct stats_memory *);
 void read_uptime

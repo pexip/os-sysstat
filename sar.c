@@ -1,6 +1,6 @@
 /*
  * sar: report system activity
- * (C) 1999-2020 by Sebastien GODARD (sysstat <at> orange.fr)
+ * (C) 1999-2022 by Sebastien GODARD (sysstat <at> orange.fr)
  *
  ***************************************************************************
  * This program is free software; you can redistribute it and/or modify it *
@@ -123,10 +123,11 @@ void usage(char *progname)
 			  "[ -A ] [ -B ] [ -b ] [ -C ] [ -D ] [ -d ] [ -F [ MOUNT ] ] [ -H ] [ -h ]\n"
 			  "[ -p ] [ -r [ ALL ] ] [ -S ] [ -t ] [ -u [ ALL ] ] [ -V ]\n"
 			  "[ -v ] [ -W ] [ -w ] [ -y ] [ -z ]\n"
-			  "[ -I { <int_list> | SUM | ALL } ] [ -P { <cpu_list> | ALL } ]\n"
+			  "[ -I [ SUM | ALL ] ] [ -P { <cpu_list> | ALL } ]\n"
 			  "[ -m { <keyword> [,...] | ALL } ] [ -n { <keyword> [,...] | ALL } ]\n"
 			  "[ -q [ <keyword> [,...] | ALL ] ]\n"
-			  "[ --dev=<dev_list> ] [ --fs=<fs_list> ] [ --iface=<iface_list> ]\n"
+			  "[ --dev=<dev_list> ] [ --fs=<fs_list> ] [ --iface=<iface_list> ] "
+			  "[ --int=<int_list> ]\n"
 			  "[ --dec={ 0 | 1 | 2 } ] [ --help ] [ --human ] [ --pretty ] [ --sadc ]\n"
 			  "[ -j { SID | ID | LABEL | PATH | UUID | ... } ]\n"
 			  "[ -f [ <filename> ] | -o [ <filename> ] | -[0-9]+ ]\n"
@@ -152,7 +153,7 @@ void display_help(char *progname)
 	printf(_("\t-F [ MOUNT ]\n"));
 	printf(_("\t\tFilesystems statistics [A_FS]\n"));
 	printf(_("\t-H\tHugepages utilization statistics [A_HUGE]\n"));
-	printf(_("\t-I { <int_list> | SUM | ALL }\n"
+	printf(_("\t-I [ SUM | ALL ]\n"
 		 "\t\tInterrupts statistics [A_IRQ]\n"));
 	printf(_("\t-m { <keyword> [,...] | ALL }\n"
 		 "\t\tPower management statistics [A_PWR_...]\n"
@@ -435,7 +436,7 @@ void write_stats_avg(int curr, int read_from_file, unsigned int act_id)
 int write_stats(int curr, int read_from_file, long *cnt, int use_tm_start,
 		int use_tm_end, int reset, unsigned int act_id, int reset_cd)
 {
-	int i, prev_hour;
+	int i, prev_hour, rc = 0;
 	unsigned long long itv;
 	static int cross_day = FALSE;
 
@@ -487,19 +488,14 @@ int write_stats(int curr, int read_from_file, long *cnt, int use_tm_start,
 	}
 
 	/* Check time (2) */
-	if (use_tm_start && (datecmp(&rectime, &tm_start, cross_day) < 0))
-		/* it's too soon... */
-		return 0;
-
-	/* Get interval value in 1/100th of a second */
-	get_itv_value(&record_hdr[curr], &record_hdr[!curr], &itv);
-
-	/* Check time (3) */
 	if (use_tm_end && (datecmp(&rectime, &tm_end, cross_day) > 0)) {
-		/* It's too late... */
+		/* End time exceeded */
 		*cnt = 0;
 		return 0;
 	}
+
+	/* Get interval value in 1/100th of a second */
+	get_itv_value(&record_hdr[curr], &record_hdr[!curr], &itv);
 
 	avg_count++;
 
@@ -514,10 +510,11 @@ int write_stats(int curr, int read_from_file, long *cnt, int use_tm_start,
 		if (IS_SELECTED(act[i]->options) && (act[i]->nr[curr] > 0)) {
 			/* Display current activity statistics */
 			(*act[i]->f_print)(act[i], !curr, curr, itv);
+			rc = 1;
 		}
 	}
 
-	return 1;
+	return rc;
 }
 
 /*
@@ -701,7 +698,6 @@ void read_sadc_stat_bunch(int curr)
 				reallocate_all_buffers(act[p], act[p]->nr[curr]);
 			}
 
-
 			/*
 			 * For persistent activities, we must make sure that no statistics
                          * from a previous iteration remain, especially if the number
@@ -788,7 +784,8 @@ void handle_curr_act_stats(int ifd, off_t fpos, int *curr, long *cnt, int *eosaf
 		 * Start with reading current sample's record header.
 		 */
 		*eosaf = read_record_hdr(ifd, rec_hdr_tmp, &record_hdr[*curr],
-					 &file_hdr, arch_64, endian_mismatch, UEOF_STOP, b_size, flags);
+					 &file_hdr, arch_64, endian_mismatch, UEOF_STOP, b_size,
+					 flags, &sar_fmt);
 		rtype = record_hdr[*curr].record_type;
 
 		if ((lines >= rows) || !lines) {
@@ -804,8 +801,10 @@ void handle_curr_act_stats(int ifd, off_t fpos, int *curr, long *cnt, int *eosaf
 
 		if (rtype != R_COMMENT) {
 			/* Read the extra fields since it's not a special record */
-			read_file_stat_bunch(act, *curr, ifd, file_hdr.sa_act_nr, file_actlst,
-					     endian_mismatch, arch_64, file, file_magic, UEOF_STOP);
+			if (read_file_stat_bunch(act, *curr, ifd, file_hdr.sa_act_nr, file_actlst,
+						 endian_mismatch, arch_64, file, file_magic, UEOF_STOP))
+				/* Error or unexpected EOF */
+				break;
 		}
 		else {
 			/* Display comment */
@@ -1032,7 +1031,7 @@ void read_stats_from_file(char from_file[])
 		 */
 		do {
 			if (read_record_hdr(ifd, rec_hdr_tmp, &record_hdr[0], &file_hdr,
-					    arch_64, endian_mismatch, UEOF_STOP, sizeof(rec_hdr_tmp), flags)) {
+					    arch_64, endian_mismatch, UEOF_STOP, sizeof(rec_hdr_tmp), flags, &sar_fmt)) {
 				/* End of sa data file */
 				return;
 			}
@@ -1049,9 +1048,12 @@ void read_stats_from_file(char from_file[])
 				 * OK: Previous record was not a special one.
 				 * So read now the extra fields.
 				 */
-				read_file_stat_bunch(act, 0, ifd, file_hdr.sa_act_nr,
-						     file_actlst, endian_mismatch, arch_64,
-						     from_file, &file_magic, UEOF_STOP);
+				if (read_file_stat_bunch(act, 0, ifd, file_hdr.sa_act_nr,
+							 file_actlst, endian_mismatch, arch_64,
+							 from_file, &file_magic, UEOF_STOP))
+					/* Possible unexpected EOF */
+					return;
+
 				if (sa_get_record_timestamp_struct(flags + S_F_LOCAL_TIME,
 								   &record_hdr[0], &rectime))
 					/*
@@ -1130,19 +1132,21 @@ void read_stats_from_file(char from_file[])
 			do {
 				/* Read next record header */
 				eosaf = read_record_hdr(ifd, rec_hdr_tmp, &record_hdr[curr],
-							&file_hdr, arch_64, endian_mismatch, UEOF_STOP, sizeof(rec_hdr_tmp), flags);
+							&file_hdr, arch_64, endian_mismatch, UEOF_STOP, sizeof(rec_hdr_tmp), flags, &sar_fmt);
 				rtype = record_hdr[curr].record_type;
 
 				if (eosaf || (rtype == R_RESTART))
 					break;
 
 				if (rtype != R_COMMENT) {
-					read_file_stat_bunch(act, curr, ifd, file_hdr.sa_act_nr,
-							     file_actlst, endian_mismatch, arch_64,
-							     from_file, &file_magic, UEOF_STOP);
+					if (read_file_stat_bunch(act, curr, ifd, file_hdr.sa_act_nr,
+								 file_actlst, endian_mismatch, arch_64,
+								 from_file, &file_magic, UEOF_STOP))
+						/* Possible unexpected EOF */
+						break;
 				}
 				else {
-					/* This was a COMMENT record: print it */
+					/* This was a COMMENT record: Print it */
 					print_special_record(&record_hdr[curr], flags + S_F_LOCAL_TIME,
 							     &tm_start, &tm_end, R_COMMENT, ifd,
 							     &rectime, from_file, 0,
@@ -1312,23 +1316,29 @@ int main(int argc, char **argv)
 		else if (!strncmp(argv[opt], "--dev=", 6)) {
 			/* Parse devices entered on the command line */
 			p = get_activity_position(act, A_DISK, EXIT_IF_NOT_FOUND);
-			parse_sa_devices(argv[opt], act[p], MAX_DEV_LEN, &opt, 6);
+			parse_sa_devices(argv[opt], act[p], MAX_DEV_LEN, &opt, 6, NO_RANGE);
 		}
 
 		else if (!strncmp(argv[opt], "--fs=", 5)) {
 			/* Parse devices entered on the command line */
 			p = get_activity_position(act, A_FS, EXIT_IF_NOT_FOUND);
-			parse_sa_devices(argv[opt], act[p], MAX_FS_LEN, &opt, 5);
+			parse_sa_devices(argv[opt], act[p], MAX_FS_LEN, &opt, 5, NO_RANGE);
 		}
 
 		else if (!strncmp(argv[opt], "--iface=", 8)) {
 			/* Parse devices entered on the command line */
 			p = get_activity_position(act, A_NET_DEV, EXIT_IF_NOT_FOUND);
-			parse_sa_devices(argv[opt], act[p], MAX_IFACE_LEN, &opt, 8);
+			parse_sa_devices(argv[opt], act[p], MAX_IFACE_LEN, &opt, 8, NO_RANGE);
 			q = get_activity_position(act, A_NET_EDEV, EXIT_IF_NOT_FOUND);
 			act[q]->item_list = act[p]->item_list;
 			act[q]->item_list_sz = act[p]->item_list_sz;
 			act[q]->options |= AO_LIST_ON_CMDLINE;
+		}
+
+		else if (!strncmp(argv[opt], "--int=", 6)) {
+			/* Parse interrupts names entered on the command line */
+			p = get_activity_position(act, A_IRQ, EXIT_IF_NOT_FOUND);
+			parse_sa_devices(argv[opt], act[p], MAX_SA_IRQ_LEN, &opt, 6, NR_IRQS);
 		}
 
 		else if (!strcmp(argv[opt], "--help")) {
@@ -1355,13 +1365,6 @@ int main(int argc, char **argv)
 				usage(argv[0]);
 			}
 			opt++;
-		}
-
-		else if (!strcmp(argv[opt], "-I")) {
-			/* Parse -I option */
-			if (parse_sar_I_opt(argv, &opt, &flags, act)) {
-				usage(argv[0]);
-			}
 		}
 
 		else if (!strcmp(argv[opt], "-D")) {
@@ -1551,7 +1554,7 @@ int main(int argc, char **argv)
 		exit(1);
 	}
 	if (USE_OPTION_A(flags)) {
-		/* Set -P ALL -I ALL if needed */
+		/* Set -P ALL if needed */
 		set_bitmaps(act, &flags);
 	}
 	/* Use time start or option -i only when reading stats from a file */

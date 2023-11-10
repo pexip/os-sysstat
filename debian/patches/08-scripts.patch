@@ -8,7 +8,7 @@ Forwarded: not-needed
  1 file changed, 1 insertion(+), 1 deletion(-)
 
 diff --git a/sa2.in b/sa2.in
-index 14eeab5..c8e593c 100644
+index b89b37f..1bbf30f 100644
 --- a/sa2.in
 +++ b/sa2.in
 @@ -61,7 +61,7 @@ fi

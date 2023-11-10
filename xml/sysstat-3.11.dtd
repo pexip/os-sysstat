@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!--DTD v3.9 for sysstat. See sadf.h -->
+<!--DTD v3.11 for sysstat. See sadf.h -->
 
 <!ELEMENT sysstat (sysdata-version, host)>
 <!ATTLIST sysstat
@@ -62,7 +62,7 @@
 	com CDATA #REQUIRED
 >
 
-<!ELEMENT cpu-load (cpu+)>
+<!ELEMENT cpu-load (cpu*)>
 
 <!ELEMENT cpu EMPTY>
 <!ATTLIST cpu
@@ -90,7 +90,7 @@
 
 <!ELEMENT interrupts (int-global)>
 
-<!ELEMENT int-global (irq+)>
+<!ELEMENT int-global (irq*)>
 <!ATTLIST int-global
 	per CDATA #REQUIRED
 >
@@ -98,6 +98,7 @@
 <!ELEMENT irq EMPTY>
 <!ATTLIST irq
 	intr CDATA #REQUIRED
+	cpu CDATA #IMPLIED
 	value CDATA #REQUIRED
 >
 
@@ -522,11 +523,12 @@
 	squeezd CDATA #REQUIRED
 	rx_rps CDATA #REQUIRED
 	flw_lim CDATA #REQUIRED
+	blg_len CDATA #IMPLIED
 >
 
 <!ELEMENT power-management (cpu-frequency?, fan-speed?, temperature?, voltage-input?, cpu-weighted-frequency?, usb-devices?)>
 
-<!ELEMENT cpu-frequency (cpufreq+)>
+<!ELEMENT cpu-frequency (cpufreq*)>
 <!ATTLIST cpu-frequency
 	unit CDATA #REQUIRED
 >

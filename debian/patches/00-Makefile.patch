@@ -10,11 +10,11 @@ Support standard compiler flags like CPPFLAGS or LDFALGS.
 Forwarded: not-needed
 ---
  Makefile.in  | 10 ++++++----
- configure.in |  2 ++
- 2 files changed, 8 insertions(+), 4 deletions(-)
+ configure.in |  1 +
+ 2 files changed, 7 insertions(+), 4 deletions(-)
 
 diff --git a/Makefile.in b/Makefile.in
-index be4049c..63d56bb 100644
+index a539cda..e81af9f 100644
 --- a/Makefile.in
 +++ b/Makefile.in
 @@ -102,6 +102,7 @@ CFLAGS += -Wall -Wstrict-prototypes -pipe -O2
@@ -27,13 +27,13 @@ index be4049c..63d56bb 100644
  DFLAGS += $(DFPCP)
 @@ -112,6 +113,7 @@ endif
  ifndef LFLAGS
- LFLAGS = @STRIP@
+ LFLAGS = @STRIP@ @LDFLAGS@
  endif
 +LFLAGS += @LDFLAGS@
  
  # Commands
  ifndef MSGFMT
-@@ -465,7 +467,7 @@ locales:
+@@ -478,7 +480,7 @@ locales:
  endif
  
  nls/sysstat.pot: $(wildcard *.c)
@@ -41,8 +41,8 @@ index be4049c..63d56bb 100644
 +#	$(XGETTEXT) -o $@ -k_ --msgid-bugs-address="sysstat <at> orange.fr" $^
  
  # Phony targets
- .PHONY: clean distclean install install_base install_all uninstall \
-@@ -556,12 +558,12 @@ endif
+ .PHONY: clean distclean install install_base install_all uninstall copyyear \
+@@ -578,12 +580,12 @@ endif
  	$(INSTALL_DATA) sysstat.ioconf $(DESTDIR)$(SYSCONFIG_DIR)
  	$(INSTALL_DATA) sysstat.sysconfig $(DESTDIR)$(SYSCONFIG_DIR)/$(SYSCONFIG_FILE)
  ifeq ($(INSTALL_DOC),y)
@@ -59,7 +59,7 @@ index be4049c..63d56bb 100644
  
  ifdef SYSTEMD_UNIT_DIR
 diff --git a/configure.in b/configure.in
-index d797c6f..abb2406 100644
+index 739cc92..40f13e5 100644
 --- a/configure.in
 +++ b/configure.in
 @@ -190,6 +190,7 @@ DFSENSORS32=""
@@ -68,13 +68,5 @@ index d797c6f..abb2406 100644
  	CFLAGS_SAVE=$CFLAGS
 +	LDFLAGS_SAVE=$LDFLAGS
  	CFLAGS+=" -m32"
- 	LDFLAGS=" -lsensors"
- 	SENSORS=no
-@@ -201,6 +202,7 @@ if test $SENSORS_SUPPORT = "y"; then
- 					[[sensors_cleanup();]])], SENSORS=yes; HAVE_SENSORS32="y"; DFSENSORS32="-DHAVE_SENSORS32", HAVE_SENSORS32="n"; SENSORS=no)
- 	AC_MSG_RESULT($SENSORS)
- 	CFLAGS=$CFLAGS_SAVE
-+	LDFLAGS=$LDFLAGS_SAVE
- fi
- AC_SUBST(HAVE_SENSORS32)
- AC_SUBST(LFSENSORS32)
+ 	LDFLAGS_SAVE=$LDFLAGS
+ 	LDFLAGS+=" -lsensors"

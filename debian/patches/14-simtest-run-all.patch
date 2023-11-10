@@ -6,18 +6,25 @@ Instead of stopping at the first failed test,
 run all test, and exit with code 3 if any
 test fails.
 ---
- Makefile.in | 10 +++++++++-
- 1 file changed, 9 insertions(+), 1 deletion(-)
+ Makefile.in | 19 +++++++++++++++++--
+ 1 file changed, 17 insertions(+), 2 deletions(-)
 
 diff --git a/Makefile.in b/Makefile.in
-index 63d56bb..640b317 100644
+index e81af9f..72ce377 100644
 --- a/Makefile.in
 +++ b/Makefile.in
-@@ -794,14 +794,22 @@ unit:
+@@ -817,6 +817,8 @@ unit:
+ 	@echo $(X) 2>&1
  	@cat $(TESTDIR)/$(X) | $(TESTRUN)
  
- # Use "do_test" script to make the following target
 +FAILED_TESTS := tests/FAILURES
++
+ extraunit:
+ 	@echo $(X) 2>&1
+ 	@cat $(EXTRADIR)/$(X) | $(TESTRUN)
+@@ -825,21 +827,34 @@ extraunit:
+ simtest: DFLAGS += -DTEST
+ 
  simtest: all testcomp
 -	@$(foreach x, $(TESTLIST), $(MAKE) X=$x unit || exit;)
 +	rm -f $(FAILED_TESTS)
@@ -31,9 +38,24 @@ index 63d56bb..640b317 100644
 +	fi
  	@echo Simulation tests: Success!
  
+ extratest: DFLAGS += -DTEST
+ 
+ extratest: all
+-	@$(foreach x, $(EXTRALIST), $(MAKE) X=$x extraunit || exit;)
++	rm -f $(FAILED_TESTS)
++	@$(foreach x, $(EXTRALIST), $(MAKE) X=$x extraunit || echo $x >> $(FAILED_TESTS);)
+ 	rm -f tests/root
+ 	ln -s root1 tests/root
++	@if [ -s $(FAILED_TESTS) ]; then \
++		echo "Extra simulation tests: Failed test cases:"; \
++		cat $(FAILED_TESTS); \
++		exit 3; \
++	fi
+ 	@echo Extra simulation tests: Success!
+ 
  clean:
- 	rm -f sadc sar sadf iostat tapestat mpstat pidstat cifsiostat *.o *.a core TAGS tests/*.tmp
+ 	rm -f sadc sar sadf iostat tapestat mpstat pidstat cifsiostat *.o *.a core TAGS tests/*.tmp tests/extra/*.tmp
 +	rm -f $(FAILED_TESTS)
  	rm -f nfsiostat* man/nfsiostat*
- 	rm -f tests/sa[012]*
+ 	rm -f tests/sa[0123]*
  	rm -f tests/root

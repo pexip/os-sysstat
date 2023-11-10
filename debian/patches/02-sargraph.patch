@@ -9,7 +9,7 @@ Forwarded: not-needed
  2 files changed, 2 insertions(+), 2 deletions(-)
 
 diff --git a/contrib/sargraph/sargraph b/contrib/sargraph/sargraph
-index 22ee46e..b1aab52 100755
+index 6029290..a2d271b 100755
 --- a/contrib/sargraph/sargraph
 +++ b/contrib/sargraph/sargraph
 @@ -17,7 +17,7 @@ GZIP=`which gzip`
@@ -22,7 +22,7 @@ index 22ee46e..b1aab52 100755
  SA_REGEX='/sa[0-9][0-9]+(\.(gz|bz2|xz|lz|lzo))?$'
  
 diff --git a/contrib/sargraph/sargraph2 b/contrib/sargraph/sargraph2
-index 7eaa5a8..c8c95b6 100755
+index 1982e63..880ad45 100755
 --- a/contrib/sargraph/sargraph2
 +++ b/contrib/sargraph/sargraph2
 @@ -14,7 +14,7 @@ GNUPLOT=`which gnuplot`

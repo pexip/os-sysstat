@@ -1,6 +1,6 @@
 /*
  * sadc: system activity data collector
- * (C) 1999-2020 by Sebastien GODARD (sysstat <at> orange.fr)
+ * (C) 1999-2022 by Sebastien GODARD (sysstat <at> orange.fr)
  *
  ***************************************************************************
  * This program is free software; you can redistribute it and/or modify it *
@@ -110,7 +110,7 @@ void usage(char *progname)
  *
  * IN:
  * @group_id	Group identification number.
- * @opt_f	Optionnal flag to set.
+ * @opt_f	Optional flag to set.
  ***************************************************************************
  */
 void collect_group_activities(unsigned int group_id, unsigned int opt_f)
@@ -294,7 +294,7 @@ void reset_stats(void)
 	int i;
 
         for (i = 0; i < NR_ACT; i++) {
-		if ((act[i]->nr > 0) && act[i]->_buf0) {
+		if ((act[i]->_nr0 > 0) && act[i]->_buf0) {
 			memset(act[i]->_buf0, 0,
 			       (size_t) act[i]->msize * (size_t) act[i]->nr_allocated * (size_t) act[i]->nr2);
 		}
@@ -341,8 +341,16 @@ void sa_sys_init(void)
 		}
 
 		if (act[i]->nr_ini > 0) {
-			if (act[i]->f_count2) {
-				act[i]->nr2 = (*act[i]->f_count2)(act[i]);
+			if (act[i]->f_count2_index >= 0) {
+				idx = act[i]->f_count2_index;
+
+				if (f_count_results[idx] >= 0) {
+					act[i]->nr2 = f_count_results[idx];
+				}
+				else {
+					act[i]->nr2 = (f_count[idx])(act[i]);
+					f_count_results[idx] = act[i]->nr2;
+				}
 			}
 			/* else act[i]->nr2 is a constant and doesn't need to be calculated */
 
@@ -352,6 +360,12 @@ void sa_sys_init(void)
 		}
 
 		if (IS_COLLECTED(act[i]->options) && (act[i]->nr_ini > 0)) {
+
+			/* Look for a possible overflow */
+			check_overflow((unsigned int) act[i]->msize,
+				       (unsigned int) act[i]->nr_ini,
+				       (unsigned int) act[i]->nr2);
+
 			/* Allocate structures for current activity (using nr_ini and nr2 results) */
 			SREALLOC(act[i]->_buf0, void,
 				 (size_t) act[i]->msize * (size_t) act[i]->nr_ini * (size_t) act[i]->nr2);

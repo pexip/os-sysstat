@@ -33,6 +33,7 @@ override_dh_auto_configure:
 		    --docdir=/usr/share/doc/sysstat     \
 		    --enable-install-cron               \
 		    --disable-use-crond                 \
+		    --enable-lto                        \
 	            sa_lib_dir=/usr/lib/sysstat         \
 	            sa_dir=/var/log/sysstat             \
 	            conf_dir=/etc/sysstat

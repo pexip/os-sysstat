@@ -1,6 +1,6 @@
 /*
  * raw_stats.c: Functions used by sar to display statistics in raw format.
- * (C) 1999-2020 by Sebastien GODARD (sysstat <at> orange.fr)
+ * (C) 1999-2022 by Sebastien GODARD (sysstat <at> orange.fr)
  *
  ***************************************************************************
  * This program is free software; you can redistribute it and/or modify it *
@@ -28,7 +28,7 @@
 #include "ioconf.h"
 #include "raw_stats.h"
 
-extern unsigned int flags;
+extern uint64_t flags;
 
 /*
  ***************************************************************************
@@ -39,6 +39,8 @@ extern unsigned int flags;
  *		metric names. In each subsequent call, must be NULL.
  * @pos		Index in @hdr_line string, 0 being the first one (headers
  * 		are delimited by the '|' character).
+ *		If @hdr_line is NULL then @pos is the item number for fields
+ *		containing a '*' character (e.g. "CPU*").
  *
  * RETURNS:
  * Pointer on string containing field name.
@@ -48,6 +50,7 @@ char *pfield(char *hdr_line, int pos)
 {
 	char hline[HEADER_LINE_LEN] = "";
 	static char field[HEADER_LINE_LEN] = "";
+	static char gen_name[HEADER_LINE_LEN] = "";
 	static int idx = 0;
 	char *hl;
 	int i, j = 0;
@@ -71,11 +74,26 @@ char *pfield(char *hdr_line, int pos)
 		field[sizeof(field) - 1] = '\0';
 	}
 
-	/* Display current field */
 	if (strchr(field + idx, ';')) {
 		j = strcspn(field + idx, ";");
 		*(field + idx + j) = '\0';
 	}
+	else if (strchr(field + idx, '*') || (!hdr_line && pos)) {
+		j = strcspn(field + idx, "*");
+		if (j < strlen(field + idx)) {
+			*(field + idx + j) = '\0';
+		}
+		if (!pos) {
+			strcpy(gen_name, K_LOWERALL);
+		}
+		else {
+			snprintf(gen_name, sizeof(gen_name), "%s%d", field + idx, pos - 1);
+			gen_name[sizeof(gen_name) - 1] = '\0';
+		}
+
+		return gen_name;
+	}
+
 	i = idx;
 	idx += j + 1;
 
@@ -96,7 +114,7 @@ void pval(unsigned long long valp, unsigned long long valc)
 	if (DISPLAY_DEBUG_MODE(flags)) {
 		if (valc < valp) {
 			/* Field's value has decreased */
-			printf(" [DEC]");
+			cprintf_s(IS_DEBUG, "%s", " [DEC]");
 		}
 	}
 	printf("; %llu; %llu;", valp, valc);
@@ -150,12 +168,12 @@ __print_funct_t raw_print_cpu_stats(struct activity *a, char *timestr, int curr)
 			     scc->cpu_iowait + scc->cpu_idle + scc->cpu_steal +
 			     scc->cpu_hardirq + scc->cpu_softirq) == 0) {
 				/* CPU is offline */
-				printf(" [OFF]");
+				cprintf_s(IS_DEBUG, "%s", " [OFF]");
 			}
 			else {
 				if (!get_per_cpu_interval(scc, scp)) {
 					/* CPU is tickless */
-					printf(" [TLS]");
+					cprintf_s(IS_DEBUG, "%s", " [TLS]");
 				}
 			}
 		}
@@ -237,24 +255,46 @@ __print_funct_t raw_print_pcsw_stats(struct activity *a, char *timestr, int curr
  */
 __print_funct_t raw_print_irq_stats(struct activity *a, char *timestr, int curr)
 {
-	int i;
-	struct stats_irq *sic, *sip;
+	int i, c;
+	struct stats_irq *stc_cpu_irq, *stp_cpu_irq, *stc_cpuall_irq;
 
-	for (i = 0; (i < a->nr[curr]) && (i < a->bitmap->b_size + 1); i++) {
+	/* @nr[curr] cannot normally be greater than @nr_ini */
+	if (a->nr[curr] > a->nr_ini) {
+		a->nr_ini = a->nr[curr];
+	}
 
-		sic = (struct stats_irq *) ((char *) a->buf[curr]  + i * a->msize);
-		sip = (struct stats_irq *) ((char *) a->buf[!curr] + i * a->msize);
+	for (i = 0; i < a->nr2; i++) {
 
-		/* Should current interrupt (including int "sum") be displayed? */
-		if (a->bitmap->b_array[i >> 3] & (1 << (i & 0x07))) {
+		stc_cpuall_irq = (struct stats_irq *) ((char *) a->buf[curr] + i * a->msize);
 
-			/* Yes: Display it */
-			printf("%s; %s; %d;", timestr,
-			       pfield(a->hdr_line, FIRST), i - 1);
-			printf(" %s", pfield(NULL, 0));
-			pval(sip->irq_nr, sic->irq_nr);
-			printf("\n");
+		if (a->item_list != NULL) {
+			/* A list of devices has been entered on the command line */
+			if (!search_list_item(a->item_list, stc_cpuall_irq->irq_name))
+				/* Device not found */
+				continue;
 		}
+
+		printf("%s; %s; %s;", timestr,
+		       pfield(a->hdr_line, FIRST), stc_cpuall_irq->irq_name);
+
+		/* In raw mode, offline CPU (in datafile) are always displayed */
+		for (c = 0; (c < a->nr[curr]) && (c < a->bitmap->b_size + 1); c++) {
+
+			stc_cpu_irq = (struct stats_irq *) ((char *) a->buf[curr] + c * a->msize * a->nr2
+										  + i * a->msize);
+			stp_cpu_irq = (struct stats_irq *) ((char *) a->buf[!curr] + c * a->msize * a->nr2
+										  + i * a->msize);
+
+			/* Should current interrupt (including int "sum") be displayed? */
+			if (!(a->bitmap->b_array[c >> 3] & (1 << (c & 0x07))))
+				/* No */
+				continue;
+
+			printf(" %s", pfield(NULL, c));
+			pval((unsigned long long) stp_cpu_irq->irq_nr,
+			     (unsigned long long) stc_cpu_irq->irq_nr);
+		}
+		printf("\n");
 	}
 }
 
@@ -490,7 +530,7 @@ __print_funct_t raw_print_serial_stats(struct activity *a, char *timestr, int cu
 
 		printf("%s; %s", timestr, pfield(a->hdr_line, FIRST));
 		if (!found && DISPLAY_DEBUG_MODE(flags)) {
-			printf(" [NEW]");
+			cprintf_s(IS_DEBUG, "%s", " [NEW]");
 		}
 		printf("; %u;", ssc->line);
 		if (!found) {
@@ -556,7 +596,7 @@ __print_funct_t raw_print_disk_stats(struct activity *a, char *timestr, int curr
 			/* This is a newly registered interface. Previous stats are zero */
 			sdp = &sdpzero;
 			if (DISPLAY_DEBUG_MODE(flags)) {
-				printf(" [%s]", j == -1 ? "NEW" : "BCK");
+				cprintf_s(IS_DEBUG, "%s",  j == -1 ? " [NEW]" : " [BCK]");
 			}
 		}
 		else {
@@ -621,7 +661,7 @@ __print_funct_t raw_print_net_dev_stats(struct activity *a, char *timestr, int c
 			/* This is a newly registered interface. Previous stats are zero */
 			sndp = &sndzero;
 			if (DISPLAY_DEBUG_MODE(flags)) {
-				printf(" [%s]", j == -1 ? "NEW" : "BCK");
+				cprintf_s(IS_DEBUG, "%s",  j == -1 ? " [NEW]" : " [BCK]");
 			}
 		}
 		else {
@@ -681,7 +721,7 @@ __print_funct_t raw_print_net_edev_stats(struct activity *a, char *timestr, int 
 			/* This is a newly registered interface. Previous stats are zero */
 			snedp = &snedzero;
 			if (DISPLAY_DEBUG_MODE(flags)) {
-				printf(" [%s]", j == -1 ? "NEW" : "BCK");
+				cprintf_s(IS_DEBUG, "%s",  j == -1 ? " [NEW]" : " [BCK]");
 			}
 		}
 		else {
@@ -1582,7 +1622,7 @@ __print_funct_t raw_print_fchost_stats(struct activity *a, char *timestr, int cu
 			/* This is a newly registered host. Previous stats are zero */
 			sfcp = &sfczero;
 			if (DISPLAY_DEBUG_MODE(flags)) {
-				printf(" [NEW]");
+				cprintf_s(IS_DEBUG, "%s", " [NEW]");
 			}
 		}
 
@@ -1648,9 +1688,9 @@ __print_funct_t raw_print_softnet_stats(struct activity *a, char *timestr, int c
 		printf("%s; %s", timestr, pfield(a->hdr_line, FIRST));
 		if (DISPLAY_DEBUG_MODE(flags) && i) {
 			if (ssnc->processed + ssnc->dropped + ssnc->time_squeeze +
-			    ssnc->received_rps + ssnc->flow_limit == 0) {
+			    ssnc->received_rps + ssnc->flow_limit + ssnc->backlog_len == 0) {
 				/* CPU is considered offline */
-				printf(" [OFF]");
+				cprintf_s(IS_DEBUG, "%s", " [OFF]");
 			}
 		}
 		printf("; %d;", i - 1);
@@ -1665,6 +1705,7 @@ __print_funct_t raw_print_softnet_stats(struct activity *a, char *timestr, int c
 		pval((unsigned long long) ssnp->received_rps, (unsigned long long) ssnc->received_rps);
 		printf(" %s", pfield(NULL, 0));
 		pval((unsigned long long) ssnp->flow_limit, (unsigned long long) ssnc->flow_limit);
+		printf(" %s; %u;", pfield(NULL, 0), ssnc->backlog_len);
 		printf("\n");
 	}
 }

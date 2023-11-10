@@ -1,6 +1,6 @@
 /*
  * format.c: Output format definitions for sadf and sar
- * (C) 2011-2020 by Sebastien GODARD (sysstat <at> orange.fr)
+ * (C) 2011-2022 by Sebastien GODARD (sysstat <at> orange.fr)
  *
  ***************************************************************************
  * This program is free software; you can redistribute it and/or modify it *
@@ -188,7 +188,7 @@ struct report_format *fmt[NR_FMT] = {
  * (RESTART and COMMENT) records.
  */
 struct report_format sar_fmt = {
-	.id		= 0,
+	.id		= F_SAR_OUTPUT,
 	.options	= 0,
 	.f_header	= NULL,
 	.f_statistics	= NULL,

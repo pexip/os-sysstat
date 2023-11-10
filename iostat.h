@@ -1,6 +1,6 @@
 /*
  * iostat: report CPU and I/O statistics
- * (C) 1999-2020 by Sebastien Godard (sysstat <at> orange.fr)
+ * (C) 1999-2022 by Sebastien Godard (sysstat <at> orange.fr)
  */
 
 #ifndef _IOSTAT_H
@@ -31,6 +31,7 @@
 #define I_D_ZERO_OMIT		0x080000
 #define I_D_UNIT		0x100000
 #define I_D_SHORT_OUTPUT	0x200000
+#define I_D_COMPACT		0x400000
 
 #define DISPLAY_CPU(m)			(((m) & I_D_CPU)              == I_D_CPU)
 #define DISPLAY_DISK(m)			(((m) & I_D_DISK)             == I_D_DISK)
@@ -54,11 +55,14 @@
 #define DISPLAY_UNIT(m)			(((m) & I_D_UNIT)	      == I_D_UNIT)
 #define DISPLAY_SHORT_OUTPUT(m)		(((m) & I_D_SHORT_OUTPUT)     == I_D_SHORT_OUTPUT)
 #define USE_ALL_DIR(m)			(((m) & I_D_ALL_DIR)          == I_D_ALL_DIR)
+#define DISPLAY_COMPACT(m)		(((m) & I_D_COMPACT)          == I_D_COMPACT)
 
 #define T_PART		0
 #define T_DEV		1
 #define T_PART_DEV	2
 #define T_GROUP		3
+
+#define UKWN_MAJ_NR	0
 
 /* Environment variable */
 #define ENV_POSIXLY_CORRECT	"POSIXLY_CORRECT"
@@ -117,7 +121,7 @@ struct io_device {
 	int dev_tp;
 	/* TRUE if device exists in /proc/diskstats or /sys. Don't apply for groups. */
 	int exist;
-	/* major and minor numbers are set only for partitions (T_PART), not whole devices */
+	/* major and minor numbers (not set for T_GROUP "devices") */
 	int major;
 	int minor;
 	struct io_stats *dev_stats[2];

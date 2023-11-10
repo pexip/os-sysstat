@@ -1,6 +1,6 @@
 /*
  * pidstat: Report statistics for Linux tasks
- * (C) 2007-2020 by Sebastien GODARD (sysstat <at> orange.fr)
+ * (C) 2007-2022 by Sebastien GODARD (sysstat <at> orange.fr)
  *
  ***************************************************************************
  * This program is free software; you can redistribute it and/or modify it *
@@ -138,6 +138,7 @@ void sfree_pid(struct st_pid **plist, int force)
 	struct st_pid *p;
 
 	while (*plist != NULL) {
+
 		p = *plist;
 		if (!p->exist || force) {
 			*plist = p->next;
@@ -185,7 +186,11 @@ void check_flags(void)
 	}
 
 	if (!DISPLAY_PID(pidflag)) {
-		pidflag |= P_D_ACTIVE_PID + P_D_PID + P_D_ALL_PID;
+		/*
+		 * If no PIDs nor -p ALL entered on the command line then
+		 * only active PIDs will be displayed.
+		 */
+		pidflag |= P_D_ACTIVE_PID + P_D_ALL_PID;
 	}
 
 	if (!tskflag) {
@@ -243,6 +248,7 @@ struct st_pid *add_list_pid(struct st_pid **plist, pid_t pid, pid_t tgid)
 		 * other TIDs.
 		 */
 		while (*plist != NULL) {
+
 			p = *plist;
 			if (!p->tgid && (p->pid == pid))
 				/* PID found in list */
@@ -262,6 +268,7 @@ struct st_pid *add_list_pid(struct st_pid **plist, pid_t pid, pid_t tgid)
 		 * following its TGID.
 		 */
 		while (*plist != NULL) {
+
 			p = *plist;
 			if (p->pid == tgid) {
 				/* TGID found in list */
@@ -278,6 +285,7 @@ struct st_pid *add_list_pid(struct st_pid **plist, pid_t pid, pid_t tgid)
 
 		plist = &(p->next);
 		while (*plist != NULL) {
+
 			p = *plist;
 			if ((p->tgid == tgid_p) && (p->pid == pid))
 				/* TID found in list */
@@ -601,6 +609,7 @@ int read_proc_pid_smap(pid_t pid, struct st_pid *plist, pid_t tgid, int curr)
 		return 1;
 
 	while ((state < 3) && (fgets(line, sizeof(line), fp) != NULL)) {
+
 		switch (state) {
 			case 0:
 				if (strstr(line, "[stack]")) {
@@ -878,6 +887,7 @@ void read_task_stats(pid_t pid, struct st_pid *plist, int curr)
 		return;
 
 	while ((drp = __readdir(dir)) != NULL) {
+
 		if (!isdigit(drp->d_name[0])) {
 			continue;
 		}
@@ -947,6 +957,7 @@ void read_stats(int curr)
 
 		/* Get directory entries */
 		while ((drp = __readdir(dir)) != NULL) {
+
 			if (!isdigit(drp->d_name[0])) {
 				continue;
 			}
@@ -972,7 +983,7 @@ void read_stats(int curr)
 		__closedir(dir);
 	}
 
-	else if (DISPLAY_PID(pidflag)) {
+	else {
 		/* Read stats for each PID in the list */
 		for (plist = pid_list; plist != NULL; plist = plist->next) {
 
@@ -2363,7 +2374,7 @@ void rw_pidstat_loop(int dis_hdr, int rows)
 		read_proc_meminfo();
 	}
 
-	if (!interval) {
+	if (!interval && !EXEC_PGM(pidflag)) {
 		/* Display since boot time */
 		ps_tstamp[1] = ps_tstamp[0];
 		write_stats(0, DISP_HDR);
@@ -2374,7 +2385,9 @@ void rw_pidstat_loop(int dis_hdr, int rows)
 	memset(&alrm_act, 0, sizeof(alrm_act));
 	alrm_act.sa_handler = alarm_handler;
 	sigaction(SIGALRM, &alrm_act, NULL);
-	alarm(interval);
+	if (interval) {
+		alarm(interval);
+	}
 
 	/* Save the first stats collected. Will be used to compute the average */
 	ps_tstamp[2] = ps_tstamp[0];
@@ -2392,7 +2405,7 @@ void rw_pidstat_loop(int dis_hdr, int rows)
 	/* Wait for SIGALRM (or possibly SIGINT) signal */
 	__pause();
 
-	if (signal_caught)
+	if (signal_caught && interval)
 		/* SIGINT/SIGCHLD signals caught during first interval: Exit immediately */
 		return;
 
@@ -2544,7 +2557,7 @@ int main(int argc, char **argv)
 			if (!argv[++opt]) {
 				usage(argv[0]);
 			}
-			pidflag |= P_D_PID;
+			pidflag |= P_D_PID + P_F_EXEC_PGM;
 			add_list_pid(&pid_list, exec_pgm(argc - opt, argv + opt), 0);
 			break;
 		}

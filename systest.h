@@ -1,6 +1,6 @@
 /*
  * sysstat: System performance tools for Linux
- * (C) 1999-2020 by Sebastien Godard (sysstat <at> orange.fr)
+ * (C) 1999-2022 by Sebastien Godard (sysstat <at> orange.fr)
  */
 
 #ifndef _SYSTEST_H
@@ -66,7 +66,7 @@
 #define __major(m)		major(m)
 #define __minor(m)		minor(m)
 
-#endif
+#endif	/* TEST */
 
 /*
  ***************************************************************************
@@ -103,6 +103,6 @@ int virtual_stat
 
 void int_handler
 	(int);
-#endif
+#endif /* TEST */
 
 #endif  /* _SYSTEST_H */

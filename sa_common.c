@@ -1,6 +1,6 @@
 /*
  * sar and sadf common routines.
- * (C) 1999-2020 by Sebastien GODARD (sysstat <at> orange.fr)
+ * (C) 1999-2022 by Sebastien GODARD (sysstat <at> orange.fr)
  *
  ***************************************************************************
  * This program is free software; you can redistribute it and/or modify it *
@@ -54,7 +54,6 @@ unsigned int hdr_types_nr[] = {FILE_HEADER_ULL_NR, FILE_HEADER_UL_NR, FILE_HEADE
 unsigned int act_types_nr[] = {FILE_ACTIVITY_ULL_NR, FILE_ACTIVITY_UL_NR, FILE_ACTIVITY_U_NR};
 unsigned int rec_types_nr[] = {RECORD_HEADER_ULL_NR, RECORD_HEADER_UL_NR, RECORD_HEADER_U_NR};
 unsigned int extra_desc_types_nr[] = {EXTRA_DESC_ULL_NR, EXTRA_DESC_UL_NR, EXTRA_DESC_U_NR};
-unsigned int nr_types_nr[]  = {0, 0, 1};
 
 /*
  ***************************************************************************
@@ -198,13 +197,9 @@ void guess_sa_name(char *sa_dir, struct tm *rectime, int *sa_name)
  *
  * OUT:
  * @datafile	Name of daily data file.
- *
- * RETURNS:
- * 1 if an output error has been encountered or if datafile name has been
- * truncated, or 0 otherwise.
  ***************************************************************************
  */
-int set_default_file(char *datafile, int d_off, int sa_name)
+void set_default_file(char *datafile, int d_off, int sa_name)
 {
 	char sa_dir[MAX_FILE_LEN];
 	struct tm rectime = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, NULL};
@@ -243,13 +238,17 @@ int set_default_file(char *datafile, int d_off, int sa_name)
 			       rectime.tm_mday);
 	}
 	datafile[MAX_FILE_LEN - 1] = '\0';
+
+	if ((err < 0) || (err >= MAX_FILE_LEN)) {
+		fprintf(stderr, "%s: %s\n", __FUNCTION__, datafile);
+		exit(1);
+	}
+
 	default_file_used = TRUE;
 
 #ifdef DEBUG
 	fprintf(stderr, "%s: Datafile: %s\n", __FUNCTION__, datafile);
 #endif
-
-	return ((err < 0) || (err >= MAX_FILE_LEN));
 }
 
 /*
@@ -330,6 +329,8 @@ void display_sa_file_version(FILE *st, struct file_magic *file_magic)
 void handle_invalid_sa_file(int fd, struct file_magic *file_magic, char *file,
 			    int n)
 {
+	unsigned short fmt_magic;
+
 	fprintf(stderr, _("Invalid system activity file: %s\n"), file);
 
 	if (n == FILE_MAGIC_SIZE) {
@@ -337,10 +338,19 @@ void handle_invalid_sa_file(int fd, struct file_magic *file_magic, char *file,
 			/* This is a sysstat file, but this file has an old format */
 			display_sa_file_version(stderr, file_magic);
 
+			fmt_magic = file_magic->sysstat_magic == SYSSTAT_MAGIC ?
+				    file_magic->format_magic : __builtin_bswap16(file_magic->format_magic);
 			fprintf(stderr,
 				_("Current sysstat version cannot read the format of this file (%#x)\n"),
-				file_magic->sysstat_magic == SYSSTAT_MAGIC ?
-				file_magic->format_magic : __builtin_bswap16(file_magic->format_magic));
+				fmt_magic);
+			if (fmt_magic >= FORMAT_MAGIC_2171) {
+				fprintf(stderr,
+					_("Try to convert it to current format. Enter:\n\n"));
+				fprintf(stderr, "sadf -c %s > %s.new\n\n", file, file);
+				fprintf(stderr,
+					_("You should then be able to read the new file created (%s.new)\n"),
+					file);
+			}
 		}
 	}
 
@@ -417,6 +427,7 @@ int write_all(int fd, const void *buf, int nr_bytes)
 	char *buffer = (char *) buf;
 
 	while (nr_bytes > 0) {
+
 		block = write(fd, &buffer[offset], nr_bytes);
 
 		if (block < 0) {
@@ -448,7 +459,14 @@ void allocate_structures(struct activity *act[])
 	int i, j;
 
 	for (i = 0; i < NR_ACT; i++) {
+
 		if (act[i]->nr_ini > 0) {
+
+			/* Look for a possible overflow */
+			check_overflow((unsigned int) act[i]->msize,
+				       (unsigned int) act[i]->nr_ini,
+				       (unsigned int) act[i]->nr2);
+
 			for (j = 0; j < 3; j++) {
 				SREALLOC(act[i]->buf[j], void,
 						(size_t) act[i]->msize * (size_t) act[i]->nr_ini * (size_t) act[i]->nr2);
@@ -512,6 +530,10 @@ void reallocate_all_buffers(struct activity *a, __nr_t nr_min)
 		while (nr_realloc < nr_min);
 	}
 
+	/* Look for a possible overflow */
+	check_overflow((unsigned int) a->msize, (unsigned int) nr_realloc,
+		       (unsigned int) a->nr2);
+
 	for (j = 0; j < 3; j++) {
 		SREALLOC(a->buf[j], void,
 			(size_t) a->msize * nr_realloc * (size_t) a->nr2);
@@ -570,15 +592,11 @@ int next_slice(unsigned long long uptime_ref, unsigned long long uptime,
 	/*
 	 * A few notes about the "algorithm" used here to display selected entries
 	 * from the system activity file (option -f with -i flag):
-	 * Let 'Iu' be the interval value given by the user on the command line,
-	 *     'If' the interval between current and previous line in the system
-	 * activity file,
-	 * and 'En' the nth entry (identified by its time stamp) of the file.
-	 * We choose In = [ En - If/2, En + If/2 [ if If is even,
-	 *        or In = [ En - If/2, En + If/2 ] if not.
-	 * En will be displayed if
-	 *       (Pn * Iu) or (P'n * Iu) belongs to In
-	 * with  Pn = En / Iu and P'n = En / Iu + 1
+	 * Let Iu be the interval value given by the user on the command line,
+	 *     In the interval between current and previous sample,
+	 * and En the current sample (identified by its time stamp) in the file.
+	 * En will ne displayed if there is an integer p so that:
+	 * p * Iu belongs to [En - In/2, En + In/2[.
 	 */
 	f = ((double) ((uptime - uptime_ref) & 0xffffffff)) / 100;
 	entry = (unsigned long) f;
@@ -749,6 +767,8 @@ void get_itv_value(struct record_header *record_hdr_curr,
 void get_file_timestamp_struct(uint64_t flags, struct tm *rectime,
 			       struct file_header *file_hdr)
 {
+	time_t t = file_hdr->sa_ust_time;
+
 	if (PRINT_TRUE_TIME(flags)) {
 		/* Get local time. This is just to fill fields with a default value. */
 		get_time(rectime, 0);
@@ -764,7 +784,7 @@ void get_file_timestamp_struct(uint64_t flags, struct tm *rectime,
 		mktime(rectime);
 	}
 	else {
-		localtime_r((const time_t *) &file_hdr->sa_ust_time, rectime);
+		localtime_r(&t, rectime);
 	}
 }
 
@@ -1456,6 +1476,7 @@ int skip_extra_struct(int ifd, int endian_mismatch, int arch_64)
  *		sadf stop. Default behavior is to stop on unexpected EOF.
  * @b_size	@buffer size.
  * @flags	Flags for common options and system state.
+ * @ofmt	Pointer on report output format structure.
  *
  * OUT:
  * @record_hdr	Record header for current sample.
@@ -1468,7 +1489,7 @@ int skip_extra_struct(int ifd, int endian_mismatch, int arch_64)
  */
 int read_record_hdr(int ifd, void *buffer, struct record_header *record_hdr,
 		    struct file_header *file_hdr, int arch_64, int endian_mismatch,
-		    int oneof, size_t b_size, uint64_t flags)
+		    int oneof, size_t b_size, uint64_t flags, struct report_format *ofmt)
 {
 	int rc;
 
@@ -1489,11 +1510,25 @@ int read_record_hdr(int ifd, void *buffer, struct record_header *record_hdr,
 		}
 
 		/* Raw output in debug mode */
-		if (DISPLAY_DEBUG_MODE(flags)) {
-			printf("# uptime_cs; %llu; ust_time; %llu; extra_next; %u; record_type; %d; HH:MM:SS; %02d:%02d:%02d\n",
+		if (DISPLAY_DEBUG_MODE(flags) && (ofmt->id == F_RAW_OUTPUT)) {
+			char out[128];
+
+			sprintf(out, "# uptime_cs; %llu; ust_time; %llu; extra_next; %u; record_type; %d; HH:MM:SS; %02d:%02d:%02d\n",
 			       record_hdr->uptime_cs, record_hdr->ust_time,
 			       record_hdr->extra_next, record_hdr->record_type,
 			       record_hdr->hour, record_hdr->minute, record_hdr->second);
+			cprintf_s(IS_COMMENT, "%s", out);
+		}
+
+		/* Sanity checks */
+		if ((record_hdr->record_type <= 0) || (record_hdr->record_type > R_EXTRA_MAX) ||
+		    (record_hdr->hour > 23) || (record_hdr->minute > 59) || (record_hdr->second > 60)) {
+#ifdef DEBUG
+			fprintf(stderr, "%s: record_type=%d HH:MM:SS=%02d:%02d:%02d\n",
+				__FUNCTION__, record_hdr->record_type,
+				record_hdr->hour, record_hdr->minute, record_hdr->second);
+#endif
+			return 2;
 		}
 
 		/*
@@ -1537,7 +1572,7 @@ void copy_structures(struct activity *act[], unsigned int id_seq[],
 		p = get_activity_position(act, id_seq[i], EXIT_IF_NOT_FOUND);
 
 		memcpy(act[p]->buf[dest], act[p]->buf[src],
-		       (size_t) act[p]->msize * (size_t) act[p]->nr[src] * (size_t) act[p]->nr2);
+		       (size_t) act[p]->msize * (size_t) act[p]->nr_allocated * (size_t) act[p]->nr2);
 		act[p]->nr[dest] = act[p]->nr[src];
 	}
 }
@@ -1566,12 +1601,12 @@ __nr_t read_nr_value(int ifd, char *file, struct file_magic *file_magic,
 		     int endian_mismatch, int arch_64, int non_zero)
 {
 	__nr_t value;
+	unsigned int nr_types_nr[]  = {0, 0, 1};
 
 	sa_fread(ifd, &value, sizeof(__nr_t), HARD_SIZE, UEOF_STOP);
 
 	/* Normalize endianness for file_activity structures */
 	if (endian_mismatch) {
-		nr_types_nr[2] = 1;
 		swap_struct(nr_types_nr, &value, arch_64);
 	}
 
@@ -1977,7 +2012,8 @@ void check_file_actlst(int *ifd, char *dfile, struct activity *act[], uint64_t f
 
 		/*
 		 * Every activity, known or unknown, should have
-		 * at least one item and sub-item, and a positive size value.
+		 * at least one item and sub-item, and a size value in
+		 * a defined range.
 		 * Also check that the number of items and sub-items
 		 * doesn't exceed a max value. This is necessary
 		 * because we will use @nr and @nr2 to
@@ -1988,10 +2024,10 @@ void check_file_actlst(int *ifd, char *dfile, struct activity *act[], uint64_t f
 		 */
 		if ((fal->nr < 1) || (fal->nr2 < 1) ||
 		    (fal->nr > NR_MAX) || (fal->nr2 > NR2_MAX) ||
-		    (fal->size <= 0)) {
+		    (fal->size <= 0) || (fal->size > MAX_ITEM_STRUCT_SIZE)) {
 #ifdef DEBUG
-			fprintf(stderr, "%s: id=%d nr=%d nr2=%d\n",
-				__FUNCTION__, fal->id, fal->nr, fal->nr2);
+			fprintf(stderr, "%s: id=%d nr=%d nr2=%d size=%d\n",
+				__FUNCTION__, fal->id, fal->nr, fal->nr2, fal->size);
 #endif
 			goto format_error;
 		}
@@ -2000,19 +2036,11 @@ void check_file_actlst(int *ifd, char *dfile, struct activity *act[], uint64_t f
 			/* Unknown activity */
 			continue;
 
-		skip = FALSE;
-		if (fal->magic != act[p]->magic) {
-			/* Bad magical number */
-			if (DISPLAY_HDR_ONLY(flags)) {
-				/*
-				 * This is how sadf -H knows that this
-				 * activity has an unknown format.
-				 */
-				act[p]->magic = ACTIVITY_MAGIC_UNKNOWN;
-			}
-			else {
-				skip = TRUE;
-			}
+		if ((fal->magic != act[p]->magic) && !DISPLAY_HDR_ONLY(flags)) {
+			skip = TRUE;
+		}
+		else {
+			skip = FALSE;
 		}
 
 		/* Check max value for known activities */
@@ -2027,7 +2055,8 @@ void check_file_actlst(int *ifd, char *dfile, struct activity *act[], uint64_t f
 		/*
 		 * Number of fields of each type ("long long", or "long"
 		 * or "int") composing the structure with statistics may
-		 * only increase with new sysstat versions. Here, we may
+		 * only increase with new sysstat versions, unless we change
+		 * the activity's magic number. Here, we may
 		 * be reading a file created by current sysstat version,
 		 * or by an older or a newer version.
 		 */
@@ -2038,15 +2067,7 @@ void check_file_actlst(int *ifd, char *dfile, struct activity *act[], uint64_t f
 		     ((fal->types_nr[0] <= act[p]->gtypes_nr[0]) &&
 		     (fal->types_nr[1] <= act[p]->gtypes_nr[1]) &&
 		     (fal->types_nr[2] <= act[p]->gtypes_nr[2]))) &&
-		     (act[p]->magic != ACTIVITY_MAGIC_UNKNOWN) && !DISPLAY_HDR_ONLY(flags)) {
-			/*
-			 * This may not be an error (that's actually why we may have changed
-			 * the magic number for this activity above).
-			 * So, if the activity magic number has changed (e.g.: ACTIVITY_MAGIC_UNKNOWN)
-			 * and we want to display only the header, then ignore the error.
-			 * If we want to also display the stats then we must stop here because
-			 * we won't know how to map the contents of the stats structure.
-			 */
+		     (fal->magic == act[p]->magic) && !DISPLAY_HDR_ONLY(flags)) {
 #ifdef DEBUG
 			fprintf(stderr, "%s: id=%d file=%d,%d,%d activity=%d,%d,%d\n",
 				__FUNCTION__, fal->id, fal->types_nr[0], fal->types_nr[1], fal->types_nr[2],
@@ -2063,13 +2084,6 @@ void check_file_actlst(int *ifd, char *dfile, struct activity *act[], uint64_t f
 			goto format_error;
 		}
 
-		if (skip)
-			/*
-			 * This is an unknown activity and we want stats about it:
-			 * This is not possible so skip it.
-			 */
-			continue;
-
 		for (k = 0; k < 3; k++) {
 			act[p]->ftypes_nr[k] = fal->types_nr[k];
 		}
@@ -2081,12 +2095,15 @@ void check_file_actlst(int *ifd, char *dfile, struct activity *act[], uint64_t f
 		act[p]->nr_ini = fal->nr;
 		act[p]->nr2    = fal->nr2;
 		act[p]->fsize  = fal->size;
+
 		/*
 		 * This is a known activity with a known format
 		 * (magical number). Only such activities will be displayed.
 		 * (Well, this may also be an unknown format if we have entered sadf -H.)
 		 */
-		id_seq[j++] = fal->id;
+		if (!skip) {
+			id_seq[j++] = fal->id;
+		}
 	}
 
 	while (j < NR_ACT) {
@@ -2144,6 +2161,72 @@ format_error:
 
 /*
  ***************************************************************************
+ * Look for item in list.
+ *
+ * IN:
+ * @list	Pointer on the start of the linked list.
+ * @item_name	Item name to look for.
+ *
+ * RETURNS:
+ * 1 if item found in list, 0 otherwise.
+ ***************************************************************************
+ */
+int search_list_item(struct sa_item *list, char *item_name)
+{
+	while (list != NULL) {
+		if (!strcmp(list->item_name, item_name))
+			return 1;	/* Item found in list */
+		list = list->next;
+	}
+
+	/* Item not found */
+	return 0;
+}
+
+/*
+ ***************************************************************************
+ * Add item to the list.
+ *
+ * IN:
+ * @list	Address of pointer on the start of the linked list.
+ * @item_name	Name of the item.
+ * @max_len	Max length of an item.
+ *
+ * RETURNS:
+ * 1 if item has been added to the list (since it was not previously there),
+ * and 0 otherwise (item already in list or item name too long).
+ ***************************************************************************
+ */
+int add_list_item(struct sa_item **list, char *item_name, int max_len)
+{
+	struct sa_item *e;
+	int len;
+
+	if ((len = strnlen(item_name, max_len)) == max_len)
+		/* Item too long */
+		return 0;
+
+	while (*list != NULL) {
+		e = *list;
+		if (!strcmp(e->item_name, item_name))
+			return 0;	/* Item found in list */
+		list = &(e->next);
+	}
+
+	/* Item not found: Add it to the list */
+	SREALLOC(*list, struct sa_item, sizeof(struct sa_item));
+	e = *list;
+	if ((e->item_name = (char *) malloc(len + 1)) == NULL) {
+		perror("malloc");
+		exit(4);
+	}
+	strcpy(e->item_name, item_name);
+
+	return 1;
+}
+
+/*
+ ***************************************************************************
  * Parse sar activities options (also used by sadf).
  *
  * IN:
@@ -2180,7 +2263,7 @@ int parse_sar_opt(char *argv[], int *opt, struct activity *act[],
 			 * Force '-r ALL -u ALL -F'.
 			 * Setting -F is compulsory because corresponding activity
 			 * has AO_MULTIPLE_OUTPUTS flag set.
-			 * -P ALL / -I ALL will be set only if corresponding option has
+			 * -P ALL will be set only if corresponding option has
 			 * not been exlicitly entered on the command line.
 			 */
 			p = get_activity_position(act, A_MEMORY, EXIT_IF_NOT_FOUND);
@@ -2229,6 +2312,22 @@ int parse_sar_opt(char *argv[], int *opt, struct activity *act[],
 		case 'h':
 			/* Option -h is equivalent to --pretty --human */
 			*flags |= S_F_PRETTY + S_F_UNIT;
+			break;
+
+		case 'I':
+			p = get_activity_position(act, A_IRQ, EXIT_IF_NOT_FOUND);
+			act[p]->options |= AO_SELECTED;
+
+			if (!*(argv[*opt] + i + 1) && argv[*opt + 1] &&
+			    (!strcmp(argv[*opt + 1], K_ALL) || !strcmp(argv[*opt + 1], K_SUM))) {
+				(*opt)++;
+				/* Select int "sum". Keyword ALL is ignored */
+				if (!strcmp(argv[*opt], K_SUM)) {
+					act[p]->item_list_sz += add_list_item(&(act[p]->item_list), K_LOWERSUM, MAX_SA_IRQ_LEN);
+					act[p]->options |= AO_LIST_ON_CMDLINE;
+				}
+				return 0;
+			}
 			break;
 
 		case 'j':
@@ -2556,43 +2655,6 @@ int parse_sar_q_opt(char *argv[], int *opt, struct activity *act[])
 
 /*
  ***************************************************************************
- * Parse sar "-I" option.
- *
- * IN:
- * @argv	Arguments list.
- * @opt		Index in list of arguments.
- * @act		Array of activities.
- *
- * OUT:
- * @flags	Common flags and system state.
- * @act		Array of activities, with interrupts activity selected.
- *
- * RETURNS:
- * 0 on success, 1 otherwise.
- ***************************************************************************
- */
-int parse_sar_I_opt(char *argv[], int *opt, uint64_t *flags, struct activity *act[])
-{
-	int p;
-
-	/* Select interrupt activity */
-	p = get_activity_position(act, A_IRQ, EXIT_IF_NOT_FOUND);
-	act[p]->options |= AO_SELECTED;
-
-	if (argv[++(*opt)]) {
-		if (parse_values(argv[*opt], act[p]->bitmap->b_array,
-			     act[p]->bitmap->b_size, K_SUM))
-			return 1;
-		(*opt)++;
-		*flags |= S_F_OPTION_I;
-		return 0;
-	}
-
-	return 1;
-}
-
-/*
- ***************************************************************************
  * Parse sar and sadf "-P" option.
  *
  * IN:
@@ -2628,7 +2690,7 @@ int parse_sa_P_opt(char *argv[], int *opt, uint64_t *flags, struct activity *act
 
 /*
  ***************************************************************************
- * If option -A has been used, force -P ALL -I ALL only if corresponding
+ * If option -A has been used, force -P ALL only if corresponding
  * option has not been explicitly entered on the command line.
  *
  * IN:
@@ -2648,112 +2710,6 @@ void set_bitmaps(struct activity *act[], uint64_t *flags)
 		memset(act[p]->bitmap->b_array, ~0,
 		       BITMAP_SIZE(act[p]->bitmap->b_size));
 	}
-
-	if (!USE_OPTION_I(*flags)) {
-		/* Force -I ALL */
-		p = get_activity_position(act, A_IRQ, EXIT_IF_NOT_FOUND);
-		memset(act[p]->bitmap->b_array, ~0,
-		       BITMAP_SIZE(act[p]->bitmap->b_size));
-	}
-}
-
-/*
- ***************************************************************************
- * Count number of comma-separated values in arguments list. For example,
- * the number will be 3 for "sar --dev=sda,sdb,sdc -dp 2 5", 1 for
- * "sar --dev=sda -dp 2 5" and 0 for "sar --dev= -dp 2 5".
- *
- * IN:
- * @arg_v	Argument containing the list of coma-separated values.
- *
- * RETURNS:
- * Number of comma-separated values in the list.
- ***************************************************************************
- */
-int count_csval_arg(char *arg_v)
-{
-	int nr = 0;
-	char *t;
-
-	if (arg_v[0] == '\0')
-		return 0;
-
-	if (strchr(arg_v, ',')) {
-		for (t = arg_v; t; t = strchr(t + 1, ',')) {
-			nr++;
-		}
-	}
-	if (!nr) {
-		nr = 1;
-	}
-
-	return nr;
-}
-
-/*
- ***************************************************************************
- * Look for item in list.
- *
- * IN:
- * @list	Pointer on the start of the linked list.
- * @item_name	Item name to look for.
- *
- * RETURNS:
- * 1 if item found in list, 0 otherwise.
- ***************************************************************************
- */
-int search_list_item(struct sa_item *list, char *item_name)
-{
-	while (list != NULL) {
-		if (!strcmp(list->item_name, item_name))
-			return 1;	/* Item found in list */
-		list = list->next;
-	}
-
-	/* Item not found */
-	return 0;
-}
-
-/*
- ***************************************************************************
- * Add item to the list.
- *
- * IN:
- * @list	Address of pointer on the start of the linked list.
- * @item_name	Name of the item.
- * @max_len	Max length of an item.
- *
- * RETURNS:
- * 1 if item has been added to the list (since it was not previously there),
- * and 0 otherwise (item already in list or item name too long).
- ***************************************************************************
- */
-int add_list_item(struct sa_item **list, char *item_name, int max_len)
-{
-	struct sa_item *e;
-	int len;
-
-	if ((len = strnlen(item_name, max_len)) == max_len)
-		/* Item too long */
-		return 0;
-
-	while (*list != NULL) {
-		e = *list;
-		if (!strcmp(e->item_name, item_name))
-			return 0;	/* Item found in list */
-		list = &(e->next);
-	}
-
-	/* Item not found: Add it to the list */
-	SREALLOC(*list, struct sa_item, sizeof(struct sa_item));
-	e = *list;
-	if ((e->item_name = (char *) malloc(len + 1)) == NULL) {
-		perror("malloc");
-		exit(4);
-	}
-	strcpy(e->item_name, item_name);
-
-	return 1;
 }
 
 /*
@@ -2767,16 +2723,34 @@ int add_list_item(struct sa_item **list, char *item_name, int max_len)
  * @max_len	Max length of a device name.
  * @opt		Index in list of arguments.
  * @pos		Position is string where is located the first device.
+ * @max_val	If > 0 then ranges of values are allowed (e.g. 3-5,9-, etc.)
+ *		Values are in range [0..@max_val].
  *
  * OUT:
  * @opt		Index on next argument.
  ***************************************************************************
  */
-void parse_sa_devices(char *argv, struct activity *a, int max_len, int *opt, int pos)
+void parse_sa_devices(char *argv, struct activity *a, int max_len, int *opt, int pos,
+		      int max_val)
 {
+	int i, val_low, val;
 	char *t;
+	char svalue[9];
 
 	for (t = strtok(argv + pos, ","); t; t = strtok(NULL, ",")) {
+
+		/* Test ranges of values, if allowed */
+		if ((max_val > 0) && (strlen(t) <= 16) && (strspn(t, XDIGITS) == strlen(t))) {
+			if (parse_range_values(t, max_val, &val_low, &val) == 0) {
+				/* This is a real range of values: Save each if its values */
+				for (i = val_low; i <= val; i++) {
+					snprintf(svalue, sizeof(svalue), "%d", i);
+					svalue[sizeof(svalue) - 1] = '\0';
+					a->item_list_sz += add_list_item(&(a->item_list), svalue, max_len);
+				}
+				continue;
+			}
+		}
 		a->item_list_sz += add_list_item(&(a->item_list), t, max_len);
 	}
 	if (a->item_list_sz) {
@@ -2870,10 +2844,8 @@ void replace_nonprintable_char(int ifd, char *comment)
  *
  * OUT:
  * @rectime	Structure where timestamp for current record has been saved
- * 		(in local time or in UTC depending on options used).
- * @loctime	If given, structure where timestamp for current record has
- * 		been saved (expressed in local time). This field will be used
- * 		for time comparison if options -s and/or -e have been used.
+ * 		(in local time, in UTC or in time of file's creator
+ * 		depending on options used).
  *
  * RETURNS:
  * 1 if an error was detected, or 0 otherwise.
@@ -2883,20 +2855,21 @@ int sa_get_record_timestamp_struct(uint64_t l_flags, struct record_header *recor
 				   struct tm *rectime)
 {
 	struct tm *ltm;
+	time_t t = record_hdr->ust_time;
 	int rc = 0;
 
 	/*
 	 * Fill generic rectime structure in local time.
 	 * Done so that we have some default values.
 	 */
-	ltm = localtime_r((const time_t *) &(record_hdr->ust_time), rectime);
+	ltm = localtime_r(&t, rectime);
 
 	if (!PRINT_LOCAL_TIME(l_flags) && !PRINT_TRUE_TIME(l_flags)) {
 		/*
 		 * Get time in UTC
 		 * (the user doesn't want local time nor time of file's creator).
 		 */
-		ltm = gmtime_r((const time_t *) &(record_hdr->ust_time), rectime);
+		ltm = gmtime_r(&t, rectime);
 	}
 
 	if (!ltm) {
@@ -3038,7 +3011,7 @@ int print_special_record(struct record_header *record_hdr, uint64_t l_flags,
 		 * not been collected in file (or if it has an unknown format).
 		 */
 		for (p = 0; p < NR_ACT; p++) {
-			if (HAS_PERSISTENT_VALUES(act[p]->options)) {
+			if (HAS_PERSISTENT_VALUES(act[p]->options) && (act[p]->nr_ini > 0)) {
 				act[p]->nr_ini = file_hdr->sa_cpu_nr;
 				if (act[p]->nr_ini > act[p]->nr_allocated) {
 					reallocate_all_buffers(act[p], act[p]->nr_ini);
@@ -3274,25 +3247,31 @@ void get_global_soft_statistics(struct activity *a, int prev, int curr,
 
 		/*
 		 * The size of a->buf[...] CPU structure may be different from the default
-		 * sizeof(struct stats_pwr_cpufreq) value if data have been read from a file!
+		 * sizeof(struct stats_softnet) value if data have been read from a file!
 		 * That's why we don't use a syntax like:
 		 * ssnc = (struct stats_softnet *) a->buf[...] + i;
                  */
                 ssnc = (struct stats_softnet *) ((char *) a->buf[curr] + i * a->msize);
                 ssnp = (struct stats_softnet *) ((char *) a->buf[prev] + i * a->msize);
 
+		if ((ssnp->processed + ssnp->dropped + ssnp->time_squeeze +
+		    ssnp->received_rps + ssnp->flow_limit + ssnp->backlog_len == 0) &&
+		    !WANT_SINCE_BOOT(flags)) {
+			/*
+			 * No previous sample for current CPU: Don't display it unless
+			 * we want stats since last boot time.
+			 * (CPU may be online but we don't display it because all
+			 * its counters would appear to jump from zero...)
+			 */
+			offline_cpu_bitmap[i >> 3] |= 1 << (i & 0x07);
+			continue;
+		}
+
 		if (ssnc->processed + ssnc->dropped + ssnc->time_squeeze +
-		    ssnc->received_rps + ssnc->flow_limit == 0) {
+		    ssnc->received_rps + ssnc->flow_limit + ssnc->backlog_len == 0) {
 			/* Assume current CPU is offline */
 			*ssnc = *ssnp;
 			offline_cpu_bitmap[i >> 3] |= 1 << (i & 0x07);
-		}
-
-		if ((ssnp->processed + ssnp->dropped + ssnp->time_squeeze +
-		    ssnp->received_rps + ssnp->flow_limit == 0) && !WANT_SINCE_BOOT(flags)) {
-			/* Current CPU back online but no previous sample for it */
-			offline_cpu_bitmap[i >> 3] |= 1 << (i & 0x07);
-			continue;
 		}
 
 		ssnc_all->processed += ssnc->processed;
@@ -3300,12 +3279,73 @@ void get_global_soft_statistics(struct activity *a, int prev, int curr,
 		ssnc_all->time_squeeze += ssnc->time_squeeze;
 		ssnc_all->received_rps += ssnc->received_rps;
 		ssnc_all->flow_limit += ssnc->flow_limit;
+		ssnc_all->backlog_len += ssnc->backlog_len;
 
 		ssnp_all->processed += ssnp->processed;
 		ssnp_all->dropped += ssnp->dropped;
 		ssnp_all->time_squeeze += ssnp->time_squeeze;
 		ssnp_all->received_rps += ssnp->received_rps;
 		ssnp_all->flow_limit += ssnp->flow_limit;
+		ssnp_all->backlog_len += ssnp->backlog_len;
+	}
+}
+
+/*
+ ***************************************************************************
+ * Identify offline CPU (those for which all interrupts are 0) and keep
+ * interrupts statistics (their values are persistent). Include also CPU
+ * which have not been selected (this is necessary so that the header of the
+ * interrupts statistics report can be displayed).
+ *
+ * IN:
+ * @a		Activity structure with statistics.
+ * @prev	Index in array where stats used as reference are.
+ * @curr	Index in array for current sample statistics.
+ * @flags	Flags for common options and system state.
+ * @masked_cpu_bitmap
+ *		CPU bitmap for offline and unselected CPU.
+ *
+ * OUT:
+ * @a		Activity structure with updated statistics (those for global
+ *		CPU, and also those for offline CPU).
+ * @masked_cpu_bitmap
+ *		CPU bitmap with offline and unselected CPU.
+ ***************************************************************************
+ */
+void get_global_int_statistics(struct activity *a, int prev, int curr,
+			       uint64_t flags, unsigned char masked_cpu_bitmap[])
+{
+	int i;
+	struct stats_irq *stc_cpu_sum, *stp_cpu_sum;
+
+	for (i = 0; (i < a->nr_ini) && (i < a->bitmap->b_size + 1); i++) {
+
+		/*
+		 * The size of a->buf[...] CPU structure may be different from the default
+		 * sizeof(struct stats_irq) value if data have been read from a file!
+		 * That's why we don't use a syntax like:
+		 * stc_cpu_sum = (struct stats_irq *) a->buf[...] + i;
+                 */
+		stc_cpu_sum = (struct stats_irq *) ((char *) a->buf[curr] + i * a->msize * a->nr2);
+		stp_cpu_sum = (struct stats_irq *) ((char *) a->buf[prev] + i * a->msize * a->nr2);
+
+		/*
+		 * Check if current CPU is back online but with no previous sample for it,
+		 * or if it has not been selected.
+		 */
+		if (((stp_cpu_sum->irq_nr == 0) && !WANT_SINCE_BOOT(flags)) ||
+		    (!(a->bitmap->b_array[i >> 3] & (1 << (i & 0x07))))) {
+			/* CPU should not be displayed */
+			masked_cpu_bitmap[i >> 3] |= 1 << (i & 0x07);
+			continue;
+		}
+
+		if (stc_cpu_sum->irq_nr == 0) {
+			/* Assume current CPU is offline */
+			masked_cpu_bitmap[i >> 3] |= 1 << (i & 0x07);
+			memcpy(stc_cpu_sum, stp_cpu_sum, (size_t) a->msize * a->nr2);
+		}
+
 	}
 }
 

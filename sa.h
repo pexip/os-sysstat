@@ -1,6 +1,6 @@
 /*
  * sar/sadc: Report system activity
- * (C) 1999-2020 by Sebastien Godard (sysstat <at> orange.fr)
+ * (C) 1999-2022 by Sebastien Godard (sysstat <at> orange.fr)
  */
 
 #ifndef _SA_H
@@ -25,7 +25,7 @@
 #define MAX_NR_ACT	256
 
 /* Number of functions used to count items */
-#define NR_F_COUNT	12
+#define NR_F_COUNT	13
 
 /* Activities */
 #define A_CPU		1
@@ -117,7 +117,7 @@
 #define S_F_OPTION_A		0x10000000
 #define S_F_OPTION_P		0x20000000
 #define S_F_OPTION_I		0x40000000
-#define S_F_RAW_DEBUG_MODE	0x80000000
+#define S_F_DEBUG_MODE		0x80000000
 
 #define WANT_SINCE_BOOT(m)		(((m) & S_F_SINCE_BOOT)   == S_F_SINCE_BOOT)
 #define WANT_SA_ROTAT(m)		(((m) & S_F_SA_ROTAT)     == S_F_SA_ROTAT)
@@ -138,7 +138,7 @@
 #define USE_PREFD_TIME_OUTPUT(m)	(((m) & S_F_PREFD_TIME_OUTPUT)   == S_F_PREFD_TIME_OUTPUT)
 #define SKIP_EMPTY_VIEWS(m)		(((m) & S_F_SVG_SKIP)     == S_F_SVG_SKIP)
 #define DISPLAY_ZERO_OMIT(m)		(((m) & S_F_ZERO_OMIT)    == S_F_ZERO_OMIT)
-#define DISPLAY_DEBUG_MODE(m)		(((m) & S_F_RAW_DEBUG_MODE) == S_F_RAW_DEBUG_MODE)
+#define DISPLAY_DEBUG_MODE(m)		(((m) & S_F_DEBUG_MODE)   == S_F_DEBUG_MODE)
 #define AUTOSCALE_ON(m)			(((m) & S_F_SVG_AUTOSCALE) == S_F_SVG_AUTOSCALE)
 #define DISPLAY_ONE_DAY(m)		(((m) & S_F_SVG_ONE_DAY)  == S_F_SVG_ONE_DAY)
 #define DISPLAY_IDLE(m)			(((m) & S_F_SVG_SHOW_IDLE) == S_F_SVG_SHOW_IDLE)
@@ -288,7 +288,7 @@
 
 /* NR_MAX is the upper limit used for unknown activities */
 #define NR_MAX		(65536 * 4096)
-#define NR2_MAX		1024
+#define NR2_MAX		4096
 
 /* Maximum number of args that can be passed to sadc */
 #define MAX_ARGV_NR	32
@@ -299,6 +299,7 @@
 #define NO_TM_START		0
 #define NO_TM_END		0
 #define NO_RESET		0
+#define NO_RANGE		0
 #define NON_FATAL		0
 #define FATAL			1
 #define C_SAR			0
@@ -332,6 +333,28 @@
 #define __read_funct_t	void
 /* Type for all functions displaying statistics */
 #define __print_funct_t void
+
+/*
+ ***************************************************************************
+ * Output formats for sadf
+ ***************************************************************************
+ */
+
+/* Number of output formats */
+#define NR_FMT	9
+
+/* Output formats */
+#define F_SAR_OUTPUT	0
+#define F_DB_OUTPUT	1
+#define F_HEADER_OUTPUT	2
+#define F_PPC_OUTPUT	3
+#define F_XML_OUTPUT	4
+#define F_JSON_OUTPUT	5
+#define F_CONV_OUTPUT	6
+#define F_SVG_OUTPUT	7
+#define F_RAW_OUTPUT	8
+#define F_PCP_OUTPUT	9
+
 
 /* Structure for SVG specific parameters */
 struct svg_parm {
@@ -612,11 +635,6 @@ struct file_header {
  * Base magical number for activities.
  */
 #define ACTIVITY_MAGIC_BASE	0x8a
-/*
- * Magical value used for activities with
- * unknown format (used for sadf -H only).
- */
-#define ACTIVITY_MAGIC_UNKNOWN	0x89
 
 /* List of activities saved in file */
 struct file_activity {
@@ -658,6 +676,8 @@ struct file_activity {
 #define FILE_ACTIVITY_ULL_NR	0	/* Nr of unsigned long long in file_activity structure */
 #define FILE_ACTIVITY_UL_NR	0	/* Nr of unsigned long in file_activity structure */
 #define FILE_ACTIVITY_U_NR	9	/* Nr of [unsigned] int in file_activity structure */
+
+#define MAX_ITEM_STRUCT_SIZE	1024	/* Used for sanity check */
 
 /*
  * Description of an extra structure.
@@ -742,7 +762,7 @@ struct record_header {
 	 */
 	unsigned char record_type;
 	/*
-	 * Timestamp: Hour (0-23), minute (0-59) and second (0-59).
+	 * Timestamp: Hour (0-23), minute (0-59) and second (0-60).
 	 * Used to determine TRUE time.
 	 * Hour value depends in fact on timezone (TZ variable) value.
 	 */
@@ -907,15 +927,15 @@ struct activity {
 	 */
 	int f_count_index;
 	/*
-	 * The f_count2() function is used to count the number of
-	 * sub-items -> @nr2
+	 * Index in f_count[] array to determine function used to count the
+	 * number of sub-items -> @nr2
 	 * Such a function should _always_ return a value greater than
 	 * or equal to 0.
 	 *
-	 * A NULL value for this function pointer indicates that the number of items
-	 * is a constant (and @nr2 is set to this value).
+	 * A value of -1 indicates that the number of items is a constant
+	 * (and @nr2 is set to this value).
 	 */
-	__nr_t (*f_count2) (struct activity *);
+	int f_count2_index;
 	/*
 	 * This function reads the relevant file and fill the buffer
 	 * with statistics corresponding to given activity.
@@ -955,8 +975,7 @@ struct activity {
 	/*
 	 * This function is used by sadf to display activity statistics in PCP format.
 	 */
-	__print_funct_t (*f_pcp_print) (struct activity *, int, unsigned long long,
-					struct record_header *);
+	__print_funct_t (*f_pcp_print) (struct activity *, int);
 	/*
 	 * This function is used by sadf to count the number of new items in current
 	 * sample and add them to the linked list @item_list.
@@ -979,6 +998,9 @@ struct activity {
 	 * separated with a '|' character.
 	 * For a given output, the first field corresponding to extended statistics
 	 * (eg. -r ALL) begins with a '&' character.
+	 * A field having '*' in its name means that all items will have its own column
+	 * (the first one will be displayed as "all", the following ones will get the '*'
+	 * character replaced with their item number (0, 1, etc.)
 	 */
 	char *hdr_line;
 	/*
@@ -1155,7 +1177,7 @@ struct report_format {
 	__printf_funct_t (*f_statistics) (int *, int, struct activity * [], unsigned int []);
 	/*
 	 * This function defines the timestamp part of the report.
-	 * Used only with textual (XML-like) reports.
+	 * Used only with textual (XML-like) reports, PCP archives and RAW output format.
 	 */
 	__tm_funct_t (*f_timestamp) (void *, int, char *, char *, unsigned long long,
 				     struct record_header *, struct file_header *, unsigned int);
@@ -1324,6 +1346,8 @@ struct sa_item {
 /*
  * Prototypes used to count new items
  */
+__nr_t count_new_int
+	(struct activity *, int);
 __nr_t count_new_net_dev
 	(struct activity *, int);
 __nr_t count_new_net_edev
@@ -1462,7 +1486,7 @@ void handle_invalid_sa_file
 	(int, struct file_magic *, char *, int);
 void print_collect_error
 	(void);
-int set_default_file
+void set_default_file
 	(char *, int, int);
 int skip_extra_struct
 	(int, int, int);
@@ -1507,6 +1531,8 @@ char *get_fs_name_to_display
 	(struct activity *, uint64_t, struct stats_filesystem *);
 unsigned long long get_global_cpu_statistics
 	(struct activity *, int, int, uint64_t, unsigned char []);
+void get_global_int_statistics
+	(struct activity *, int, int, uint64_t, unsigned char []);
 void get_global_soft_statistics
 	(struct activity *, int, int, uint64_t, unsigned char []);
 void get_itv_value
@@ -1516,11 +1542,9 @@ void init_custom_color_palette
 int next_slice
 	(unsigned long long, unsigned long long, int, long);
 void parse_sa_devices
-	(char *, struct activity *, int, int *, int);
+	(char *, struct activity *, int, int *, int, int);
 int parse_sar_opt
 	(char * [], int *, struct activity * [], uint64_t *, int);
-int parse_sar_I_opt
-	(char * [], int *, uint64_t *, struct activity * []);
 int parse_sa_P_opt
 	(char * [], int *, uint64_t *, struct activity * []);
 int parse_sar_m_opt
@@ -1549,7 +1573,7 @@ __nr_t read_nr_value
 	(int, char *, struct file_magic *, int, int, int);
 int read_record_hdr
 	(int, void *, struct record_header *, struct file_header *, int, int,
-	 int, size_t, uint64_t);
+	 int, size_t, uint64_t, struct report_format *);
 void reallocate_all_buffers
 	(struct activity *, __nr_t);
 void replace_nonprintable_char

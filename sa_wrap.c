@@ -1,6 +1,6 @@
 /*
  * sysstat - sa_wrap.c: Functions used in activity.c
- * (C) 1999-2020 by Sebastien GODARD (sysstat <at> orange.fr)
+ * (C) 1999-2022 by Sebastien GODARD (sysstat <at> orange.fr)
  *
  ***************************************************************************
  * This program is free software; you can redistribute it and/or modify it *
@@ -127,10 +127,10 @@ __read_funct_t wrap_read_stat_irq(struct activity *a)
 
 	/* Read interrupts stats */
 	do {
-		nr_read = read_stat_irq(st_irq, a->nr_allocated);
+		nr_read = read_stat_irq(st_irq, a->nr_allocated, a->nr2);
 
 		if (nr_read < 0) {
-			/* Buffer needs to be reallocated */
+			/* Buffer needs to be reallocated (for CPU, not interrupts) */
 			st_irq = (struct stats_irq *) reallocate_buffer(a);
 		}
 	}
@@ -952,7 +952,7 @@ __read_funct_t wrap_read_cpu_wghfreq(struct activity *a)
 			st_pwr_wghfreq = (struct stats_pwr_wghfreq *) a->_buf0;
 		}
 	}
-	while(nr_read < 0);
+	while (nr_read < 0);
 
 	a->_nr0 = nr_read;
 
@@ -1225,7 +1225,8 @@ __read_funct_t wrap_read_psimem(struct activity *a)
 
 /*
  ***************************************************************************
- * Count number of interrupts that are in /proc/stat file.
+ * Count number of interrupts that are in /proc/interrupts file, including
+ * total number of interrupts.
  * Truncate the number of different individual interrupts to NR_IRQS.
  *
  * IN:
@@ -1240,8 +1241,13 @@ __nr_t wrap_get_irq_nr(struct activity *a)
 {
 	__nr_t n;
 
-	if ((n = get_irq_nr()) > (a->bitmap->b_size + 1)) {
-		n = a->bitmap->b_size + 1;
+	/*
+	 * Get number of different interrupts.
+	 * Number of CPU (including CPU "all") has already been calculated and saved in a->nr_ini.
+	 */
+	n = get_irqcpu_nr(INTERRUPTS, a->bitmap->b_size, a->nr_ini - 1);
+	if (n > 0) {
+		n++;	/* Add 1 for total number of interrupts. A value of bitmap->b_size + 1 is OK. */
 	}
 
 	return n;

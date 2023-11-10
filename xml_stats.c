@@ -1,6 +1,6 @@
 /*
- * xml_stats.c: Funtions used by sadf to display statistics in XML.
- * (C) 1999-2020 by Sebastien GODARD (sysstat <at> orange.fr)
+ * xml_stats.c: Functions used by sadf to display statistics in XML.
+ * (C) 1999-2022 by Sebastien GODARD (sysstat <at> orange.fr)
  *
  ***************************************************************************
  * This program is free software; you can redistribute it and/or modify it *
@@ -35,7 +35,7 @@
 #define _(string) (string)
 #endif
 
-extern unsigned int flags;
+extern uint64_t flags;
 
 /*
  ***************************************************************************
@@ -168,7 +168,7 @@ __print_funct_t xml_print_cpu_stats(struct activity *a, int curr, int tab,
 
 		if (i == 0) {
 			/* This is CPU "all" */
-			strcpy(cpuno, "all");
+			strcpy(cpuno, K_LOWERALL);
 
 			if (a->nr_ini == 1) {
 				/*
@@ -319,32 +319,57 @@ __print_funct_t xml_print_pcsw_stats(struct activity *a, int curr, int tab,
 __print_funct_t xml_print_irq_stats(struct activity *a, int curr, int tab,
 				    unsigned long long itv)
 {
-	int i;
-	struct stats_irq *sic, *sip;
-	char irqno[16];
+	int i, c;
+	struct stats_irq *stc_cpu_irq, *stp_cpu_irq, *stc_cpuall_irq;
+	unsigned char masked_cpu_bitmap[BITMAP_SIZE(NR_CPUS)] = {0};
 
 	xprintf(tab++, "<interrupts>");
 	xprintf(tab++, "<int-global per=\"second\">");
 
-	for (i = 0; (i < a->nr[curr]) && (i < a->bitmap->b_size + 1); i++) {
+	/* @nr[curr] cannot normally be greater than @nr_ini */
+	if (a->nr[curr] > a->nr_ini) {
+		a->nr_ini = a->nr[curr];
+	}
 
-		sic = (struct stats_irq *) ((char *) a->buf[curr]  + i * a->msize);
-		sip = (struct stats_irq *) ((char *) a->buf[!curr] + i * a->msize);
+	/* Identify offline and unselected CPU, and keep persistent statistics values */
+	get_global_int_statistics(a, !curr, curr, flags, masked_cpu_bitmap);
 
-		/* Should current interrupt (including int "sum") be displayed? */
-		if (a->bitmap->b_array[i >> 3] & (1 << (i & 0x07))) {
+	for (i = 0; i < a->nr2; i++) {
+
+		stc_cpuall_irq = (struct stats_irq *) ((char *) a->buf[curr] + i * a->msize);
+
+		if (a->item_list != NULL) {
+			/* A list of devices has been entered on the command line */
+			if (!search_list_item(a->item_list, stc_cpuall_irq->irq_name))
+				/* Device not found */
+				continue;
+		}
+
+		for (c = 0; (c < a->nr[curr]) && (c < a->bitmap->b_size + 1); c++) {
+
+			stc_cpu_irq = (struct stats_irq *) ((char *) a->buf[curr] + c * a->msize * a->nr2
+										  + i * a->msize);
+			stp_cpu_irq = (struct stats_irq *) ((char *) a->buf[!curr] + c * a->msize * a->nr2
+										  + i * a->msize);
+
+			/* Should current CPU (including CPU "all") be displayed? */
+			if (masked_cpu_bitmap[c >> 3] & (1 << (c & 0x07)))
+				/* No */
+				continue;
 
 			/* Yes: Display it */
-			if (!i) {
-				/* This is interrupt "sum" */
-				strcpy(irqno, "sum");
+			if (!c) {
+				xprintf(tab, "<irq intr=\"%s\" cpu=\"all\" value=\"%.2f\"/>",
+					stc_cpuall_irq->irq_name,
+					(stc_cpu_irq->irq_nr < stp_cpu_irq->irq_nr) ? 0.0 :
+					S_VALUE(stp_cpu_irq->irq_nr, stc_cpu_irq->irq_nr, itv));
 			}
 			else {
-				sprintf(irqno, "%d", i - 1);
+				xprintf(tab, "<irq intr=\"%s\" cpu=\"%d\" value=\"%.2f\"/>",
+					stc_cpuall_irq->irq_name,
+					c - 1,
+					S_VALUE(stp_cpu_irq->irq_nr, stc_cpu_irq->irq_nr, itv));
 			}
-
-			xprintf(tab, "<irq intr=\"%s\" value=\"%.2f\"/>", irqno,
-				S_VALUE(sip->irq_nr, sic->irq_nr, itv));
 		}
 	}
 
@@ -1779,7 +1804,7 @@ __print_funct_t xml_print_pwr_cpufreq_stats(struct activity *a, int curr, int ta
 		/* Yes: Display it */
 		if (!i) {
 			/* This is CPU "all" */
-			strcpy(cpuno, "all");
+			strcpy(cpuno, K_LOWERALL);
 		}
 		else {
 			sprintf(cpuno, "%d", i - 1);
@@ -2029,7 +2054,7 @@ __print_funct_t xml_print_pwr_wghfreq_stats(struct activity *a, int curr, int ta
 
 		if (!i) {
 			/* This is CPU "all" */
-			strcpy(cpuno, "all");
+			strcpy(cpuno, K_LOWERALL);
 		}
 		else {
 			sprintf(cpuno, "%d", i - 1);
@@ -2280,7 +2305,7 @@ __print_funct_t xml_print_softnet_stats(struct activity *a, int curr, int tab,
 		/* Yes: Display it */
 		if (!i) {
 			/* This is CPU "all" */
-			strcpy(cpuno, "all");
+			strcpy(cpuno, K_LOWERALL);
 		}
 		else {
 			sprintf(cpuno, "%d", i - 1);
@@ -2291,13 +2316,15 @@ __print_funct_t xml_print_softnet_stats(struct activity *a, int curr, int tab,
 			"dropd=\"%.2f\" "
 			"squeezd=\"%.2f\" "
 			"rx_rps=\"%.2f\" "
-			"flw_lim=\"%.2f\"/>",
+			"flw_lim=\"%.2f\" "
+			"blg_len=\"%u\"/>",
 			 cpuno,
 			 S_VALUE(ssnp->processed,    ssnc->processed,    itv),
 			 S_VALUE(ssnp->dropped,      ssnc->dropped,      itv),
 			 S_VALUE(ssnp->time_squeeze, ssnc->time_squeeze, itv),
 			 S_VALUE(ssnp->received_rps, ssnc->received_rps, itv),
-			 S_VALUE(ssnp->flow_limit,   ssnc->flow_limit,   itv));
+			 S_VALUE(ssnp->flow_limit,   ssnc->flow_limit,   itv),
+			 ssnc->backlog_len);
 	}
 	tab--;
 

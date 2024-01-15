@@ -1,11 +1,10 @@
 /*
  * svg_stats.h: Include file used to display system statistics in SVG format.
- * (C) 2016-2022 by Sebastien Godard (sysstat <at> orange.fr)
+ * (C) 2016-2023 by Sebastien Godard (sysstat <at> orange.fr)
  */
 
 #ifndef _SVG_STATS_H
 #define _SVG_STATS_H
-
 
 /*
  ***************************************************************************
@@ -126,6 +125,9 @@ __print_funct_t svg_print_psiio_stats
 	(struct activity *, int, int, struct svg_parm *, unsigned long long,
 	 struct record_header *);
 __print_funct_t svg_print_psimem_stats
+	(struct activity *, int, int, struct svg_parm *, unsigned long long,
+	 struct record_header *);
+__print_funct_t svg_print_pwr_bat_stats
 	(struct activity *, int, int, struct svg_parm *, unsigned long long,
 	 struct record_header *);
 

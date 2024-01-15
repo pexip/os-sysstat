@@ -1,6 +1,6 @@
 /*
  * sadc: system activity data collector
- * (C) 1999-2022 by Sebastien GODARD (sysstat <at> orange.fr)
+ * (C) 1999-2023 by Sebastien GODARD (sysstat <at> orange.fr)
  *
  ***************************************************************************
  * This program is free software; you can redistribute it and/or modify it *
@@ -835,7 +835,7 @@ void open_ofile(int *ofd, char ofile[], int restart_mark)
 			return;
 		}
 #ifdef DEBUG
-		fprintf(stderr, "%s: Size read=%zd sysstat_magic=%x format_magic=%x header_size=%u header=%d,%d,%d\n",
+		fprintf(stderr, "%s: Size read=%zd sysstat_magic=%x format_magic=%x header_size=%u header=%u,%u,%u\n",
 			__FUNCTION__, sz, file_magic.sysstat_magic, file_magic.format_magic, file_magic.header_size,
 			file_magic.hdr_types_nr[0], file_magic.hdr_types_nr[1], file_magic.hdr_types_nr[2]);
 #endif
@@ -870,7 +870,7 @@ void open_ofile(int *ofd, char ofile[], int restart_mark)
 	/* OK: It's a true system activity file */
 	if (!file_hdr.sa_act_nr || (file_hdr.sa_act_nr > NR_ACT)) {
 #ifdef DEBUG
-		fprintf(stderr, "%s: sa_act_nr=%d\n",
+		fprintf(stderr, "%s: sa_act_nr=%u\n",
 			__FUNCTION__, file_hdr.sa_act_nr);
 #endif
 		/*
@@ -890,7 +890,7 @@ void open_ofile(int *ofd, char ofile[], int restart_mark)
 	    (file_hdr.rec_types_nr[1] != RECORD_HEADER_UL_NR) ||
 	    (file_hdr.rec_types_nr[2] != RECORD_HEADER_U_NR)) {
 #ifdef DEBUG
-		fprintf(stderr, "%s: act_size=%u act=%d,%d,%d rec_size=%u rec=%d,%d,%d\n",
+		fprintf(stderr, "%s: act_size=%u act=%u,%u,%u rec_size=%u rec=%u,%u,%u\n",
 			__FUNCTION__, file_hdr.act_size,
 			file_hdr.act_types_nr[0], file_hdr.act_types_nr[1], file_hdr.act_types_nr[2],
 			file_hdr.rec_size,
@@ -951,7 +951,7 @@ void open_ofile(int *ofd, char ofile[], int restart_mark)
 		    (file_act[i].types_nr[1] != act[p]->gtypes_nr[1]) ||
 		    (file_act[i].types_nr[2] != act[p]->gtypes_nr[2])) {
 #ifdef DEBUG
-			fprintf(stderr, "%s: %s: types=%d,%d,%d/%d,%d,%d\n",
+			fprintf(stderr, "%s: %s: types=%u,%u,%u/%u,%u,%u\n",
 				__FUNCTION__, act[p]->name,
 				file_act[i].types_nr[0], file_act[i].types_nr[1], file_act[i].types_nr[2],
 				act[p]->gtypes_nr[0], act[p]->gtypes_nr[1], act[p]->gtypes_nr[2]);
@@ -1013,6 +1013,12 @@ void open_ofile(int *ofd, char ofile[], int restart_mark)
 		if (act[p]->nr_ini > act[p]->nr_allocated) {
 			act[p]->nr_allocated = act[p]->nr_ini;
 		}
+
+		/* Look for a possible overflow */
+		check_overflow((unsigned int) act[p]->msize,
+			       (unsigned int) act[p]->nr_allocated,
+			       (unsigned int) act[p]->nr2);
+
 		SREALLOC(act[p]->_buf0, void,
 			 (size_t) act[p]->msize * (size_t) act[p]->nr_allocated * (size_t) act[p]->nr2);
 
@@ -1258,7 +1264,9 @@ int main(int argc, char **argv)
 		}
 
 		else if (!strcmp(argv[opt], "-V")) {
-			print_version();
+			char *sadc_env[] = {ENV_TIME_DEFTM};
+#define SADC_ENV_NR	1
+			print_version(sadc_env, SADC_ENV_NR);
 		}
 
 		else if (!strcmp(argv[opt], "-Z")) {

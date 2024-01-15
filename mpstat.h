@@ -1,6 +1,6 @@
 /*
  * mpstat: per-processor statistics
- * (C) 2000-2022 by Sebastien Godard (sysstat <at> orange.fr)
+ * (C) 2000-2023 by Sebastien Godard (sysstat <at> orange.fr)
  */
 
 #ifndef _MPSTAT_H
@@ -53,12 +53,15 @@
 #define F_OPTION_N	0x08
 /* Display topology */
 #define F_TOPOLOGY	0x10
+/* Indicate that option -H has been used */
+#define F_OPTION_H	0x20
 
 #define USE_OPTION_P(m)		(((m) & F_OPTION_P) == F_OPTION_P)
 #define USE_OPTION_A(m)		(((m) & F_OPTION_A) == F_OPTION_A)
 #define DISPLAY_JSON_OUTPUT(m)	(((m) & F_JSON_OUTPUT) == F_JSON_OUTPUT)
 #define USE_OPTION_N(m)		(((m) & F_OPTION_N) == F_OPTION_N)
 #define DISPLAY_TOPOLOGY(m)	(((m) & F_TOPOLOGY) == F_TOPOLOGY)
+#define USE_OPTION_H(m)		(((m) & F_OPTION_H) == F_OPTION_H)
 
 #define K_SUM	"SUM"
 #define K_CPU	"CPU"

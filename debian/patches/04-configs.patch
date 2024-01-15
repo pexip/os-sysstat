@@ -21,7 +21,7 @@ index b5e396d..30301d2 100644
  # 8am-7pm activity reports every 20 minutes during weekdays.
  # 0 8-18 * * 1-5 @SA_LIB_DIR@/sa1 1200 3
 diff --git a/sysstat.sysconfig.in b/sysstat.sysconfig.in
-index aec7656..e951582 100644
+index f3116d4..6c36db3 100644
 --- a/sysstat.sysconfig.in
 +++ b/sysstat.sysconfig.in
 @@ -1,6 +1,7 @@

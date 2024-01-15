@@ -1,6 +1,6 @@
 /*
  * format.c: Output format definitions for sadf and sar
- * (C) 2011-2022 by Sebastien GODARD (sysstat <at> orange.fr)
+ * (C) 2011-2023 by Sebastien GODARD (sysstat <at> orange.fr)
  *
  ***************************************************************************
  * This program is free software; you can redistribute it and/or modify it *
@@ -126,7 +126,7 @@ struct report_format conv_fmt = {
  */
 struct report_format svg_fmt = {
 	.id		= F_SVG_OUTPUT,
-	.options	= FO_HEADER_ONLY + FO_LOCAL_TIME + FO_NO_TRUE_TIME +
+	.options	= FO_HEADER_ONLY + FO_LOCAL_TIME +
 			  FO_LC_NUMERIC_C,
 	.f_header	= print_svg_header,
 	.f_statistics	= NULL,

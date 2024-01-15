@@ -48,6 +48,7 @@ char *sccsid(void) { return (SCCSID); }
 
 #ifdef TEST
 void int_handler(int n) { return; }
+extern int __env;
 #endif
 
 unsigned long long uptime_cs[2] = {0, 0};
@@ -348,12 +349,12 @@ void write_cifs_stat(int curr, unsigned long long itv, int fctr,
 		rbytes /= fctr;
 		wbytes /= fctr;
 	}
-	cprintf_f(DISPLAY_UNIT(flags) ? UNIT_BYTE : NO_UNIT, 2, 12, 2,
+	cprintf_f(DISPLAY_UNIT(flags) ? UNIT_BYTE : NO_UNIT, FALSE, 2, 12, 2,
 		  rbytes, wbytes);
-	cprintf_f(NO_UNIT, 2, 9, 2,
+	cprintf_f(NO_UNIT, FALSE, 2, 9, 2,
 		  S_VALUE(ionj->rd_ops, ioni->rd_ops, itv),
 		  S_VALUE(ionj->wr_ops, ioni->wr_ops, itv));
-	cprintf_f(NO_UNIT, 3, 12, 2,
+	cprintf_f(NO_UNIT, FALSE, 3, 12, 2,
 		  S_VALUE(ionj->fopens, ioni->fopens, itv),
 		  S_VALUE(ionj->fcloses, ioni->fcloses, itv),
 		  S_VALUE(ionj->fdeletes, ioni->fdeletes, itv));
@@ -461,7 +462,7 @@ void rw_io_stat_loop(long int count, struct tm *rectime)
 		read_cifs_stat(curr);
 
 		/* Get time */
-		get_localtime(rectime, 0);
+		get_xtime(rectime, 0, LOCAL_TIME);
 
 		/* Print results */
 		write_stats(curr, rectime);
@@ -515,6 +516,13 @@ int main(int argc, char **argv)
 			opt++;
 		}
 
+#ifdef TEST
+		else if (!strncmp(argv[opt], "--getenv", 8)) {
+			__env = TRUE;
+			opt++;
+		}
+#endif
+
 		else if (!strcmp(argv[opt], "--pretty")) {
 			/* Display an easy-to-read CIFS report */
 			flags |= I_D_PRETTY;
@@ -522,6 +530,11 @@ int main(int argc, char **argv)
 		}
 
 		else if (!strncmp(argv[opt], "--dec=", 6) && (strlen(argv[opt]) == 7)) {
+			/* Check that the argument is a digit */
+			if (!isdigit(argv[opt][6])) {
+				usage(argv[0]);
+			}
+
 			/* Get number of decimal places */
 			dplaces_nr = atoi(argv[opt] + 6);
 			if ((dplaces_nr < 0) || (dplaces_nr > 2)) {
@@ -562,9 +575,15 @@ int main(int argc, char **argv)
 					break;
 
 				case 'V':
-					/* Print version number and exit */
-					print_version();
-					break;
+					{
+						char *cifsiostat_env[] = {ENV_COLORS,
+									  ENV_COLORS_SGR,
+									  ENV_TIME_FMT};
+#define CIFSIOSTAT_ENV_NR	3
+						/* Print environment contents, version number and exit */
+						print_version(cifsiostat_env, CIFSIOSTAT_ENV_NR);
+						break;
+					}
 
 				default:
 					usage(argv[0]);
@@ -601,7 +620,7 @@ int main(int argc, char **argv)
 	/* How many processors on this machine? */
 	cpu_nr = get_cpu_nr(~0, FALSE);
 
-	get_localtime(&rectime, 0);
+	get_xtime(&rectime, 0, LOCAL_TIME);
 
 	/*
 	 * Don't buffer data if redirected to a pipe.

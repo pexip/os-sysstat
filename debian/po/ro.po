@@ -1,0 +1,100 @@
+# Mesajele în limba română pentru pachetul sysstat.
+# Romanian translation of sysstat.
+# Copyright © 2023 THE PACKAGE'S COPYRIGHT HOLDER
+# This file is distributed under the same license as the sysstat package.
+#
+# Remus-Gabriel Chelu <remusgabriel.chelu@disroot.org>, 2023.
+#
+# Cronologia traducerii fișierului „sysstat”:
+# Traducerea inițială, făcută de R-GC, pentru versiunea sysstat 12.6.1-1(2009-02-04).
+# Actualizare a traducerii pentru versiunea Y, făcută de X, Y(anul).
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: sysstat 12.6.1-1\n"
+"Report-Msgid-Bugs-To: sysstat@packages.debian.org\n"
+"POT-Creation-Date: 2009-02-04 18:52+0100\n"
+"PO-Revision-Date: 2023-03-26 16:27+0200\n"
+"Last-Translator: Remus-Gabriel Chelu <remusgabriel.chelu@disroot.org>\n"
+"Language-Team: Romanian <debian-l10n-romanian@lists.debian.org>\n"
+"Language: ro\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=3; plural=(n==1 ? 0 : n==0 || (n!=1 && n%100>=1 && "
+"n%100<=19) ? 1 : 2);\n"
+"X-Bugs: Report translation errors to the Language-Team address.\n"
+"X-Generator: Poedit 3.2.2\n"
+
+#. Type: boolean
+#. Description
+#: ../sysstat.templates:2001
+msgid "Remove old format statistics data files?"
+msgstr "Doriți să eliminați fișierele de date cu statistici în format vechi?"
+
+#. Type: boolean
+#. Description
+#: ../sysstat.templates:2001
+msgid ""
+"The format of daily data statistics files has changed in version ${s_version} "
+"of sysstat and is not compatible with the previous one."
+msgstr ""
+"Formatul fișierelor zilnice cu statistici de date s-a schimbat în versiunea "
+"${s_version} a «sysstat» și nu este compatibil cu cea anterioară."
+
+#. Type: boolean
+#. Description
+#: ../sysstat.templates:2001
+msgid ""
+"If you choose this option, all existing data files in the /var/log/sysstat/ "
+"directory will be deleted."
+msgstr ""
+"Dacă alegeți această opțiune, toate fișierele de date existente în directorul „/"
+"var/log/sysstat/” vor fi șterse."
+
+#. Type: boolean
+#. Description
+#: ../sysstat.templates:2001
+msgid ""
+"If you don't choose this option, the sar(1) command will not work properly "
+"until you remove the files manually."
+msgstr ""
+"Dacă nu alegeți această opțiune, comanda sar(1) nu va funcționa corect până "
+"când nu eliminați fișierele manual."
+
+#. Type: boolean
+#. Description
+#: ../sysstat.templates:3001
+msgid "Activate sysstat's cron job?"
+msgstr "Doriți să activați sarcina «sysstat» în cron?"
+
+#. Type: boolean
+#. Description
+#: ../sysstat.templates:3001
+msgid ""
+"If this option is enabled the sysstat package will monitor system activities "
+"and store the data in log files within /var/log/sysstat/."
+msgstr ""
+"Dacă această opțiune este activată, pachetul „sysstat” va monitoriza "
+"activitățile sistemului și va stoca datele în fișierele jurnal din directorul „/"
+"var/log/sysstat/”."
+
+#. Type: boolean
+#. Description
+#: ../sysstat.templates:3001
+msgid ""
+"This data allows the sar(1) command to display system statistics for the whole "
+"day."
+msgstr ""
+"Aceste date permit comenzii sar(1) să afișeze statisticile sistemului pentru "
+"întreaga zi."
+
+#. Type: boolean
+#. Description
+#: ../sysstat.templates:3001
+msgid ""
+"If you don't enable this option, the sar(1) command will only show the current "
+"statistics."
+msgstr ""
+"Dacă nu activați această opțiune, comanda sar(1) va afișa doar statisticile "
+"curente."

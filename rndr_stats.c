@@ -1,6 +1,6 @@
 /*
  * rndr_stats.c: Functions used by sadf to display statistics in selected format.
- * (C) 1999-2022 by Sebastien GODARD (sysstat <at> orange.fr)
+ * (C) 1999-2023 by Sebastien GODARD (sysstat <at> orange.fr)
  *
  ***************************************************************************
  * This program is free software; you can redistribute it and/or modify it *
@@ -38,6 +38,7 @@
 char *seps[] =  {"\t", ";"};
 
 extern uint64_t flags;
+extern char bat_status[][16];
 
 /*
  ***************************************************************************
@@ -702,14 +703,16 @@ __print_funct_t render_paging_stats(struct activity *a, int isdb, char *pre,
 	       S_VALUE(spp->pgsteal, spc->pgsteal, itv),
 	       NULL);
 
-	render(isdb, pre, pt_newlin,
-	       "-\t%vmeff", NULL, NULL,
+	render(isdb, pre, PT_NOFLAG,
+	       "-\tpgprom/s", NULL, NULL,
 	       NOVAL,
-	       (spc->pgscan_kswapd + spc->pgscan_direct -
-		spp->pgscan_kswapd - spp->pgscan_direct) ?
-	       SP_VALUE(spp->pgsteal, spc->pgsteal,
-			spc->pgscan_kswapd + spc->pgscan_direct -
-			spp->pgscan_kswapd - spp->pgscan_direct) : 0.0,
+	       S_VALUE(spp->pgpromote, spc->pgpromote, itv),
+	       NULL);
+
+	render(isdb, pre, pt_newlin,
+	       "-\tpgdem/s", NULL, NULL,
+	       NOVAL,
+	       S_VALUE(spp->pgdemote, spc->pgdemote, itv),
 	       NULL);
 }
 
@@ -791,6 +794,123 @@ __print_funct_t render_io_stats(struct activity *a, int isdb, char *pre,
 }
 
 /*
+ * **************************************************************************
+ * Display RAM memory utilization in selected format.
+ *
+ * IN:
+ * @smc		Structure with statistics.
+ * @isdb	Flag, true if db printing, false if ppc printing.
+ * @pre		Prefix string for output entries.
+ * @dispall	TRUE if all memory fields should be displayed.
+ * @pt_newlin	Rendering flag for last displayed field.
+ ***************************************************************************
+ */
+void render_ram_memory_stats(struct stats_memory *smc, int isdb, char *pre,
+			     int dispall, int pt_newlin)
+{
+	unsigned long long nousedmem;
+	int ptn;
+
+	nousedmem = smc->frmkb + smc->bufkb + smc->camkb + smc->slabkb;
+	if (nousedmem > smc->tlmkb) {
+		nousedmem = smc->tlmkb;
+	}
+
+	render(isdb, pre, PT_USEINT,
+	       "-\tkbmemfree", NULL, NULL, smc->frmkb, DNOVAL, NULL);
+
+	render(isdb, pre, PT_USEINT,
+	       "-\tkbavail", NULL, NULL, smc->availablekb, DNOVAL, NULL);
+
+	render(isdb, pre, PT_USEINT,
+	       "-\tkbmemused", NULL, NULL, smc->tlmkb - nousedmem, DNOVAL, NULL);
+
+	render(isdb, pre, PT_NOFLAG,
+	       "-\t%memused", NULL, NULL, NOVAL,
+	       smc->tlmkb ? SP_VALUE(nousedmem, smc->tlmkb, smc->tlmkb)
+			  : 0.0,
+	       NULL);
+
+	render(isdb, pre, PT_USEINT,
+	       "-\tkbbuffers", NULL, NULL, smc->bufkb, DNOVAL, NULL);
+
+	render(isdb, pre, PT_USEINT,
+	       "-\tkbcached", NULL, NULL, smc->camkb, DNOVAL, NULL);
+
+	render(isdb, pre, PT_USEINT,
+	       "-\tkbcommit", NULL, NULL, smc->comkb, DNOVAL, NULL);
+
+	render(isdb, pre, PT_NOFLAG,
+	       "-\t%commit", NULL, NULL, NOVAL,
+	       (smc->tlmkb + smc->tlskb) ? SP_VALUE(0, smc->comkb, smc->tlmkb + smc->tlskb)
+					 : 0.0,
+	       NULL);
+
+	render(isdb, pre, PT_USEINT,
+	       "-\tkbactive", NULL, NULL, smc->activekb, DNOVAL, NULL);
+
+	render(isdb, pre, PT_USEINT,
+	       "-\tkbinact", NULL, NULL, smc->inactkb, DNOVAL, NULL);
+
+	ptn = dispall ? 0 : pt_newlin;
+	render(isdb, pre, PT_USEINT | ptn,
+	       "-\tkbdirty", NULL, NULL, smc->dirtykb, DNOVAL, NULL);
+
+	if (dispall) {
+		render(isdb, pre, PT_USEINT,
+		       "-\tkbanonpg", NULL, NULL, smc->anonpgkb, DNOVAL, NULL);
+
+		render(isdb, pre, PT_USEINT,
+		       "-\tkbslab", NULL, NULL, smc->slabkb, DNOVAL, NULL);
+
+		render(isdb, pre, PT_USEINT,
+		       "-\tkbkstack", NULL, NULL, smc->kstackkb, DNOVAL, NULL);
+
+		render(isdb, pre, PT_USEINT,
+		       "-\tkbpgtbl", NULL, NULL, smc->pgtblkb, DNOVAL, NULL);
+
+		render(isdb, pre, PT_USEINT | pt_newlin,
+		       "-\tkbvmused", NULL, NULL, smc->vmusedkb, DNOVAL, NULL);
+	}
+}
+
+/*
+ * **************************************************************************
+ * Display swap memory utilization in selected format.
+ *
+ * IN:
+ * @smc		Structure with statistics.
+ * @isdb	Flag, true if db printing, false if ppc printing.
+ * @pre		Prefix string for output entries.
+ * @pt_newlin	Rendering flag for last displayed field.
+ ***************************************************************************
+ */
+void render_swap_memory_stats(struct stats_memory *smc, int isdb, char *pre,
+			      int pt_newlin)
+{
+	render(isdb, pre, PT_USEINT,
+	       "-\tkbswpfree", NULL, NULL, smc->frskb, DNOVAL, NULL);
+
+	render(isdb, pre, PT_USEINT,
+	       "-\tkbswpused", NULL, NULL, smc->tlskb - smc->frskb, DNOVAL, NULL);
+
+	render(isdb, pre, PT_NOFLAG,
+	       "-\t%swpused", NULL, NULL, NOVAL,
+	       smc->tlskb ? SP_VALUE(smc->frskb, smc->tlskb, smc->tlskb)
+			  : 0.0,
+	       NULL);
+
+	render(isdb, pre, PT_USEINT,
+	       "-\tkbswpcad", NULL, NULL, smc->caskb, DNOVAL, NULL);
+
+	render(isdb, pre, pt_newlin,
+	       "-\t%swpcad", NULL, NULL, NOVAL,
+	       (smc->tlskb - smc->frskb) ? SP_VALUE(0, smc->caskb, smc->tlskb - smc->frskb)
+					 : 0.0,
+	       NULL);
+}
+
+/*
  ***************************************************************************
  * Display memory and swap statistics in selected format.
  *
@@ -809,113 +929,13 @@ __print_funct_t render_memory_stats(struct activity *a, int isdb, char *pre,
 		*smc = (struct stats_memory *) a->buf[curr];
 	int pt_newlin
 		= PT_NOFLAG + (DISPLAY_HORIZONTALLY(flags) ? 0 : PT_NEWLIN);
-	int ptn;
-	unsigned long long nousedmem;
 
 	if (DISPLAY_MEMORY(a->opt_flags)) {
-
-		nousedmem = smc->frmkb + smc->bufkb + smc->camkb + smc->slabkb;
-		if (nousedmem > smc->tlmkb) {
-			nousedmem = smc->tlmkb;
-		}
-
-		render(isdb, pre, PT_USEINT,
-		       "-\tkbmemfree", NULL, NULL,
-		       smc->frmkb, DNOVAL, NULL);
-
-		render(isdb, pre, PT_USEINT,
-		       "-\tkbavail", NULL, NULL,
-		       smc->availablekb, DNOVAL, NULL);
-
-		render(isdb, pre, PT_USEINT,
-		       "-\tkbmemused", NULL, NULL,
-		       smc->tlmkb - nousedmem, DNOVAL, NULL);
-
-		render(isdb, pre, PT_NOFLAG,
-		       "-\t%memused", NULL, NULL, NOVAL,
-		       smc->tlmkb ?
-		       SP_VALUE(nousedmem, smc->tlmkb, smc->tlmkb) :
-		       0.0, NULL);
-
-		render(isdb, pre, PT_USEINT,
-		       "-\tkbbuffers", NULL, NULL,
-		       smc->bufkb, DNOVAL, NULL);
-
-		render(isdb, pre, PT_USEINT,
-		       "-\tkbcached", NULL, NULL,
-		       smc->camkb, DNOVAL, NULL);
-
-		render(isdb, pre, PT_USEINT,
-		       "-\tkbcommit", NULL, NULL,
-		       smc->comkb, DNOVAL, NULL);
-
-		render(isdb, pre, PT_NOFLAG,
-		       "-\t%commit", NULL, NULL, NOVAL,
-		       (smc->tlmkb + smc->tlskb) ?
-		       SP_VALUE(0, smc->comkb, smc->tlmkb + smc->tlskb) :
-		       0.0, NULL);
-
-		render(isdb, pre, PT_USEINT,
-		       "-\tkbactive", NULL, NULL,
-		       smc->activekb, DNOVAL, NULL);
-
-		render(isdb, pre, PT_USEINT,
-		       "-\tkbinact", NULL, NULL,
-		       smc->inactkb, DNOVAL, NULL);
-
-		ptn = DISPLAY_MEM_ALL(a->opt_flags) ? 0 : pt_newlin;
-		render(isdb, pre, PT_USEINT | ptn,
-		       "-\tkbdirty", NULL, NULL,
-		       smc->dirtykb, DNOVAL, NULL);
-
-		if (DISPLAY_MEM_ALL(a->opt_flags)) {
-			render(isdb, pre, PT_USEINT,
-			       "-\tkbanonpg", NULL, NULL,
-			       smc->anonpgkb, DNOVAL, NULL);
-
-			render(isdb, pre, PT_USEINT,
-			       "-\tkbslab", NULL, NULL,
-			       smc->slabkb, DNOVAL, NULL);
-
-			render(isdb, pre, PT_USEINT,
-			       "-\tkbkstack", NULL, NULL,
-			       smc->kstackkb, DNOVAL, NULL);
-
-			render(isdb, pre, PT_USEINT,
-			       "-\tkbpgtbl", NULL, NULL,
-			       smc->pgtblkb, DNOVAL, NULL);
-
-			render(isdb, pre, PT_USEINT | pt_newlin,
-			       "-\tkbvmused", NULL, NULL,
-			       smc->vmusedkb, DNOVAL, NULL);
-		}
+		render_ram_memory_stats(smc, isdb, pre, DISPLAY_MEM_ALL(a->opt_flags), pt_newlin);
 	}
 
 	if (DISPLAY_SWAP(a->opt_flags)) {
-
-		render(isdb, pre, PT_USEINT,
-		       "-\tkbswpfree", NULL, NULL,
-		       smc->frskb, DNOVAL, NULL);
-
-		render(isdb, pre, PT_USEINT,
-		       "-\tkbswpused", NULL, NULL,
-		       smc->tlskb - smc->frskb, DNOVAL, NULL);
-
-		render(isdb, pre, PT_NOFLAG,
-		       "-\t%swpused", NULL, NULL, NOVAL,
-		       smc->tlskb ?
-		       SP_VALUE(smc->frskb, smc->tlskb, smc->tlskb) :
-		       0.0, NULL);
-
-		render(isdb, pre, PT_USEINT,
-		       "-\tkbswpcad", NULL, NULL,
-		       smc->caskb, DNOVAL, NULL);
-
-		render(isdb, pre, pt_newlin,
-		       "-\t%swpcad", NULL, NULL, NOVAL,
-		       (smc->tlskb - smc->frskb) ?
-		       SP_VALUE(0, smc->caskb, smc->tlskb - smc->frskb) :
-		       0.0, NULL);
+		render_swap_memory_stats(smc, isdb, pre, pt_newlin);
 	}
 }
 
@@ -3448,4 +3468,54 @@ __print_funct_t render_psimem_stats(struct activity *a, int isdb, char *pre,
 	       NOVAL,
 	       ((double) psic->full_mem_total - psip->full_mem_total) / (100 * itv),
 	       NULL);
+}
+
+/*
+ * **************************************************************************
+ * Display battery statistics in selected format.
+ *
+ * IN:
+ * @a		Activity structure with statistics.
+ * @isdb	Flag, true if db printing, false if ppc printing.
+ * @pre		Prefix string for output entries
+ * @curr	Index in array for current sample statistics.
+ * @itv		Interval of time in 1/100th of a second.
+ ***************************************************************************
+ */
+__print_funct_t render_pwr_bat_stats(struct activity *a, int isdb, char *pre,
+				     int curr, unsigned long long itv)
+{
+	int i;
+	struct stats_pwr_bat *spbc, *spbp;
+	int pt_newlin
+	= PT_NOFLAG + (DISPLAY_HORIZONTALLY(flags) ? 0 : PT_NEWLIN);
+
+	for (i = 0; i < a->nr[curr]; i++) {
+
+		spbc = (struct stats_pwr_bat *) ((char *) a->buf[curr] + i * a->msize);
+		spbp = (struct stats_pwr_bat *) ((char *) a->buf[!curr] + i * a->msize);
+
+		render(isdb, pre, PT_USEINT,
+		       "BAT%d\t%%cap", "%d",
+		       cons(iv, spbc->bat_id, NOVAL),
+		       (unsigned int) spbc->capacity,
+		       NOVAL, NULL);
+
+		render(isdb, pre, PT_NOFLAG,
+		       "BAT%d\tcap/min", NULL,
+		       cons(iv, spbc->bat_id, NOVAL),
+		       NOVAL,
+		       (double) (spbc->capacity - spbp->capacity) * 6000 / itv,
+		       NULL);
+
+		/* Battery status code should not be greater than or equal to BAT_STS_NR */
+		if (spbc->status >= BAT_STS_NR) {
+			spbc->status = 0;
+		}
+		render(isdb, pre, PT_USESTR | pt_newlin,
+		       "BAT%d\tstatus", NULL,
+		       cons(iv, spbc->bat_id, NOVAL),
+		       NOVAL, NOVAL,
+		       bat_status[(unsigned int) spbc->status]);
+	}
 }

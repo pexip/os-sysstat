@@ -1,5 +1,5 @@
 etc/sysstat
 usr/bin
-usr/lib/sysstat
+usr/libexec/sysstat
 usr/share/man
 var/log/sysstat

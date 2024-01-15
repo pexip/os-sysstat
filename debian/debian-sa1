@@ -18,4 +18,4 @@ ENABLED=false
 
 [ "$ENABLED" = "true" ] || exit 0
 
-exec /usr/lib/sysstat/sa1 "$@"
+exec /usr/libexec/sysstat/sa1 "$@"

@@ -1,6 +1,6 @@
 /*
  * xml_stats.h: Include file used to display system statistics in XML.
- * (C) 1999-2022 by Sebastien Godard (sysstat <at> orange.fr)
+ * (C) 1999-2023 by Sebastien Godard (sysstat <at> orange.fr)
  */
 
 #ifndef _XML_STATS_H
@@ -98,6 +98,8 @@ __print_funct_t xml_print_psicpu_stats
 __print_funct_t xml_print_psiio_stats
 	(struct activity *, int, int, unsigned long long);
 __print_funct_t xml_print_psimem_stats
+	(struct activity *, int, int, unsigned long long);
+__print_funct_t xml_print_pwr_bat_stats
 	(struct activity *, int, int, unsigned long long);
 
 #endif /* _XML_STATS_H */

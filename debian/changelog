@@ -1,3 +1,58 @@
+sysstat (12.7.5-2) unstable; urgency=low
+
+  * Fix running upstream-provided tests from autopkgtest:
+    + make debian/tests/upstream-tests export CPPFLAGS instead of DFLAGS,
+      as exporting the latter one affected compilation of sar in the debug
+      mode; also do the same for LDFLAGS instead of LFLAGS;
+    + update 16-empty-dirs.patch to actually create non-empty files inside
+      empty dirs that exists in upstream tarball;
+    + fix do_test program via 14-simtest-run-all.patch to return proper exit
+      code; additionally skip cleaning after all the tests, so that the above
+      mentioned upstream-tests program can collect generated temporary files
+      as artifacts.
+
+  * Install internal sysstat binaries in /usr/libexec/sysstat instead of
+    /usr/lib/sysstat per FHS 3.0 (lintian).
+  * sysstat.postrm: replace calls to 'which' with 'command -v'.
+  * Upload to unstable.
+
+ -- Robert Luberda <robert@debian.org>  Mon, 15 Jan 2024 23:49:31 +0100
+
+sysstat (12.7.5-1) experimental; urgency=low
+
+  * New upstream version.
+  * Add linitan overrides for very-long-line-length-in-source-file.
+  * Drop no longer needed CVE-2023-33204.patch.
+  * Update debian/patches/14-simtest-run-all.patch to move the functionality
+    of running all tests and returning proper exit code from Makefile to
+    do_test program. Update debian/test/upstream-tests as well.
+  * Add debian/patches/16-empty-dirs.patch to make sure all the directories
+    from original tarball exist in local git repository.
+  * Remove build-dependency on systemd (closes: #1060613).
+
+ -- Robert Luberda <robert@debian.org>  Sat, 13 Jan 2024 23:43:14 +0100
+
+sysstat (12.6.1-2) unstable; urgency=medium
+
+  * Acknowledge NMU.
+  * Add debian/patches/CVE-2023-33204.patch from Ubuntu (systat
+    12.6.1-1ubuntu1) to fix overflow check logic in check_overflow()
+    function in common.c reported in CVE-2023-33204 (closes: #1036294).
+  * Update upstream website URL in debian/control and debian/watch.
+  * Drop obsolete dependency on lsb-base package.
+  * Add Romanian translation of debconf templates (closes: #1033722).
+  * Standards-Version: 4.6.2 (no changes).
+
+ -- Robert Luberda <robert@debian.org>  Tue, 09 Jan 2024 21:31:44 +0100
+
+sysstat (12.6.1-1.1) unstable; urgency=medium
+
+  * Non-maintainer upload.
+  * Fix FTBFS after systemdsystemunitdir changed in systemd.pc
+    (Closes: #1057421)
+
+ -- Chris Hofstaedtler <zeha@debian.org>  Fri, 15 Dec 2023 01:23:13 +0100
+
 sysstat (12.6.1-1) unstable; urgency=medium
 
   * New upstream stable version: fixes size_t overflow in sa_common.c

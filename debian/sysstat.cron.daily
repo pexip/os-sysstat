@@ -12,11 +12,11 @@ ENABLED=false
 # Skip in favour of systemd timer
 [ ! -d /run/systemd/system ] || exit 0
 
-[ -x /usr/lib/sysstat/sa2 ] || exit 0
+[ -x /usr/libexec/sysstat/sa2 ] || exit 0
 
 # Read our config
 [ -r "$DEFAULT" ] && . "$DEFAULT"
 
 [ "$ENABLED" = "true" ]  || exit 0
 
-exec /usr/lib/sysstat/sa2 -A
+exec /usr/libexec/sysstat/sa2 -A

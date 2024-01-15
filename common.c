@@ -1,6 +1,6 @@
 /*
  * sar, sadc, sadf, mpstat and iostat common routines.
- * (C) 1999-2022 by Sebastien GODARD (sysstat <at> orange.fr)
+ * (C) 1999-2023 by Sebastien GODARD (sysstat <at> orange.fr)
  *
  ***************************************************************************
  * This program is free software; you can redistribute it and/or modify it *
@@ -58,13 +58,15 @@ unsigned long hz;
 unsigned int kb_shift;
 
 /* Colors strings */
-char sc_percent_high[MAX_SGR_LEN] = C_BOLD_RED;
-char sc_percent_low[MAX_SGR_LEN] = C_BOLD_MAGENTA;
+char sc_percent_warn[MAX_SGR_LEN] = C_BOLD_MAGENTA;
+char sc_percent_xtreme[MAX_SGR_LEN] = C_BOLD_RED;
 char sc_zero_int_stat[MAX_SGR_LEN] = C_LIGHT_BLUE;
 char sc_int_stat[MAX_SGR_LEN] = C_BOLD_BLUE;
 char sc_item_name[MAX_SGR_LEN] = C_LIGHT_GREEN;
 char sc_sa_restart[MAX_SGR_LEN] = C_LIGHT_RED;
 char sc_sa_comment[MAX_SGR_LEN] = C_LIGHT_YELLOW;
+char sc_trend_pos[MAX_SGR_LEN] = C_BOLD_GREEN;
+char sc_trend_neg[MAX_SGR_LEN] = C_BOLD_RED;
 char sc_normal[MAX_SGR_LEN] = C_NORMAL;
 
 /*
@@ -75,62 +77,62 @@ char persistent_name_type[MAX_FILE_LEN];
 
 /*
  ***************************************************************************
- * Print sysstat version number and exit.
+ * Print sysstat version number, environment variables and exit.
+ *
+ * IN:
+ * @env		Array with environment variable names.
+ * @n		Number of environment variables.
  ***************************************************************************
  */
-void print_version(void)
+void print_version(char *env[], int n)
 {
+	char *e;
+	int i;
+
+	/* Display contents of environment variables */
+	for (i = 0; i < n; i++) {
+		if ((e = __getenv(env[i])) != NULL) {
+			printf("%s=%s\n", env[i], e);
+		}
+	}
+
+	/* Print sysstat version number */
 	printf(_("sysstat version %s\n"), VERSION);
 	printf("(C) Sebastien Godard (sysstat <at> orange.fr)\n");
+
 	exit(0);
 }
 
 /*
  ***************************************************************************
- * Get local date and time.
+ * Get date and time, expressed in UTC or in local time.
  *
  * IN:
  * @d_off	Day offset (number of days to go back in the past).
+ * @utc		TRUE if date and time shall be expressed in UTC.
  *
  * OUT:
  * @rectime	Current local date and time.
  *
  * RETURNS:
- * Value of time in seconds since the Epoch.
+ * Value of time in seconds since the Epoch (always in UTC)
  ***************************************************************************
  */
-time_t get_localtime(struct tm *rectime, int d_off)
+time_t get_xtime(struct tm *rectime, int d_off, int utc)
 {
 	time_t timer;
 
 	timer = __time(NULL);
 	timer -= SEC_PER_DAY * d_off;
-	localtime_r(&timer, rectime);
 
-	return timer;
-}
-
-/*
- ***************************************************************************
- * Get date and time expressed in UTC.
- *
- * IN:
- * @d_off	Day offset (number of days to go back in the past).
- *
- * OUT:
- * @rectime	Current date and time expressed in UTC.
- *
- * RETURNS:
- * Value of time in seconds since the Epoch.
- ***************************************************************************
- */
-time_t get_gmtime(struct tm *rectime, int d_off)
-{
-	time_t timer;
-
-	timer = __time(NULL);
-	timer -= SEC_PER_DAY * d_off;
-	gmtime_r(&timer, rectime);
+	if (utc) {
+		/* Get date and time in UTC */
+		gmtime_r(&timer, rectime);
+	}
+	else {
+		/* Get date and time in local time */
+		localtime_r(&timer, rectime);
+	}
 
 	return timer;
 }
@@ -152,9 +154,10 @@ time_t get_gmtime(struct tm *rectime, int d_off)
 time_t get_time(struct tm *rectime, int d_off)
 {
 	static int utc = 0;
-	char *e;
 
 	if (!utc) {
+		char *e;
+
 		/* Read environment variable value once */
 		if ((e = __getenv(ENV_TIME_DEFTM)) != NULL) {
 			utc = !strcmp(e, K_UTC);
@@ -162,10 +165,7 @@ time_t get_time(struct tm *rectime, int d_off)
 		utc++;
 	}
 
-	if (utc == 2)
-		return get_gmtime(rectime, d_off);
-	else
-		return get_localtime(rectime, d_off);
+	return get_xtime(rectime, d_off, utc == 2);
 }
 
 #ifdef USE_NLS
@@ -447,15 +447,17 @@ int check_dir(char *dirname)
 void check_overflow(unsigned int val1, unsigned int val2,
 		    unsigned int val3)
 {
-	if ((unsigned long long) val1 * (unsigned long long) val2 *
-	    (unsigned long long) val3 > UINT_MAX) {
+	if ((val1 != 0) && (val2 != 0) && (val3 != 0) &&
+	    (((unsigned long long) UINT_MAX / (unsigned long long) val1 <
+	      (unsigned long long) val2) ||
+	     ((unsigned long long) UINT_MAX / ((unsigned long long) val1 * (unsigned long long) val2) <
+	      (unsigned long long) val3))) {
 #ifdef DEBUG
-		fprintf(stderr, "%s: Overflow detected (%llu). Aborting...\n",
-			__FUNCTION__, (unsigned long long) val1 * (unsigned long long) val2 *
-			(unsigned long long) val3);
+		fprintf(stderr, "%s: Overflow detected (%u,%u,%u). Aborting...\n",
+			__FUNCTION__, val1, val2, val3);
 #endif
-	exit(4);
-		}
+		exit(4);
+	}
 }
 
 #ifndef SOURCE_SADC
@@ -505,9 +507,10 @@ unsigned int get_devmap_major(void)
 int is_iso_time_fmt(void)
 {
 	static int is_iso = -1;
-	char *e;
 
 	if (is_iso < 0) {
+		char *e;
+
 		is_iso = (((e = __getenv(ENV_TIME_FMT)) != NULL) && !strcmp(e, K_ISO));
 	}
 	return is_iso;
@@ -581,7 +584,7 @@ void xprintf(int nr_tab, const char *fmtf, ...)
  * Get report date as a string of characters.
  *
  * IN:
- * @rectime	Date to display (don't use time fields).
+ * @tm_time	Date to display (don't use time fields).
  * @cur_date	String where date will be saved.
  * @sz		Max size of cur_date string.
  *
@@ -592,18 +595,18 @@ void xprintf(int nr_tab, const char *fmtf, ...)
  * TRUE if S_TIME_FORMAT is set to ISO, or FALSE otherwise.
  ***************************************************************************
  */
-int set_report_date(struct tm *rectime, char cur_date[], int sz)
+int set_report_date(struct tm *tm_time, char cur_date[], int sz)
 {
-	if (rectime == NULL) {
+	if (tm_time == NULL) {
 		strncpy(cur_date, "?/?/?", sz);
 		cur_date[sz - 1] = '\0';
 	}
 	else if (is_iso_time_fmt()) {
-		strftime(cur_date, sz, "%Y-%m-%d", rectime);
+		strftime(cur_date, sz, "%Y-%m-%d", tm_time);
 		return 1;
 	}
 	else {
-		strftime(cur_date, sz, "%x", rectime);
+		strftime(cur_date, sz, "%x", tm_time);
 	}
 
 	return 0;
@@ -614,7 +617,7 @@ int set_report_date(struct tm *rectime, char cur_date[], int sz)
  * Print banner.
  *
  * IN:
- * @rectime	Date to display (don't use time fields).
+ * @tm_time	Date to display (don't use time fields).
  * @sysname	System name to display.
  * @release	System release number to display.
  * @nodename	Hostname to display.
@@ -627,13 +630,13 @@ int set_report_date(struct tm *rectime, char cur_date[], int sz)
  * TRUE if S_TIME_FORMAT is set to ISO, or FALSE otherwise.
  ***************************************************************************
  */
-int print_gal_header(struct tm *rectime, char *sysname, char *release,
+int print_gal_header(struct tm *tm_time, char *sysname, char *release,
 		     char *nodename, char *machine, int cpu_nr, int format)
 {
 	char cur_date[TIMESTAMP_LEN];
 	int rc = 0;
 
-	rc = set_report_date(rectime, cur_date, sizeof(cur_date));
+	rc = set_report_date(tm_time, cur_date, sizeof(cur_date));
 
 	if (format == PLAIN_OUTPUT) {
 		/* Plain output */
@@ -660,6 +663,8 @@ int print_gal_header(struct tm *rectime, char *sysname, char *release,
 /*
  ***************************************************************************
  * Get number of rows for current window.
+ * If stdout is not a terminal then use the value given by environment
+ * variable S_REPEAT_HEADER if existent.
  *
  * RETURNS:
  * Number of rows.
@@ -668,15 +673,26 @@ int print_gal_header(struct tm *rectime, char *sysname, char *release,
 int get_win_height(void)
 {
 	struct winsize win;
+	char *e;
 	/*
 	 * This default value will be used whenever STDOUT
-	 * is redirected to a pipe or a file
+	 * is redirected to a pipe or a file and S_REPEAT_HEADER variable is not set
 	 */
 	int rows = 3600 * 24;
 
+	/* Get number of lines of current terminal */
 	if (ioctl(STDOUT_FILENO, TIOCGWINSZ, &win) != -1) {
 		if (win.ws_row > 2) {
 			rows = win.ws_row - 2;
+		}
+	}
+	/* STDOUT is not a terminal. Look for S_REPEAT_HEADER variable's value instead */
+	else if ((e = __getenv(ENV_REPEAT_HEADER)) != NULL) {
+		if (strspn(e, DIGITS) == strlen(e)) {
+			int v = atol(e);
+			if (v > 0) {
+				rows = v;
+			}
 		}
 	}
 	return rows;
@@ -1003,7 +1019,7 @@ char *get_persistent_name_from_pretty(char *pretty)
 	}
 	free (persist_names);
 
-	if (strlen(persist_name) <= 0)
+	if (!strlen(persist_name))
 		return (NULL);
 
 	return persist_name;
@@ -1138,7 +1154,6 @@ char *get_device_name(unsigned int major, unsigned int minor, unsigned long long
 	static unsigned int dm_major = 0;
 	char *dev_name = NULL, *persist_dev_name = NULL, *bang;
 	static char sid[64], dname[MAX_NAME_LEN];
-	char xsid[32] = "", pn[16] = "";
 
 	if (disp_persist_name) {
 		persist_dev_name = get_persistent_name_from_pretty(get_devname(major, minor));
@@ -1149,11 +1164,13 @@ char *get_device_name(unsigned int major, unsigned int minor, unsigned long long
 	}
 	else {
 		if (use_stable_id && (wwn[0] != 0)) {
+			char xsid[32] = "", pn[16] = "";
+
 			if (wwn[1] != 0) {
 				sprintf(xsid, "%016llx", wwn[1]);
 			}
 			if (part_nr) {
-				sprintf(pn, "-%d", part_nr);
+				sprintf(pn, "-%u", part_nr);
 			}
 			snprintf(sid, sizeof(sid), "%#016llx%s%s", wwn[0], xsid, pn);
 			dev_name = sid;
@@ -1213,13 +1230,15 @@ void init_colors(void)
 		 * or set to "auto" and stdout is not a terminal:
 		 * Unset color strings.
 		 */
-		strcpy(sc_percent_high, "");
-		strcpy(sc_percent_low, "");
+		strcpy(sc_percent_warn, "");
+		strcpy(sc_percent_xtreme, "");
 		strcpy(sc_zero_int_stat, "");
 		strcpy(sc_int_stat, "");
 		strcpy(sc_item_name, "");
 		strcpy(sc_sa_comment, "");
 		strcpy(sc_sa_restart, "");
+		strcpy(sc_trend_pos, "");
+		strcpy(sc_trend_neg, "");
 		strcpy(sc_normal, "");
 
 		return;
@@ -1239,11 +1258,13 @@ void init_colors(void)
 			continue;
 
 		switch (*p) {
-			case 'H':
-				snprintf(sc_percent_high, MAX_SGR_LEN, "\e[%sm", p + 2);
-				break;
 			case 'M':
-				snprintf(sc_percent_low, MAX_SGR_LEN, "\e[%sm", p + 2);
+			case 'W':
+				snprintf(sc_percent_warn, MAX_SGR_LEN, "\e[%sm", p + 2);
+				break;
+			case 'X':
+			case 'H':
+				snprintf(sc_percent_xtreme, MAX_SGR_LEN, "\e[%sm", p + 2);
 				break;
 			case 'Z':
 				snprintf(sc_zero_int_stat, MAX_SGR_LEN, "\e[%sm", p + 2);
@@ -1259,6 +1280,12 @@ void init_colors(void)
 				break;
 			case 'R':
 				snprintf(sc_sa_restart, MAX_SGR_LEN, "\e[%sm", p + 2);
+				break;
+			case '+':
+				snprintf(sc_trend_pos, MAX_SGR_LEN, "\e[%sm", p + 2);
+				break;
+			case '-':
+				snprintf(sc_trend_neg, MAX_SGR_LEN, "\e[%sm", p + 2);
 				break;
 		}
 	}
@@ -1309,7 +1336,7 @@ void cprintf_unit(int unit, int wi, double dval)
  * @num		Number of values to print.
  * @wi		Output width.
  ***************************************************************************
-*/
+ */
 void cprintf_u64(int unit, int num, int wi, ...)
 {
 	int i;
@@ -1372,12 +1399,13 @@ void cprintf_x(int num, int wi, ...)
  *
  * IN:
  * @unit	Default values unit. -1 if no unit should be displayed.
+ * @sign	TRUE if sign (+/-) should be explicitly displayed.
  * @num		Number of values to print.
  * @wi		Output width.
  * @wd		Number of decimal places.
  ***************************************************************************
 */
-void cprintf_f(int unit, int num, int wi, int wd, ...)
+void cprintf_f(int unit, int sign, int num, int wi, int wd, ...)
 {
 	int i;
 	double val, lim = 0.005;;
@@ -1404,12 +1432,23 @@ void cprintf_f(int unit, int num, int wi, int wd, ...)
 		    ((wd == 0) && (val <= 0.5) && (val >= -0.5))) {	/* "Round half to even" law */
 			printf("%s", sc_zero_int_stat);
 		}
+		else if (sign && (val <= -10.0)) {
+			printf("%s", sc_percent_xtreme);
+		}
+		else if (sign && (val <= -5.0)) {
+			printf("%s", sc_percent_warn);
+		}
 		else {
 			printf("%s", sc_int_stat);
 		}
 
 		if (unit < 0) {
-			printf(" %*.*f", wi, wd, val);
+			if (sign) {
+				printf(" %+*.*f", wi, wd, val);
+			}
+			else {
+				printf(" %*.*f", wi, wd, val);
+			}
 			printf("%s", sc_normal);
 		}
 		else {
@@ -1427,12 +1466,15 @@ void cprintf_f(int unit, int num, int wi, int wd, ...)
  * IN:
  * @human	Set to > 0 if a percent sign (%) shall be displayed after
  *		the value.
+ * @xtrem	Set to non 0 to indicate that extreme (low or high) values
+ *		should be displayed in specific color if beyond predefined
+ *		limits.
  * @num		Number of values to print.
  * @wi		Output width.
  * @wd		Number of decimal places.
  ***************************************************************************
 */
-void cprintf_pc(int human, int num, int wi, int wd, ...)
+void cprintf_xpc(int human, int xtrem, int num, int wi, int wd, ...)
 {
 	int i;
 	double val, lim = 0.005;
@@ -1471,11 +1513,23 @@ void cprintf_pc(int human, int num, int wi, int wd, ...)
 
 	for (i = 0; i < num; i++) {
 		val = va_arg(args, double);
-		if (val >= PERCENT_LIMIT_HIGH) {
-			printf("%s", sc_percent_high);
+		if ((xtrem == XHIGH) && (val >= PERCENT_LIMIT_XHIGH)) {
+			printf("%s", sc_percent_xtreme);
 		}
-		else if (val >= PERCENT_LIMIT_LOW) {
-			printf("%s", sc_percent_low);
+		else if ((xtrem == XHIGH) && (val >= PERCENT_LIMIT_HIGH)) {
+			printf("%s", sc_percent_warn);
+		}
+		else if ((xtrem == XLOW) && (val <= PERCENT_LIMIT_XLOW)) {
+			printf("%s", sc_percent_xtreme);
+		}
+		else if ((xtrem == XLOW0) && (val <= PERCENT_LIMIT_XLOW) && (val >= lim)) {
+			printf("%s", sc_percent_xtreme);
+		}
+		else if ((xtrem == XLOW) && (val <= PERCENT_LIMIT_LOW)) {
+			printf("%s", sc_percent_warn);
+		}
+		else if ((xtrem == XLOW0) && (val <= PERCENT_LIMIT_LOW) && (val >= lim)) {
+			printf("%s", sc_percent_warn);
 		}
 		else if (((wd > 0) && (val < lim)) ||
 			 ((wd == 0) && (val <= 0.5))) {	/* "Round half to even" law */
@@ -1543,6 +1597,30 @@ void cprintf_s(int type, char *format, char *string)
 		printf("%s", sc_sa_comment);
 	}
 	printf(format, string);
+	printf("%s", sc_normal);
+}
+
+/*
+ * **************************************************************************
+ * Print trend string using selected color.
+ *
+ * IN:
+ * @trend	Trend (TRUE: positive; FALSE: negative).
+ * @format	Output format.
+ * @tstring	String to display.
+ ***************************************************************************
+ */
+void cprintf_tr(int trend, char *format, char *tstring)
+{
+	if (trend) {
+		printf("%s", sc_trend_pos);
+	}
+	else {
+		printf("%s", sc_trend_neg);
+	}
+
+	printf(format, tstring);
+
 	printf("%s", sc_normal);
 }
 

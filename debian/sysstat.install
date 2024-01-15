@@ -1,5 +1,5 @@
-debian/debian-sa1 usr/lib/sysstat
+debian/debian-sa1 usr/libexec/sysstat
 debian/tmp/etc/
-debian/tmp/lib/systemd/
+debian/tmp/${env:deb_systemdsystemunitdir}
 debian/tmp/usr/
 debian/tmp/var/

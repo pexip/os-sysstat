@@ -1,11 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE sysstat PUBLIC "DTD v3.11 sysstat //EN"
-"http://pagesperso-orange.fr/sebastien.godard/sysstat-3.11.dtd">
 <sysstat
-xmlns="http://pagesperso-orange.fr/sebastien.godard/sysstat"
+xmlns="https://sysstat.github.io"
 xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-xsi:schemaLocation="http://pagesperso-orange.fr/sebastien.godard sysstat.xsd">
-	<sysdata-version>3.11</sysdata-version>
+xsi:schemaLocation="https://sysstat.github.io https://sysstat.github.io/sysstat.xsd">
+	<sysdata-version>3.16</sysdata-version>
 	<host nodename="linux.home">
 		<sysname>Linux</sysname>
 		<release>4.17.18-200.fc28.x86_64</release>
@@ -15,7 +13,7 @@ xsi:schemaLocation="http://pagesperso-orange.fr/sebastien.godard sysstat.xsd">
 		<file-utc-time>09:33:38</file-utc-time>
 		<timezone></timezone>
 		<statistics>
-			<timestamp date="2018-08-29" time="09:34:34" utc="1" interval="46">
+			<timestamp date="2018-08-29" time="09:34:34" tz="UTC" interval="46">
 				<power-management>
 					<fan-speed unit="rpm">
 						<fan number="1" rpm="1283" drpm="1283" device="f71858fg-isa-0200"/>
@@ -44,7 +42,7 @@ xsi:schemaLocation="http://pagesperso-orange.fr/sebastien.godard sysstat.xsd">
 			</timestamp>
 		</statistics>
 		<restarts>
-			<boot date="2018-08-29" time="09:33:38" utc="1" cpu_count="8"/>
+			<boot date="2018-08-29" time="09:33:38" tz="UTC" cpu_count="8"/>
 		</restarts>
 	</host>
 </sysstat>

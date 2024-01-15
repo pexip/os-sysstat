@@ -1,5 +1,5 @@
 # Makefile to build sysstat commands
-# (C) 1999-2021 Sebastien GODARD (sysstat <at> orange.fr)
+# (C) 1999-2023 Sebastien GODARD (sysstat <at> orange.fr)
 
 # Version and package name
 VERSION = @PACKAGE_VERSION@
@@ -97,7 +97,7 @@ endif
 ifndef CFLAGS
 CFLAGS = @CFLAGS@
 endif
-CFLAGS += -Wall -Wstrict-prototypes -pipe -O2
+CFLAGS += -Wall -Wstrict-prototypes -pipe -O2 -fno-tree-slp-vectorize
 
 ifndef DFLAGS
 DFLAGS = @DFLAGS@
@@ -168,7 +168,7 @@ GCC_AR = @GCC_AR@
 endif
 ifeq ($(LTO),y)
 AR = $(GCC_AR)
-CFLAGS += -flto
+CFLAGS += -flto=auto
 LD = gcc
 LDFLAGS += $(CFLAGS)
 endif
@@ -269,7 +269,7 @@ ioconf.o: ioconf.c ioconf.h common.h sysconfig.h
 act_sadc.o: activity.c sa.h common.h rd_stats.h rd_sensors.h
 	$(CC) -o $@ -c $(CFLAGS) -DSOURCE_SADC $(DFLAGS) $<
 
-act_sar.o: activity.c sa.h common.h rd_stats.h rd_sensors.h pr_stats.h
+act_sar.o: activity.c sa.h common.h rd_stats.h rd_sensors.h pr_stats.h pr_xstats.h
 	$(CC) -o $@ -c $(CFLAGS) -DSOURCE_SAR $(DFLAGS) $<
 
 act_sadf.o: activity.c sa.h common.h rd_stats.h rd_sensors.h rndr_stats.h xml_stats.h json_stats.h svg_stats.h raw_stats.h pcp_stats.h
@@ -289,19 +289,21 @@ count_light.o: count.c common.h rd_stats.h
 
 rd_sensors.o: rd_sensors.c common.h rd_sensors.h rd_stats.h
 
-pr_stats.o: pr_stats.c sa.h common.h rd_stats.h rd_sensors.h ioconf.h sysconfig.h pr_stats.h
+pr_stats.o: pr_stats.c sa.h common.h rd_stats.h rd_sensors.h ioconf.h sysconfig.h pr_xstats.h
+
+pr_xstats.o: pr_xstats.c sa.h common.h rd_stats.h rd_sensors.h
 
 rndr_stats.o: rndr_stats.c sa.h common.h rd_stats.h rd_sensors.h ioconf.h sysconfig.h rndr_stats.h
 
-xml_stats.o: xml_stats.c sa.h common.h rd_stats.h rd_sensors.h ioconf.h sysconfig.h xml_stats.h
+xml_stats.o: xml_stats.c sa.h common.h rd_stats.h rd_sensors.h ioconf.h sysconfig.h
 
-json_stats.o: json_stats.c sa.h common.h rd_stats.h rd_sensors.h ioconf.h sysconfig.h json_stats.h
+json_stats.o: json_stats.c sa.h common.h rd_stats.h rd_sensors.h ioconf.h sysconfig.h
 
-svg_stats.o: svg_stats.c sa.h common.h rd_stats.h rd_sensors.h ioconf.h sysconfig.h svg_stats.h
+svg_stats.o: svg_stats.c sa.h common.h rd_stats.h rd_sensors.h ioconf.h sysconfig.h
 
-raw_stats.o: raw_stats.c sa.h common.h rd_stats.h rd_sensors.h ioconf.h sysconfig.h raw_stats.h
+raw_stats.o: raw_stats.c sa.h common.h rd_stats.h rd_sensors.h ioconf.h sysconfig.h
 
-pcp_stats.o: pcp_stats.c sa.h pcp_stats.h
+pcp_stats.o: pcp_stats.c common.h rd_stats.h rd_sensors.h sa.h
 
 sa_wrap.o: sa_wrap.c sa.h common.h rd_stats.h count.h rd_sensors.h
 	$(CC) -o $@ -c $(CFLAGS) -DSOURCE_SADC $(DFLAGS) $<
@@ -312,7 +314,7 @@ format_sadf.o: format.c sadf.h sa.h common.h rd_stats.h rd_sensors.h
 format_sar.o: format.c sa.h common.h rd_stats.h rd_sensors.h
 	$(CC) -o $@ -c $(CFLAGS) -DSOURCE_SAR $(DFLAGS) $<
 
-pcp_def_metrics.o: pcp_def_metrics.c
+pcp_def_metrics.o: pcp_def_metrics.c common.h sa.h rd_stats.h rd_sensors.h
 
 sadf_misc.o: sadf_misc.c sadf.h pcp_def_metrics.h sa.h common.h rd_stats.h rd_sensors.h
 
@@ -342,7 +344,7 @@ sadc: sadc.o act_sadc.o sa_wrap.o sa_common_light.o common_light.o systest.o lib
 
 sar.o: sar.c sa.h version.h common.h rd_stats.h rd_sensors.h
 
-sar: sar.o act_sar.o format_sar.o sa_common.o pr_stats.o librdstats_light.a libsyscom.a
+sar: sar.o act_sar.o format_sar.o sa_common.o pr_stats.o pr_xstats.o librdstats_light.a libsyscom.a
 
 sadf.o: sadf.c sadf.h version.h sa.h common.h rd_stats.h rd_sensors.h
 
@@ -408,7 +410,7 @@ tests/32bits/sar32.o: sar.c sa.h version.h common.h rd_stats.h rd_sensors.h
 tests/32bits/act_sadc32.o: activity.c sa.h common.h rd_stats.h rd_sensors.h
 	$(CC) -o $@ -c $(CFLAGS) -DSOURCE_SADC $(DFLAGS) $<
 
-tests/32bits/act_sar32.o: activity.c sa.h common.h rd_stats.h rd_sensors.h pr_stats.h
+tests/32bits/act_sar32.o: activity.c sa.h common.h rd_stats.h rd_sensors.h pr_stats.h pr_xstats.h
 	$(CC) -o $@ -c $(CFLAGS) -DSOURCE_SAR $(DFLAGS) $<
 
 tests/32bits/sa_wrap32.o: sa_wrap.c sa.h common.h rd_stats.h count.h rd_sensors.h
@@ -453,7 +455,10 @@ tests/32bits/count_light32.o: count.c common.h rd_stats.h
 tests/32bits/format_sar32.o: format.c sa.h common.h rd_stats.h rd_sensors.h
 	$(CC) -o $@ -c $(CFLAGS) -DSOURCE_SAR $(DFLAGS) $<
 
-tests/32bits/pr_stats32.o: pr_stats.c sa.h common.h rd_stats.h rd_sensors.h ioconf.h sysconfig.h pr_stats.h
+tests/32bits/pr_stats32.o: pr_stats.c sa.h common.h rd_stats.h rd_sensors.h ioconf.h sysconfig.h pr_stats.h pr_xstats.h
+	$(CC) -o $@ -c $(CFLAGS) $(DFLAGS) $<
+
+tests/32bits/pr_xstats32.o: pr_xstats.c sa.h common.h rd_stats.h rd_sensors.h
 	$(CC) -o $@ -c $(CFLAGS) $(DFLAGS) $<
 
 tests/32bits/common32.o: common.c version.h common.h
@@ -469,7 +474,7 @@ tests/32bits/sadc32: LFLAGS += $(LFSENSORS32)
 
 tests/32bits/sadc32: tests/32bits/sadc32.o tests/32bits/act_sadc32.o tests/32bits/sa_wrap32.o tests/32bits/sa_common_light32.o tests/32bits/common_light32.o tests/32bits/systest32.o tests/32bits/librdstats32.a tests/32bits/librdsensors32.a
 
-tests/32bits/sar32: tests/32bits/sar32.o tests/32bits/act_sar32.o tests/32bits/format_sar32.o tests/32bits/sa_common32.o tests/32bits/pr_stats32.o tests/32bits/librdstats_light32.a tests/32bits/libsyscom32.a
+tests/32bits/sar32: tests/32bits/sar32.o tests/32bits/act_sar32.o tests/32bits/format_sar32.o tests/32bits/sa_common32.o tests/32bits/pr_stats32.o tests/32bits/pr_xstats32.o tests/32bits/librdstats_light32.a tests/32bits/libsyscom32.a
 
 ifdef REQUIRE_NLS
 locales: $(NLSGMO)
@@ -536,12 +541,13 @@ squeeze:
 
 # Update Makefile.in by hand - Restore mode for iconfig.
 copyyear:
-	catalogs="$(SOURCE_CODE) iconfig README.md sa1.in sa2.in sysconfig.in sysstat.in version.in"; \
+	catalogs="$(SOURCE_CODE) iconfig do_test README.md sa1.in sa2.in sysconfig.in sysstat.in version.in"; \
 	for c in $$catalogs; do \
 		echo "Updating file: $$c"; \
-		sed 's/-2021/-2022/g' $$c > copyyear.tmp; \
+		sed 's/-2022/-2023/g' $$c > copyyear.tmp; \
 		mv copyyear.tmp $$c; \
 	done
+	chmod 755 iconfig do_test
 
 install_nls: locales
 ifdef REQUIRE_NLS
@@ -583,12 +589,12 @@ ifeq ($(INSTALL_DOC),y)
 	$(INSTALL_DATA) CREDITS $(DESTDIR)$(DOC_DIR)
 	$(INSTALL_DATA) README.md $(DESTDIR)$(DOC_DIR)
 	$(INSTALL_DATA) FAQ.md $(DESTDIR)$(DOC_DIR)
-	$(INSTALL_DATA) *.lsm $(DESTDIR)$(DOC_DIR)
 endif
 
 ifdef SYSTEMD_UNIT_DIR
 install_all: install_base cron/sysstat-collect.service cron/sysstat-collect.timer \
-	cron/sysstat.sleep cron/sysstat-summary.service cron/sysstat-summary.timer
+	cron/sysstat.sleep cron/sysstat-summary.service cron/sysstat-summary.timer \
+	cron/sysstat-rotate.service cron/sysstat-rotate.timer
 else
 install_all: install_base cron/crontab sysstat \
 	cron/sysstat.crond cron/sysstat.cron.daily cron/sysstat.cron.hourly
@@ -640,6 +646,8 @@ endif
 		$(INSTALL_DATA) cron/sysstat-collect.timer $(DESTDIR)$(SYSTEMD_UNIT_DIR); \
 		$(INSTALL_DATA) cron/sysstat-summary.service $(DESTDIR)$(SYSTEMD_UNIT_DIR); \
 		$(INSTALL_DATA) cron/sysstat-summary.timer $(DESTDIR)$(SYSTEMD_UNIT_DIR); \
+		$(INSTALL_DATA) cron/sysstat-rotate.service $(DESTDIR)$(SYSTEMD_UNIT_DIR); \
+		$(INSTALL_DATA) cron/sysstat-rotate.timer $(DESTDIR)$(SYSTEMD_UNIT_DIR); \
 	elif [ -d $(DESTDIR)$(INIT_DIR) ]; then \
 		$(INSTALL_BIN) sysstat $(DESTDIR)$(INIT_DIR)/sysstat; \
 		if [ "$(COPY_ONLY)" = "n" ]; then \
@@ -770,6 +778,8 @@ endif
 		rm -f $(DESTDIR)$(SYSTEMD_UNIT_DIR)/sysstat-collect.timer; \
 		rm -f $(DESTDIR)$(SYSTEMD_UNIT_DIR)/sysstat-summary.service; \
 		rm -f $(DESTDIR)$(SYSTEMD_UNIT_DIR)/sysstat-summary.timer; \
+		rm -f $(DESTDIR)$(SYSTEMD_UNIT_DIR)/sysstat-rotate.service; \
+		rm -f $(DESTDIR)$(SYSTEMD_UNIT_DIR)/sysstat-rotate.timer; \
 	fi
 	if [ -n "$(SYSTEMD_UNIT_DIR)" -a -n "$(SYSTEMD_SLEEP_DIR)" -a -d "$(DESTDIR)$(SYSTEMD_SLEEP_DIR)" ]; then \
 		rm -f $(DESTDIR)$(SYSTEMD_SLEEP_DIR)/sysstat.sleep; \
@@ -823,10 +833,10 @@ extraunit:
 simtest: DFLAGS += -DTEST
 
 simtest: all testcomp
-	@$(foreach x, $(TESTLIST), $(MAKE) X=$x unit || exit;)
-	rm -f tests/root
-	ln -s root1 tests/root
-	@echo Simulation tests: Success!
+#	@$(foreach x, $(TESTLIST), $(MAKE) X=$x unit || exit;)
+#	rm -f tests/root
+#	ln -s root1 tests/root
+#	@echo Simulation tests: Success!
 
 extratest: DFLAGS += -DTEST
 
@@ -838,6 +848,7 @@ extratest: all
 
 clean:
 	rm -f sadc sar sadf iostat tapestat mpstat pidstat cifsiostat *.o *.a core TAGS tests/*.tmp tests/extra/*.tmp
+	rm -f tests/LAST tests/SKIPPED
 	rm -f nfsiostat* man/nfsiostat*
 	rm -f tests/sa[0123]*
 	rm -f tests/root
@@ -851,6 +862,7 @@ almost-distclean: clean nls/sysstat.pot
 	rm -f sa1 sa2 sysstat cron/crontab version.h sysconfig.h
 	rm -f sysstat.sysconfig cron/sysstat.crond cron/sysstat.cron.daily sysstat.service
 	rm -f cron/sysstat-collect.service cron/sysstat-collect.timer
+	rm -f cron/sysstat-rotate.service cron/sysstat-rotate.timer
 	rm -f cron/sysstat-summary.service cron/sysstat-summary.timer cron/sysstat.sleep
 	rm -f cron/sysstat.cron.hourly cron/sysstat.crond.sample cron/sysstat.crond.sample.in
 	rm -f man/sa1.8 man/sa2.8 man/sadc.8 man/sadf.1 man/sar.1 man/iostat.1 man/sysstat.5

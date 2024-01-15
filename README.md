@@ -1,11 +1,8 @@
 ## sysstat - System performance tools for the Linux operating system
 [![Coverity Scan Build Status](https://scan.coverity.com/projects/4040/badge.svg)](https://scan.coverity.com/projects/sysstat-sysstat)
-[![Build Status](https://travis-ci.org/sysstat/sysstat.svg?branch=master)](https://travis-ci.org/sysstat/sysstat)
-[![Code Quality: Cpp](https://img.shields.io/lgtm/grade/cpp/g/sysstat/sysstat.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/sysstat/sysstat/context:cpp)
-[![Total Alerts](https://img.shields.io/lgtm/alerts/g/sysstat/sysstat.svg?logo=lgtm&logoWidth=18)](https://lgtm.com/projects/g/sysstat/sysstat/alerts)
 [![Donate](https://img.shields.io/badge/Donate-PayPal-blue.svg)](https://www.paypal.com/cgi-bin/webscr?cmd=_s-xclick&hosted_button_id=45U6F9R73ESFQ)
 
-(C) 1999-2022 Sebastien GODARD (sysstat (at) orange (dot) fr)
+(C) 1999-2023 Sebastien GODARD (sysstat (at) orange (dot) fr)
 
 ### Introduction
 
@@ -78,10 +75,11 @@ Default sampling interval is 10 minutes but this can be changed of course (it ca
 Sysstat is Open Source / Free Software, and is freely available under the GNU General Public License, version 2.
 The latest version of sysstat can always be found on my web site at:
 
-[http://pagesperso-orange.fr/sebastien.godard/](http://pagesperso-orange.fr/sebastien.godard/)
+[https://sysstat.github.io/](https://sysstat.github.io/)
 
 See the CHANGES file to know the new features/improvements/bug fixes added
 in this release of sysstat.
+
 Sysstat development can be tracked on [GitHub](https://github.com/sysstat/sysstat).
 
 ### Installation
@@ -101,6 +99,15 @@ On recent versions, systemd is used instead of cron. You may need to enable and 
 $ sudo systemctl enable --now sysstat
 ```
 
+(or enter:
+
+```
+$ sudo systemctl enable sysstat
+$ sudo systemctl start sysstat
+```
+
+if option `--now` is not supported by your systemd version.)
+
 #### Install from Ubuntu
 
 Enter:
@@ -112,15 +119,8 @@ $ sudo apt-get install sysstat
 Then enable data collecting:
 
 ```
-$ sudo vi /etc/default/sysstat
-change ENABLED="false" to ENABLED="true"
-save the file
-```
-
-Last, restart the sysstat service:
-
-```
-$ sudo service sysstat restart
+$ sudo dpkg-reconfigure sysstat
+Select "Yes"
 ```
 
 #### Install from sources
@@ -179,11 +179,9 @@ Sysstat is made for you. Moreover sysstat is free software and always will be.
 
 Yet have you ever considered making a donation to sysstat, regardless of how much your
 contribution is? This in turn would encourage me to keep up the work as good as it can be...
-Oh, and it would certainly also help me explain to my wife why I spend so much time in front
-of my computer instead of taking care of the household ;-)
 
 Click on the "Donate PayPal" button above at the beginning of this file.
-You can also make a donation [from my web page](http://pagesperso-orange.fr/sebastien.godard/).
+You can also make a donation as a sponsor from [the GitHub page](https://github.com/sysstat/sysstat) or from [my personal web page](https://sysstat.github.io/).
 
 Enjoy!
 

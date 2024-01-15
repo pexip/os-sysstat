@@ -9,10 +9,10 @@ sed -e 's/ressource/resource' accross the code
  2 files changed, 4 insertions(+), 4 deletions(-)
 
 diff --git a/CHANGES b/CHANGES
-index 697d0cc..e2ba789 100644
+index a2b0453..00ba4bd 100644
 --- a/CHANGES
 +++ b/CHANGES
-@@ -598,7 +598,7 @@ Changes:
+@@ -707,7 +707,7 @@ Changes:
  	* Display unit with areq-sz metric values when --human option used.
  	* Display a percent sign after values when --human option used.
  	* pidstat: Don't stop if /proc/#/schedstat files don't exist.
@@ -21,7 +21,7 @@ index 697d0cc..e2ba789 100644
  	* Cast variables to target type before use [11.4.5] [11.2.11].
  	* Fix buffer overflow when options -s or -e are used with sar
  	  (DEBIAN bug #863197) [11.4.5] [11.2.11].
-@@ -861,8 +861,8 @@ Changes:
+@@ -970,8 +970,8 @@ Changes:
  	* Check /proc/net/snmp format to collect ICMP statistics at
  	  their right positions [11.0.6].
  	* sadc: Fix untrusted value used as argument.

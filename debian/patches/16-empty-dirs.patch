@@ -1,0 +1,37 @@
+From: Robert Luberda <robert@debian.org>
+Date: Sat, 13 Jan 2024 23:13:42 +0100
+Subject: Mark empty directories
+
+Make sure all the directories that exists
+in the upstream tarball, also exists in
+the git repository
+---
+ tests/root5/sys/class/net/wlp5s1/_void        | 1 +
+ tests/root7/sys/devices/system/cpu/cpu8/_void | 1 +
+ tests/root7/sys/devices/system/cpu/cpu9/_void | 1 +
+ 3 files changed, 3 insertions(+)
+ create mode 100644 tests/root5/sys/class/net/wlp5s1/_void
+ create mode 100644 tests/root7/sys/devices/system/cpu/cpu8/_void
+ create mode 100644 tests/root7/sys/devices/system/cpu/cpu9/_void
+
+diff --git a/tests/root5/sys/class/net/wlp5s1/_void b/tests/root5/sys/class/net/wlp5s1/_void
+new file mode 100644
+index 0000000..924264a
+--- /dev/null
++++ b/tests/root5/sys/class/net/wlp5s1/_void
+@@ -0,0 +1 @@
++A dummy file to make sure parent directory exists
+diff --git a/tests/root7/sys/devices/system/cpu/cpu8/_void b/tests/root7/sys/devices/system/cpu/cpu8/_void
+new file mode 100644
+index 0000000..924264a
+--- /dev/null
++++ b/tests/root7/sys/devices/system/cpu/cpu8/_void
+@@ -0,0 +1 @@
++A dummy file to make sure parent directory exists
+diff --git a/tests/root7/sys/devices/system/cpu/cpu9/_void b/tests/root7/sys/devices/system/cpu/cpu9/_void
+new file mode 100644
+index 0000000..924264a
+--- /dev/null
++++ b/tests/root7/sys/devices/system/cpu/cpu9/_void
+@@ -0,0 +1 @@
++A dummy file to make sure parent directory exists

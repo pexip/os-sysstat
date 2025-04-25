@@ -1,6 +1,6 @@
 /*
  * count.c: Count items for which statistics will be collected.
- * (C) 1999-2022 by Sebastien GODARD (sysstat <at> orange.fr)
+ * (C) 1999-2023 by Sebastien GODARD (sysstat <at> orange.fr)
  *
  ***************************************************************************
  * This program is free software; you can redistribute it and/or modify it *
@@ -259,7 +259,7 @@ __nr_t get_diskstats_dev_nr(int count_part, int only_used_dev)
 	while (fgets(line, sizeof(line), fp) != NULL) {
 
 		if (!count_part) {
-			i = sscanf(line, "%*d %*d %s %lu %*u %*u %*u %lu",
+			i = sscanf(line, "%*d %*d %127s %lu %*u %*u %*u %lu",
 				   dev_name, &rd_ios, &wr_ios);
 			if ((i == 2) || !is_device(SLASH_SYS, dev_name, ACCEPT_VIRTUAL_DEVICES))
 				/* It was a partition and not a device */
@@ -440,7 +440,7 @@ __nr_t get_filesystem_nr(void)
 	char line[512], fs_name[MAX_FS_LEN], mountp[256], type[128];
 	char *pos = 0, *pos2 = 0;
 	__nr_t fs = 0;
-	int skip = 0, skip_next = 0;
+	int skip, skip_next = 0;
 	struct statvfs buf;
 
 	if ((fp = fopen(MTAB, "r")) == NULL)
@@ -531,6 +531,41 @@ __nr_t get_fchost_nr(void)
 	closedir(dir);
 
 	return fc;
+}
+
+/*
+ * **************************************************************************
+ * Find number of batteries in /sys/class/power_supply/.
+ * Assume that batteries keep their id number (0, 1...) as long as the
+ * computer is not restarted.
+ *
+ * RETURNS:
+ * Number of batteries.
+ * Return -1 if directory doesn't exist in sysfs.
+ ***************************************************************************
+ */
+__nr_t get_bat_nr(void)
+{
+	DIR *dir;
+	struct dirent *drd;
+	__nr_t bat = 0;
+
+	if ((dir = opendir(SYSFS_PWR_SUPPLY)) == NULL) {
+		/* Directory non-existent */
+		return -1;
+	}
+
+	while ((drd = readdir(dir)) != NULL) {
+
+		if (!strncmp(drd->d_name, "BAT", 3) && isdigit(drd->d_name[3])) {
+			bat++;
+		}
+	}
+
+	/* Close directory */
+	closedir(dir);
+
+	return bat;
 }
 
 /*------------------ END: FUNCTIONS USED BY SADC ONLY ---------------------*/

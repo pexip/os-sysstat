@@ -124,9 +124,9 @@ Average:          PIW      0.00      0.00      0.00      0.00      0.00      0.0
 13:20:39         0.00      0.00
 Average:         0.00      0.00
 
-13:20:29     pgpgin/s pgpgout/s   fault/s  majflt/s  pgfree/s pgscank/s pgscand/s pgsteal/s    %vmeff
-13:20:39         0.00      0.00      0.00      0.00      0.00      0.00      0.00      0.00      0.00
-Average:         0.00      0.00      0.00      0.00      0.00      0.00      0.00      0.00      0.00
+13:20:29     pgpgin/s pgpgout/s   fault/s  majflt/s  pgfree/s pgscank/s pgscand/s pgsteal/s  pgprom/s   pgdem/s
+13:20:39         0.00      0.00      0.00      0.00      0.00      0.00      0.00      0.00    179.85     31.70
+Average:         0.00      0.00      0.00      0.00      0.00      0.00      0.00      0.00    179.85     31.70
 
 13:20:29          tps      rtps      wtps      dtps   bread/s   bwrtn/s   bdscd/s
 13:20:39        20.85     12.83      4.81      3.21     57.43     38.50     32.08
@@ -330,6 +330,12 @@ Average:          4   3505.84
 Average:          5   3493.55
 Average:          6   3492.22
 Average:          7   3497.56
+
+13:20:29          BAT      %cap   cap/min    status
+13:20:39            0       100     +0.00         ↑
+13:20:39            1        83     -3.85         ?
+Average:            0    100.00     +0.00
+Average:            1     83.00     -3.85
 
 13:20:29     MBfsfree  MBfsused   %fsused  %ufsused     Ifree     Iused    %Iused FILESYSTEM
 13:20:39          705       145     17.04     18.92   6008414    102818      1.68 /dev/sda9

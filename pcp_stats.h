@@ -1,6 +1,6 @@
 /*
  * pcp_stats.h: Include file used to display system statistics in PCP format.
- * (C) 2019-2022 by Sebastien Godard (sysstat <at> orange.fr)
+ * (C) 2019-2023 by Sebastien Godard (sysstat <at> orange.fr)
  */
 
 #ifndef _PCP_STATS_H
@@ -78,6 +78,8 @@ __print_funct_t pcp_print_pwr_fan_stats
 __print_funct_t pcp_print_pwr_temp_stats
 	(struct activity *, int);
 __print_funct_t pcp_print_pwr_in_stats
+	(struct activity *, int);
+__print_funct_t pcp_print_pwr_bat_stats
 	(struct activity *, int);
 __print_funct_t pcp_print_huge_stats
 	(struct activity *, int);

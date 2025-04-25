@@ -1,6 +1,6 @@
 /*
  * sysstat - sa_wrap.c: Functions used in activity.c
- * (C) 1999-2022 by Sebastien GODARD (sysstat <at> orange.fr)
+ * (C) 1999-2023 by Sebastien GODARD (sysstat <at> orange.fr)
  *
  ***************************************************************************
  * This program is free software; you can redistribute it and/or modify it *
@@ -1059,6 +1059,39 @@ __read_funct_t wrap_read_fchost(struct activity *a)
 }
 
 /*
+ * **************************************************************************
+ * Read batteries statistics.
+ *
+ * IN:
+ * @a	Activity structure.
+ *
+ * OUT:
+ * @a	Activity structure with statistics.
+ ***************************************************************************
+ */
+__read_funct_t wrap_read_bat(struct activity *a)
+{
+	struct stats_pwr_bat *st_bat
+	= (struct stats_pwr_bat *) a->_buf0;
+	__nr_t nr_read = 0;
+
+	/* Read batteries statistics */
+	do {
+		nr_read = read_bat(st_bat, a->nr_allocated);
+
+		if (nr_read < 0) {
+			/* Buffer needs to be reallocated */
+			st_bat = (struct stats_pwr_bat *) reallocate_buffer(a);
+		}
+	}
+	while (nr_read < 0);
+
+	a->_nr0 = nr_read;
+
+	return;
+}
+
+/*
  ***************************************************************************
  * Look for online CPU and fill corresponding bitmap.
  *
@@ -1128,11 +1161,16 @@ __read_funct_t wrap_read_softnet(struct activity *a)
 	do {
 		/* Allocate bitmap for online CPU */
 		if (bitmap_size < a->nr_allocated) {
-			if ((online_cpu_bitmap = (unsigned char *) realloc(online_cpu_bitmap,
-									   BITMAP_SIZE(a->nr_allocated))) == NULL) {
+			unsigned char *p = (unsigned char *) realloc(online_cpu_bitmap,
+								     BITMAP_SIZE(a->nr_allocated));
+			if (p == NULL) {
 				nr_read = 0;
+				if (online_cpu_bitmap) {
+					free(online_cpu_bitmap);
+				}
 				break;
 			}
+			online_cpu_bitmap = p;
 			bitmap_size = a->nr_allocated;
 		}
 		memset(online_cpu_bitmap, 0, BITMAP_SIZE(a->nr_allocated));
@@ -1527,4 +1565,29 @@ __nr_t wrap_get_fchost_nr(struct activity *a)
 __nr_t wrap_detect_psi(struct activity *a)
 {
 	return (check_dir(PRESSURE));
+}
+
+/*
+ * **************************************************************************
+ * Get number of batteries.
+ *
+ * IN:
+ * @a  Activity structure.
+ *
+ * RETURNS:
+ * Number of batteries installed. Number cannot exceed MAX_NR_BAT.
+ ***************************************************************************
+ */
+__nr_t wrap_get_bat_nr(struct activity *a)
+{
+	__nr_t n = 0;
+
+	if ((n = get_bat_nr()) > 0) {
+		if (n > MAX_NR_BATS)
+			return MAX_NR_BATS;
+		else
+			return n;
+	}
+
+	return 0;
 }

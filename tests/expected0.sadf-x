@@ -1,11 +1,9 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!DOCTYPE sysstat PUBLIC "DTD v3.11 sysstat //EN"
-"http://pagesperso-orange.fr/sebastien.godard/sysstat-3.11.dtd">
 <sysstat
-xmlns="http://pagesperso-orange.fr/sebastien.godard/sysstat"
+xmlns="https://sysstat.github.io"
 xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-xsi:schemaLocation="http://pagesperso-orange.fr/sebastien.godard sysstat.xsd">
-	<sysdata-version>3.11</sysdata-version>
+xsi:schemaLocation="https://sysstat.github.io https://sysstat.github.io/sysstat.xsd">
+	<sysdata-version>3.16</sysdata-version>
 	<host nodename="SYSSTAT.TEST">
 		<sysname>Linux</sysname>
 		<release>1.2.3-TEST</release>
@@ -17,7 +15,7 @@ xsi:schemaLocation="http://pagesperso-orange.fr/sebastien.godard sysstat.xsd">
 		<statistics>
 		</statistics>
 		<restarts>
-			<boot date="2019-04-18" time="13:20:09" utc="1" cpu_count="9"/>
+			<boot date="2019-04-18" time="13:20:09" tz="UTC" cpu_count="9"/>
 		</restarts>
 	</host>
 </sysstat>

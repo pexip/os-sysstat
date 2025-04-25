@@ -1,6 +1,6 @@
 /*
  * activity.c: Define system activities available for sar/sadc.
- * (C) 1999-2022 by Sebastien GODARD (sysstat <at> orange.fr)
+ * (C) 1999-2023 by Sebastien GODARD (sysstat <at> orange.fr)
  *
  ***************************************************************************
  * This program is free software; you can redistribute it and/or modify it *
@@ -89,10 +89,10 @@ struct activity cpu_act = {
 	.f_raw_print	= raw_print_cpu_stats,
 	.f_pcp_print	= pcp_print_cpu_stats,
 	.f_count_new	= NULL,
-	.item_list	= NULL,
 	.desc		= "CPU utilization",
 #endif
 	.name		= "A_CPU",
+	.item_list	= NULL,
 	.item_list_sz	= 0,
 	.g_nr		= 1,
 	.nr_ini		= -1,
@@ -100,10 +100,15 @@ struct activity cpu_act = {
 	.nr_max		= NR_CPUS + 1,
 	.nr		= {-1, -1, -1},
 	.nr_allocated	= 0,
+	.xnr		= STATS_CPU_XNR,
+	.xdev_list	= NULL,
 	.fsize		= STATS_CPU_SIZE,
 	.msize		= STATS_CPU_SIZE,
 	.opt_flags	= AO_F_CPU_DEF,
 	.buf		= {NULL, NULL, NULL},
+	.spmin		= NULL,
+	.spmax		= NULL,
+	.nr_spalloc	= 0,
 	.bitmap		= &cpu_bitmap
 };
 
@@ -135,10 +140,10 @@ struct activity pcsw_act = {
 	.f_raw_print	= raw_print_pcsw_stats,
 	.f_pcp_print	= pcp_print_pcsw_stats,
 	.f_count_new	= NULL,
-	.item_list	= NULL,
 	.desc		= "Task creation and switching activity",
 #endif
 	.name		= "A_PCSW",
+	.item_list	= NULL,
 	.item_list_sz	= 0,
 	.g_nr		= 2,
 	.nr_ini		= 1,
@@ -146,10 +151,15 @@ struct activity pcsw_act = {
 	.nr_max		= 1,
 	.nr		= {1, 1, 1},
 	.nr_allocated	= 0,
+	.xnr		= STATS_PCSW_XNR,
+	.xdev_list	= NULL,
 	.fsize		= STATS_PCSW_SIZE,
 	.msize		= STATS_PCSW_SIZE,
 	.opt_flags	= 0,
 	.buf		= {NULL, NULL, NULL},
+	.spmin		= NULL,
+	.spmax		= NULL,
+	.nr_spalloc	= 0,
 	.bitmap		= NULL
 };
 
@@ -181,10 +191,10 @@ struct activity irq_act = {
 	.f_raw_print	= raw_print_irq_stats,
 	.f_pcp_print	= pcp_print_irq_stats,
 	.f_count_new	= count_new_int,
-	.item_list	= NULL,
 	.desc		= "Interrupts statistics",
 #endif
 	.name		= "A_IRQ",
+	.item_list	= NULL,
 	.item_list_sz	= 0,
 	.g_nr		= 0,
 	.nr_ini		= -1,
@@ -192,10 +202,15 @@ struct activity irq_act = {
 	.nr_max		= NR_CPUS + 1,
 	.nr		= {-1, -1, -1},
 	.nr_allocated	= 0,
+	.xnr		= STATS_IRQ_XNR,
+	.xdev_list	= NULL,
 	.fsize		= STATS_IRQ_SIZE,
 	.msize		= STATS_IRQ_SIZE,
 	.opt_flags	= 0,
 	.buf		= {NULL, NULL, NULL},
+	.spmin		= NULL,
+	.spmax		= NULL,
+	.nr_spalloc	= 0,
 	.bitmap		= &cpu_bitmap
 };
 
@@ -227,10 +242,10 @@ struct activity swap_act = {
 	.f_raw_print	= raw_print_swap_stats,
 	.f_pcp_print	= pcp_print_swap_stats,
 	.f_count_new	= NULL,
-	.item_list	= NULL,
 	.desc		= "Swap activity",
 #endif
 	.name		= "A_SWAP",
+	.item_list	= NULL,
 	.item_list_sz	= 0,
 	.g_nr		= 1,
 	.nr_ini		= 1,
@@ -238,10 +253,15 @@ struct activity swap_act = {
 	.nr_max		= 1,
 	.nr		= {1, 1, 1},
 	.nr_allocated	= 0,
+	.xnr		= STATS_SWAP_XNR,
+	.xdev_list	= NULL,
 	.fsize		= STATS_SWAP_SIZE,
 	.msize		= STATS_SWAP_SIZE,
 	.opt_flags	= 0,
 	.buf		= {NULL, NULL, NULL},
+	.spmin		= NULL,
+	.spmax		= NULL,
+	.nr_spalloc	= 0,
 	.bitmap		= NULL
 };
 
@@ -262,7 +282,8 @@ struct activity paging_act = {
 #endif
 #if defined(SOURCE_SAR) || defined(SOURCE_SADF)
 	.hdr_line	= "pgpgin/s;pgpgout/s;fault/s;majflt/s;"
-		          "pgfree/s;pgscank/s;pgscand/s;pgsteal/s;%vmeff",
+			  "pgfree/s;pgscank/s;pgscand/s;pgsteal/s;"
+			  "pgprom/s;pgdem/s",
 #endif
 	.gtypes_nr	= {STATS_PAGING_ULL, STATS_PAGING_UL, STATS_PAGING_U},
 	.ftypes_nr	= {0, 0, 0},
@@ -274,21 +295,26 @@ struct activity paging_act = {
 	.f_raw_print	= raw_print_paging_stats,
 	.f_pcp_print	= pcp_print_paging_stats,
 	.f_count_new	= NULL,
-	.item_list	= NULL,
 	.desc		= "Paging activity",
 #endif
 	.name		= "A_PAGE",
+	.item_list	= NULL,
 	.item_list_sz	= 0,
-	.g_nr		= 3,
+	.g_nr		= 4,
 	.nr_ini		= 1,
 	.nr2		= 1,
 	.nr_max		= 1,
 	.nr		= {1, 1, 1},
 	.nr_allocated	= 0,
+	.xnr		= STATS_PAGING_XNR,
+	.xdev_list	= NULL,
 	.fsize		= STATS_PAGING_SIZE,
 	.msize		= STATS_PAGING_SIZE,
 	.opt_flags	= 0,
 	.buf		= {NULL, NULL, NULL},
+	.spmin		= NULL,
+	.spmax		= NULL,
+	.nr_spalloc	= 0,
 	.bitmap		= NULL
 };
 
@@ -320,10 +346,10 @@ struct activity io_act = {
 	.f_raw_print	= raw_print_io_stats,
 	.f_pcp_print	= pcp_print_io_stats,
 	.f_count_new	= NULL,
-	.item_list	= NULL,
 	.desc		= "I/O and transfer rate statistics",
 #endif
 	.name		= "A_IO",
+	.item_list	= NULL,
 	.item_list_sz	= 0,
 	.g_nr		= 2,
 	.nr_ini		= 1,
@@ -331,10 +357,15 @@ struct activity io_act = {
 	.nr_max		= 1,
 	.nr		= {1, 1, 1},
 	.nr_allocated	= 0,
+	.xnr		= STATS_IO_XNR,
+	.xdev_list	= NULL,
 	.fsize		= STATS_IO_SIZE,
 	.msize		= STATS_IO_SIZE,
 	.opt_flags	= 0,
 	.buf		= {NULL, NULL, NULL},
+	.spmin		= NULL,
+	.spmax		= NULL,
+	.nr_spalloc	= 0,
 	.bitmap		= NULL
 };
 
@@ -367,10 +398,10 @@ struct activity memory_act = {
 	.f_raw_print	= raw_print_memory_stats,
 	.f_pcp_print	= pcp_print_memory_stats,
 	.f_count_new	= NULL,
-	.item_list	= NULL,
 	.desc		= "Memory and/or swap utilization",
 #endif
 	.name		= "A_MEMORY",
+	.item_list	= NULL,
 	.item_list_sz	= 0,
 	.g_nr		= 9,
 	.nr_ini		= 1,
@@ -378,10 +409,15 @@ struct activity memory_act = {
 	.nr_max		= 1,
 	.nr		= {1, 1, 1},
 	.nr_allocated	= 0,
+	.xnr		= STATS_MEMORY_XNR,
+	.xdev_list	= NULL,
 	.fsize		= STATS_MEMORY_SIZE,
 	.msize		= STATS_MEMORY_SIZE,
 	.opt_flags	= 0,
 	.buf		= {NULL, NULL, NULL},
+	.spmin		= NULL,
+	.spmax		= NULL,
+	.nr_spalloc	= 0,
 	.bitmap		= NULL
 };
 
@@ -413,10 +449,10 @@ struct activity ktables_act = {
 	.f_raw_print	= raw_print_ktables_stats,
 	.f_pcp_print	= pcp_print_ktables_stats,
 	.f_count_new	= NULL,
-	.item_list	= NULL,
 	.desc		= "Kernel tables statistics",
 #endif
 	.name		= "A_KTABLES",
+	.item_list	= NULL,
 	.item_list_sz	= 0,
 	.g_nr		= 2,
 	.nr_ini		= 1,
@@ -424,10 +460,15 @@ struct activity ktables_act = {
 	.nr_max		= 1,
 	.nr		= {1, 1, 1},
 	.nr_allocated	= 0,
+	.xnr		= STATS_KTABLES_XNR,
+	.xdev_list	= NULL,
 	.fsize		= STATS_KTABLES_SIZE,
 	.msize		= STATS_KTABLES_SIZE,
 	.opt_flags	= 0,
 	.buf		= {NULL, NULL, NULL},
+	.spmin		= NULL,
+	.spmax		= NULL,
+	.nr_spalloc	= 0,
 	.bitmap		= NULL
 };
 
@@ -459,10 +500,10 @@ struct activity queue_act = {
 	.f_raw_print	= raw_print_queue_stats,
 	.f_pcp_print	= pcp_print_queue_stats,
 	.f_count_new	= NULL,
-	.item_list	= NULL,
 	.desc		= "Queue length and load average statistics",
 #endif
 	.name		= "A_QUEUE",
+	.item_list	= NULL,
 	.item_list_sz	= 0,
 	.g_nr		= 3,
 	.nr_ini		= 1,
@@ -470,10 +511,15 @@ struct activity queue_act = {
 	.nr_max		= 1,
 	.nr		= {1, 1, 1},
 	.nr_allocated	= 0,
+	.xnr		= STATS_QUEUE_XNR,
+	.xdev_list	= NULL,
 	.fsize		= STATS_QUEUE_SIZE,
 	.msize		= STATS_QUEUE_SIZE,
 	.opt_flags	= 0,
 	.buf		= {NULL, NULL, NULL},
+	.spmin		= NULL,
+	.spmax		= NULL,
+	.nr_spalloc	= 0,
 	.bitmap		= NULL
 };
 
@@ -505,10 +551,10 @@ struct activity serial_act = {
 	.f_raw_print	= raw_print_serial_stats,
 	.f_pcp_print	= pcp_print_serial_stats,
 	.f_count_new	= NULL,
-	.item_list	= NULL,
 	.desc		= "TTY devices statistics",
 #endif
 	.name		= "A_SERIAL",
+	.item_list	= NULL,
 	.item_list_sz	= 0,
 	.g_nr		= 0,
 	.nr_ini		= -1,
@@ -516,10 +562,15 @@ struct activity serial_act = {
 	.nr_max		= MAX_NR_SERIAL_LINES,
 	.nr		= {-1, -1, -1},
 	.nr_allocated	= 0,
+	.xnr		= STATS_SERIAL_XNR,
+	.xdev_list	= NULL,
 	.fsize		= STATS_SERIAL_SIZE,
 	.msize		= STATS_SERIAL_SIZE,
 	.opt_flags	= 0,
 	.buf		= {NULL, NULL, NULL},
+	.spmin		= NULL,
+	.spmax		= NULL,
+	.nr_spalloc	= 0,
 	.bitmap		= NULL
 };
 
@@ -551,10 +602,10 @@ struct activity disk_act = {
 	.f_raw_print	= raw_print_disk_stats,
 	.f_pcp_print	= pcp_print_disk_stats,
 	.f_count_new	= count_new_disk,
-	.item_list	= NULL,
 	.desc		= "Block devices statistics",
 #endif
 	.name		= "A_DISK",
+	.item_list	= NULL,
 	.item_list_sz	= 0,
 	.g_nr		= 5,
 	.nr_ini		= -1,
@@ -562,10 +613,15 @@ struct activity disk_act = {
 	.nr_max		= MAX_NR_DISKS,
 	.nr		= {-1, -1, -1},
 	.nr_allocated	= 0,
+	.xnr		= STATS_DISK_XNR,
+	.xdev_list	= NULL,
 	.fsize		= STATS_DISK_SIZE,
 	.msize		= STATS_DISK_SIZE,
 	.opt_flags	= 0,
 	.buf		= {NULL, NULL, NULL},
+	.spmin		= NULL,
+	.spmax		= NULL,
+	.nr_spalloc	= 0,
 	.bitmap		= NULL
 };
 
@@ -597,10 +653,10 @@ struct activity net_dev_act = {
 	.f_raw_print	= raw_print_net_dev_stats,
 	.f_pcp_print	= pcp_print_net_dev_stats,
 	.f_count_new	= count_new_net_dev,
-	.item_list	= NULL,
 	.desc		= "Network interfaces statistics",
 #endif
 	.name		= "A_NET_DEV",
+	.item_list	= NULL,
 	.item_list_sz	= 0,
 	.g_nr		= 4,
 	.nr_ini		= -1,
@@ -608,10 +664,15 @@ struct activity net_dev_act = {
 	.nr_max		= MAX_NR_IFACES,
 	.nr		= {-1, -1, -1},
 	.nr_allocated	= 0,
+	.xnr		= STATS_NET_DEV_XNR,
+	.xdev_list	= NULL,
 	.fsize		= STATS_NET_DEV_SIZE,
 	.msize		= STATS_NET_DEV_SIZE,
 	.opt_flags	= 0,
 	.buf		= {NULL, NULL, NULL},
+	.spmin		= NULL,
+	.spmax		= NULL,
+	.nr_spalloc	= 0,
 	.bitmap		= NULL
 };
 
@@ -644,10 +705,10 @@ struct activity net_edev_act = {
 	.f_raw_print	= raw_print_net_edev_stats,
 	.f_pcp_print	= pcp_print_net_edev_stats,
 	.f_count_new	= count_new_net_edev,
-	.item_list	= NULL,
 	.desc		= "Network interfaces errors statistics",
 #endif
 	.name		= "A_NET_EDEV",
+	.item_list	= NULL,
 	.item_list_sz	= 0,
 	.g_nr		= 4,
 	.nr_ini		= -1,
@@ -655,10 +716,15 @@ struct activity net_edev_act = {
 	.nr_max		= MAX_NR_IFACES,
 	.nr		= {-1, -1, -1},
 	.nr_allocated	= 0,
+	.xnr		= STATS_NET_EDEV_XNR,
+	.xdev_list	= NULL,
 	.fsize		= STATS_NET_EDEV_SIZE,
 	.msize		= STATS_NET_EDEV_SIZE,
 	.opt_flags	= 0,
 	.buf		= {NULL, NULL, NULL},
+	.spmin		= NULL,
+	.spmax		= NULL,
+	.nr_spalloc	= 0,
 	.bitmap		= NULL
 };
 
@@ -690,10 +756,10 @@ struct activity net_nfs_act = {
 	.f_raw_print	= raw_print_net_nfs_stats,
 	.f_pcp_print	= pcp_print_net_nfs_stats,
 	.f_count_new	= NULL,
-	.item_list	= NULL,
 	.desc		= "NFS client statistics",
 #endif
 	.name		= "A_NET_NFS",
+	.item_list	= NULL,
 	.item_list_sz	= 0,
 	.g_nr		= 3,
 	.nr_ini		= 1,
@@ -701,10 +767,15 @@ struct activity net_nfs_act = {
 	.nr_max		= 1,
 	.nr		= {1, 1, 1},
 	.nr_allocated	= 0,
+	.xnr		= STATS_NET_NFS_XNR,
+	.xdev_list	= NULL,
 	.fsize		= STATS_NET_NFS_SIZE,
 	.msize		= STATS_NET_NFS_SIZE,
 	.opt_flags	= 0,
 	.buf		= {NULL, NULL, NULL},
+	.spmin		= NULL,
+	.spmax		= NULL,
+	.nr_spalloc	= 0,
 	.bitmap		= NULL
 };
 
@@ -737,10 +808,10 @@ struct activity net_nfsd_act = {
 	.f_raw_print	= raw_print_net_nfsd_stats,
 	.f_pcp_print	= pcp_print_net_nfsd_stats,
 	.f_count_new	= NULL,
-	.item_list	= NULL,
 	.desc		= "NFS server statistics",
 #endif
 	.name		= "A_NET_NFSD",
+	.item_list	= NULL,
 	.item_list_sz	= 0,
 	.g_nr		= 5,
 	.nr_ini		= 1,
@@ -748,10 +819,15 @@ struct activity net_nfsd_act = {
 	.nr_max		= 1,
 	.nr		= {1, 1, 1},
 	.nr_allocated	= 0,
+	.xnr		= STATS_NET_NFSD_XNR,
+	.xdev_list	= NULL,
 	.fsize		= STATS_NET_NFSD_SIZE,
 	.msize		= STATS_NET_NFSD_SIZE,
 	.opt_flags	= 0,
 	.buf		= {NULL, NULL, NULL},
+	.spmin		= NULL,
+	.spmax		= NULL,
+	.nr_spalloc	= 0,
 	.bitmap		= NULL
 };
 
@@ -783,10 +859,10 @@ struct activity net_sock_act = {
 	.f_raw_print	= raw_print_net_sock_stats,
 	.f_pcp_print	= pcp_print_net_sock_stats,
 	.f_count_new	= NULL,
-	.item_list	= NULL,
 	.desc		= "IPv4 sockets statistics",
 #endif
 	.name		= "A_NET_SOCK",
+	.item_list	= NULL,
 	.item_list_sz	= 0,
 	.g_nr		= 2,
 	.nr_ini		= 1,
@@ -794,10 +870,15 @@ struct activity net_sock_act = {
 	.nr_max		= 1,
 	.nr		= {1, 1, 1},
 	.nr_allocated	= 0,
+	.xnr		= STATS_NET_SOCK_XNR,
+	.xdev_list	= NULL,
 	.fsize		= STATS_NET_SOCK_SIZE,
 	.msize		= STATS_NET_SOCK_SIZE,
 	.opt_flags	= 0,
 	.buf		= {NULL, NULL, NULL},
+	.spmin		= NULL,
+	.spmax		= NULL,
+	.nr_spalloc	= 0,
 	.bitmap		= NULL
 };
 
@@ -829,10 +910,10 @@ struct activity net_ip_act = {
 	.f_raw_print	= raw_print_net_ip_stats,
 	.f_pcp_print	= pcp_print_net_ip_stats,
 	.f_count_new	= NULL,
-	.item_list	= NULL,
 	.desc		= "IPv4 traffic statistics",
 #endif
 	.name		= "A_NET_IP",
+	.item_list	= NULL,
 	.item_list_sz	= 0,
 	.g_nr		= 3,
 	.nr_ini		= 1,
@@ -840,10 +921,15 @@ struct activity net_ip_act = {
 	.nr_max		= 1,
 	.nr		= {1, 1, 1},
 	.nr_allocated	= 0,
+	.xnr		= STATS_NET_IP_XNR,
+	.xdev_list	= NULL,
 	.fsize		= STATS_NET_IP_SIZE,
 	.msize		= STATS_NET_IP_SIZE,
 	.opt_flags	= 0,
 	.buf		= {NULL, NULL, NULL},
+	.spmin		= NULL,
+	.spmax		= NULL,
+	.nr_spalloc	= 0,
 	.bitmap		= NULL
 };
 
@@ -875,10 +961,10 @@ struct activity net_eip_act = {
 	.f_raw_print	= raw_print_net_eip_stats,
 	.f_pcp_print	= pcp_print_net_eip_stats,
 	.f_count_new	= NULL,
-	.item_list	= NULL,
 	.desc		= "IPv4 traffic errors statistics",
 #endif
 	.name		= "A_NET_EIP",
+	.item_list	= NULL,
 	.item_list_sz	= 0,
 	.g_nr		= 3,
 	.nr_ini		= 1,
@@ -886,10 +972,15 @@ struct activity net_eip_act = {
 	.nr_max		= 1,
 	.nr		= {1, 1, 1},
 	.nr_allocated	= 0,
+	.xnr		= STATS_NET_EIP_XNR,
+	.xdev_list	= NULL,
 	.fsize		= STATS_NET_EIP_SIZE,
 	.msize		= STATS_NET_EIP_SIZE,
 	.opt_flags	= 0,
 	.buf		= {NULL, NULL, NULL},
+	.spmin		= NULL,
+	.spmax		= NULL,
+	.nr_spalloc	= 0,
 	.bitmap		= NULL
 };
 
@@ -922,10 +1013,10 @@ struct activity net_icmp_act = {
 	.f_raw_print	= raw_print_net_icmp_stats,
 	.f_pcp_print	= pcp_print_net_icmp_stats,
 	.f_count_new	= NULL,
-	.item_list	= NULL,
 	.desc		= "ICMPv4 traffic statistics",
 #endif
 	.name		= "A_NET_ICMP",
+	.item_list	= NULL,
 	.item_list_sz	= 0,
 	.g_nr		= 4,
 	.nr_ini		= 1,
@@ -933,10 +1024,15 @@ struct activity net_icmp_act = {
 	.nr_max		= 1,
 	.nr		= {1, 1, 1},
 	.nr_allocated	= 0,
+	.xnr		= STATS_NET_ICMP_XNR,
+	.xdev_list	= NULL,
 	.fsize		= STATS_NET_ICMP_SIZE,
 	.msize		= STATS_NET_ICMP_SIZE,
 	.opt_flags	= 0,
 	.buf		= {NULL, NULL, NULL},
+	.spmin		= NULL,
+	.spmax		= NULL,
+	.nr_spalloc	= 0,
 	.bitmap		= NULL
 };
 
@@ -969,10 +1065,10 @@ struct activity net_eicmp_act = {
 	.f_raw_print	= raw_print_net_eicmp_stats,
 	.f_pcp_print	= pcp_print_net_eicmp_stats,
 	.f_count_new	= NULL,
-	.item_list	= NULL,
 	.desc		= "ICMPv4 traffic errors statistics",
 #endif
 	.name		= "A_NET_EICMP",
+	.item_list	= NULL,
 	.item_list_sz	= 0,
 	.g_nr		= 6,
 	.nr_ini		= 1,
@@ -980,10 +1076,15 @@ struct activity net_eicmp_act = {
 	.nr_max		= 1,
 	.nr		= {1, 1, 1},
 	.nr_allocated	= 0,
+	.xnr		= STATS_NET_EICMP_XNR,
+	.xdev_list	= NULL,
 	.fsize		= STATS_NET_EICMP_SIZE,
 	.msize		= STATS_NET_EICMP_SIZE,
 	.opt_flags	= 0,
 	.buf		= {NULL, NULL, NULL},
+	.spmin		= NULL,
+	.spmax		= NULL,
+	.nr_spalloc	= 0,
 	.bitmap		= NULL
 };
 
@@ -1015,10 +1116,10 @@ struct activity net_tcp_act = {
 	.f_raw_print	= raw_print_net_tcp_stats,
 	.f_pcp_print	= pcp_print_net_tcp_stats,
 	.f_count_new	= NULL,
-	.item_list	= NULL,
 	.desc		= "TCPv4 traffic statistics",
 #endif
 	.name		= "A_NET_TCP",
+	.item_list	= NULL,
 	.item_list_sz	= 0,
 	.g_nr		= 2,
 	.nr_ini		= 1,
@@ -1026,10 +1127,15 @@ struct activity net_tcp_act = {
 	.nr_max		= 1,
 	.nr		= {1, 1, 1},
 	.nr_allocated	= 0,
+	.xnr		= STATS_NET_TCP_XNR,
+	.xdev_list	= NULL,
 	.fsize		= STATS_NET_TCP_SIZE,
 	.msize		= STATS_NET_TCP_SIZE,
 	.opt_flags	= 0,
 	.buf		= {NULL, NULL, NULL},
+	.spmin		= NULL,
+	.spmax		= NULL,
+	.nr_spalloc	= 0,
 	.bitmap		= NULL
 };
 
@@ -1061,10 +1167,10 @@ struct activity net_etcp_act = {
 	.f_raw_print	= raw_print_net_etcp_stats,
 	.f_pcp_print	= pcp_print_net_etcp_stats,
 	.f_count_new	= NULL,
-	.item_list	= NULL,
 	.desc		= "TCPv4 traffic errors statistics",
 #endif
 	.name		= "A_NET_ETCP",
+	.item_list	= NULL,
 	.item_list_sz	= 0,
 	.g_nr		= 2,
 	.nr_ini		= 1,
@@ -1072,10 +1178,15 @@ struct activity net_etcp_act = {
 	.nr_max		= 1,
 	.nr		= {1, 1, 1},
 	.nr_allocated	= 0,
+	.xnr		= STATS_NET_ETCP_XNR,
+	.xdev_list	= NULL,
 	.fsize		= STATS_NET_ETCP_SIZE,
 	.msize		= STATS_NET_ETCP_SIZE,
 	.opt_flags	= 0,
 	.buf		= {NULL, NULL, NULL},
+	.spmin		= NULL,
+	.spmax		= NULL,
+	.nr_spalloc	= 0,
 	.bitmap		= NULL
 };
 
@@ -1107,10 +1218,10 @@ struct activity net_udp_act = {
 	.f_raw_print	= raw_print_net_udp_stats,
 	.f_pcp_print	= pcp_print_net_udp_stats,
 	.f_count_new	= NULL,
-	.item_list	= NULL,
 	.desc		= "UDPv4 traffic statistics",
 #endif
 	.name		= "A_NET_UDP",
+	.item_list	= NULL,
 	.item_list_sz	= 0,
 	.g_nr		= 2,
 	.nr_ini		= 1,
@@ -1118,10 +1229,15 @@ struct activity net_udp_act = {
 	.nr_max		= 1,
 	.nr		= {1, 1, 1},
 	.nr_allocated	= 0,
+	.xnr		= STATS_NET_UDP_XNR,
+	.xdev_list	= NULL,
 	.fsize		= STATS_NET_UDP_SIZE,
 	.msize		= STATS_NET_UDP_SIZE,
 	.opt_flags	= 0,
 	.buf		= {NULL, NULL, NULL},
+	.spmin		= NULL,
+	.spmax		= NULL,
+	.nr_spalloc	= 0,
 	.bitmap		= NULL
 };
 
@@ -1153,10 +1269,10 @@ struct activity net_sock6_act = {
 	.f_raw_print	= raw_print_net_sock6_stats,
 	.f_pcp_print	= pcp_print_net_sock6_stats,
 	.f_count_new	= NULL,
-	.item_list	= NULL,
 	.desc		= "IPv6 sockets statistics",
 #endif
 	.name		= "A_NET_SOCK6",
+	.item_list	= NULL,
 	.item_list_sz	= 0,
 	.g_nr		= 1,
 	.nr_ini		= 1,
@@ -1164,10 +1280,15 @@ struct activity net_sock6_act = {
 	.nr_max		= 1,
 	.nr		= {1, 1, 1},
 	.nr_allocated	= 0,
+	.xnr		= STATS_NET_SOCK6_XNR,
+	.xdev_list	= NULL,
 	.fsize		= STATS_NET_SOCK6_SIZE,
 	.msize		= STATS_NET_SOCK6_SIZE,
 	.opt_flags	= 0,
 	.buf		= {NULL, NULL, NULL},
+	.spmin		= NULL,
+	.spmax		= NULL,
+	.nr_spalloc	= 0,
 	.bitmap		= NULL
 };
 
@@ -1200,10 +1321,10 @@ struct activity net_ip6_act = {
 	.f_raw_print	= raw_print_net_ip6_stats,
 	.f_pcp_print	= pcp_print_net_ip6_stats,
 	.f_count_new	= NULL,
-	.item_list	= NULL,
 	.desc		= "IPv6 traffic statistics",
 #endif
 	.name		= "A_NET_IP6",
+	.item_list	= NULL,
 	.item_list_sz	= 0,
 	.g_nr		= 4,
 	.nr_ini		= 1,
@@ -1211,10 +1332,15 @@ struct activity net_ip6_act = {
 	.nr_max		= 1,
 	.nr		= {1, 1, 1},
 	.nr_allocated	= 0,
+	.xnr		= STATS_NET_IP6_XNR,
+	.xdev_list	= NULL,
 	.fsize		= STATS_NET_IP6_SIZE,
 	.msize		= STATS_NET_IP6_SIZE,
 	.opt_flags	= 0,
 	.buf		= {NULL, NULL, NULL},
+	.spmin		= NULL,
+	.spmax		= NULL,
+	.nr_spalloc	= 0,
 	.bitmap		= NULL
 };
 
@@ -1247,10 +1373,10 @@ struct activity net_eip6_act = {
 	.f_raw_print	= raw_print_net_eip6_stats,
 	.f_pcp_print	= pcp_print_net_eip6_stats,
 	.f_count_new	= NULL,
-	.item_list	= NULL,
 	.desc		= "IPv6 traffic errors statistics",
 #endif
 	.name		= "A_NET_EIP6",
+	.item_list	= NULL,
 	.item_list_sz	= 0,
 	.g_nr		= 4,
 	.nr_ini		= 1,
@@ -1258,10 +1384,15 @@ struct activity net_eip6_act = {
 	.nr_max		= 1,
 	.nr		= {1, 1, 1},
 	.nr_allocated	= 0,
+	.xnr		= STATS_NET_EIP6_XNR,
+	.xdev_list	= NULL,
 	.fsize		= STATS_NET_EIP6_SIZE,
 	.msize		= STATS_NET_EIP6_SIZE,
 	.opt_flags	= 0,
 	.buf		= {NULL, NULL, NULL},
+	.spmin		= NULL,
+	.spmax		= NULL,
+	.nr_spalloc	= 0,
 	.bitmap		= NULL
 };
 
@@ -1295,10 +1426,10 @@ struct activity net_icmp6_act = {
 	.f_raw_print	= raw_print_net_icmp6_stats,
 	.f_pcp_print	= pcp_print_net_icmp6_stats,
 	.f_count_new	= NULL,
-	.item_list	= NULL,
 	.desc		= "ICMPv6 traffic statistics",
 #endif
 	.name		= "A_NET_ICMP6",
+	.item_list	= NULL,
 	.item_list_sz	= 0,
 	.g_nr		= 5,
 	.nr_ini		= 1,
@@ -1306,10 +1437,15 @@ struct activity net_icmp6_act = {
 	.nr_max		= 1,
 	.nr		= {1, 1, 1},
 	.nr_allocated	= 0,
+	.xnr		= STATS_NET_ICMP6_XNR,
+	.xdev_list	= NULL,
 	.fsize		= STATS_NET_ICMP6_SIZE,
 	.msize		= STATS_NET_ICMP6_SIZE,
 	.opt_flags	= 0,
 	.buf		= {NULL, NULL, NULL},
+	.spmin		= NULL,
+	.spmax		= NULL,
+	.nr_spalloc	= 0,
 	.bitmap		= NULL
 };
 
@@ -1342,10 +1478,10 @@ struct activity net_eicmp6_act = {
 	.f_raw_print	= raw_print_net_eicmp6_stats,
 	.f_pcp_print	= pcp_print_net_eicmp6_stats,
 	.f_count_new	= NULL,
-	.item_list	= NULL,
 	.desc		= "ICMPv6 traffic errors statistics",
 #endif
 	.name		= "A_NET_EICMP6",
+	.item_list	= NULL,
 	.item_list_sz	= 0,
 	.g_nr		= 6,
 	.nr_ini		= 1,
@@ -1353,10 +1489,15 @@ struct activity net_eicmp6_act = {
 	.nr_max		= 1,
 	.nr		= {1, 1, 1},
 	.nr_allocated	= 0,
+	.xnr		= STATS_NET_EICMP6_XNR,
+	.xdev_list	= NULL,
 	.fsize		= STATS_NET_EICMP6_SIZE,
 	.msize		= STATS_NET_EICMP6_SIZE,
 	.opt_flags	= 0,
 	.buf		= {NULL, NULL, NULL},
+	.spmin		= NULL,
+	.spmax		= NULL,
+	.nr_spalloc	= 0,
 	.bitmap		= NULL
 };
 
@@ -1388,10 +1529,10 @@ struct activity net_udp6_act = {
 	.f_raw_print	= raw_print_net_udp6_stats,
 	.f_pcp_print	= pcp_print_net_udp6_stats,
 	.f_count_new	= NULL,
-	.item_list	= NULL,
 	.desc		= "UDPv6 traffic statistics",
 #endif
 	.name		= "A_NET_UDP6",
+	.item_list	= NULL,
 	.item_list_sz	= 0,
 	.g_nr		= 2,
 	.nr_ini		= 1,
@@ -1399,10 +1540,15 @@ struct activity net_udp6_act = {
 	.nr_max		= 1,
 	.nr		= {1, 1, 1},
 	.nr_allocated	= 0,
+	.xnr		= STATS_NET_UDP6_XNR,
+	.xdev_list	= NULL,
 	.fsize		= STATS_NET_UDP6_SIZE,
 	.msize		= STATS_NET_UDP6_SIZE,
 	.opt_flags	= 0,
 	.buf		= {NULL, NULL, NULL},
+	.spmin		= NULL,
+	.spmax		= NULL,
+	.nr_spalloc	= 0,
 	.bitmap		= NULL
 };
 
@@ -1434,10 +1580,10 @@ struct activity pwr_cpufreq_act = {
 	.f_raw_print	= raw_print_pwr_cpufreq_stats,
 	.f_pcp_print	= pcp_print_pwr_cpufreq_stats,
 	.f_count_new	= NULL,
-	.item_list	= NULL,
 	.desc		= "CPU clock frequency",
 #endif
 	.name		= "A_PWR_CPU",
+	.item_list	= NULL,
 	.item_list_sz	= 0,
 	.g_nr		= 1,
 	.nr_ini		= -1,
@@ -1445,10 +1591,15 @@ struct activity pwr_cpufreq_act = {
 	.nr_max		= NR_CPUS + 1,
 	.nr		= {-1, -1, -1},
 	.nr_allocated	= 0,
+	.xnr		= STATS_PWR_CPUFREQ_XNR,
+	.xdev_list	= NULL,
 	.fsize		= STATS_PWR_CPUFREQ_SIZE,
 	.msize		= STATS_PWR_CPUFREQ_SIZE,
 	.opt_flags	= 0,
 	.buf		= {NULL, NULL, NULL},
+	.spmin		= NULL,
+	.spmax		= NULL,
+	.nr_spalloc	= 0,
 	.bitmap		= &cpu_bitmap
 };
 
@@ -1480,10 +1631,10 @@ struct activity pwr_fan_act = {
 	.f_raw_print	= raw_print_pwr_fan_stats,
 	.f_pcp_print	= pcp_print_pwr_fan_stats,
 	.f_count_new	= NULL,
-	.item_list	= NULL,
 	.desc		= "Fans speed",
 #endif
 	.name		= "A_PWR_FAN",
+	.item_list	= NULL,
 	.item_list_sz	= 0,
 	.g_nr		= 1,
 	.nr_ini		= -1,
@@ -1491,10 +1642,15 @@ struct activity pwr_fan_act = {
 	.nr_max		= MAX_NR_FANS,
 	.nr		= {-1, -1, -1},
 	.nr_allocated	= 0,
+	.xnr		= STATS_PWR_FAN_XNR,
+	.xdev_list	= NULL,
 	.fsize		= STATS_PWR_FAN_SIZE,
 	.msize		= STATS_PWR_FAN_SIZE,
 	.opt_flags	= 0,
 	.buf		= {NULL, NULL, NULL},
+	.spmin		= NULL,
+	.spmax		= NULL,
+	.nr_spalloc	= 0,
 	.bitmap		= NULL
 };
 
@@ -1526,10 +1682,10 @@ struct activity pwr_temp_act = {
 	.f_raw_print	= raw_print_pwr_temp_stats,
 	.f_pcp_print	= pcp_print_pwr_temp_stats,
 	.f_count_new	= NULL,
-	.item_list	= NULL,
 	.desc		= "Devices temperature",
 #endif
 	.name		= "A_PWR_TEMP",
+	.item_list	= NULL,
 	.item_list_sz	= 0,
 	.g_nr		= 2,
 	.nr_ini		= -1,
@@ -1537,10 +1693,15 @@ struct activity pwr_temp_act = {
 	.nr_max		= MAX_NR_TEMP_SENSORS,
 	.nr		= {-1, -1, -1},
 	.nr_allocated	= 0,
+	.xnr		= STATS_PWR_TEMP_XNR,
+	.xdev_list	= NULL,
 	.fsize		= STATS_PWR_TEMP_SIZE,
 	.msize		= STATS_PWR_TEMP_SIZE,
 	.opt_flags	= 0,
 	.buf		= {NULL, NULL, NULL},
+	.spmin		= NULL,
+	.spmax		= NULL,
+	.nr_spalloc	= 0,
 	.bitmap		= NULL
 };
 
@@ -1572,10 +1733,10 @@ struct activity pwr_in_act = {
 	.f_raw_print	= raw_print_pwr_in_stats,
 	.f_pcp_print	= pcp_print_pwr_in_stats,
 	.f_count_new	= NULL,
-	.item_list	= NULL,
 	.desc		= "Voltage inputs statistics",
 #endif
 	.name		= "A_PWR_IN",
+	.item_list	= NULL,
 	.item_list_sz	= 0,
 	.g_nr		= 2,
 	.nr_ini		= -1,
@@ -1583,10 +1744,15 @@ struct activity pwr_in_act = {
 	.nr_max		= MAX_NR_IN_SENSORS,
 	.nr		= {-1, -1, -1},
 	.nr_allocated	= 0,
+	.xnr		= STATS_PWR_IN_XNR,
+	.xdev_list	= NULL,
 	.fsize		= STATS_PWR_IN_SIZE,
 	.msize		= STATS_PWR_IN_SIZE,
 	.opt_flags	= 0,
 	.buf		= {NULL, NULL, NULL},
+	.spmin		= NULL,
+	.spmax		= NULL,
+	.nr_spalloc	= 0,
 	.bitmap		= NULL
 };
 
@@ -1618,10 +1784,10 @@ struct activity huge_act = {
 	.f_raw_print	= raw_print_huge_stats,
 	.f_pcp_print	= pcp_print_huge_stats,
 	.f_count_new	= NULL,
-	.item_list	= NULL,
 	.desc		= "Huge pages utilization",
 #endif
 	.name		= "A_HUGE",
+	.item_list	= NULL,
 	.item_list_sz	= 0,
 	.g_nr		= 2,
 	.nr_ini		= 1,
@@ -1629,10 +1795,15 @@ struct activity huge_act = {
 	.nr_max		= 1,
 	.nr		= {1, 1, 1},
 	.nr_allocated	= 0,
+	.xnr		= STATS_HUGE_XNR,
+	.xdev_list	= NULL,
 	.fsize		= STATS_HUGE_SIZE,
 	.msize		= STATS_HUGE_SIZE,
 	.opt_flags	= 0,
 	.buf		= {NULL, NULL, NULL},
+	.spmin		= NULL,
+	.spmax		= NULL,
+	.nr_spalloc	= 0,
 	.bitmap		= NULL
 };
 
@@ -1663,10 +1834,10 @@ struct activity pwr_wghfreq_act = {
 	.f_svg_print	= NULL,
 	.f_raw_print	= raw_print_pwr_wghfreq_stats,
 	.f_count_new	= NULL,
-	.item_list	= NULL,
 	.desc		= "CPU weighted frequency",
 #endif
 	.name		= "A_PWR_FREQ",
+	.item_list	= NULL,
 	.item_list_sz	= 0,
 	.g_nr		= 0,
 	.nr_ini		= -1,
@@ -1674,10 +1845,15 @@ struct activity pwr_wghfreq_act = {
 	.nr_max		= NR_CPUS + 1,
 	.nr		= {-1, -1, -1},
 	.nr_allocated	= 0,
+	.xnr		= STATS_PWR_WGHFREQ_XNR,
+	.xdev_list	= NULL,
 	.fsize		= STATS_PWR_WGHFREQ_SIZE,
 	.msize		= STATS_PWR_WGHFREQ_SIZE,
 	.opt_flags	= 0,
 	.buf		= {NULL, NULL, NULL},
+	.spmin		= NULL,
+	.spmax		= NULL,
+	.nr_spalloc	= 0,
 	.bitmap		= &cpu_bitmap
 };
 
@@ -1709,10 +1885,10 @@ struct activity pwr_usb_act = {
 	.f_raw_print	= raw_print_pwr_usb_stats,
 	.f_pcp_print	= pcp_print_pwr_usb_stats,
 	.f_count_new	= NULL,
-	.item_list	= NULL,
 	.desc		= "USB devices",
 #endif
 	.name		= "A_PWR_USB",
+	.item_list	= NULL,
 	.item_list_sz	= 0,
 	.g_nr		= 0,
 	.nr_ini		= -1,
@@ -1720,10 +1896,15 @@ struct activity pwr_usb_act = {
 	.nr_max		= MAX_NR_USB,
 	.nr		= {-1, -1, -1},
 	.nr_allocated	= 0,
+	.xnr		= STATS_PWR_USB_XNR,
+	.xdev_list	= NULL,
 	.fsize		= STATS_PWR_USB_SIZE,
 	.msize		= STATS_PWR_USB_SIZE,
 	.opt_flags	= 0,
 	.buf		= {NULL, NULL, NULL},
+	.spmin		= NULL,
+	.spmax		= NULL,
+	.nr_spalloc	= 0,
 	.bitmap		= NULL
 };
 
@@ -1756,10 +1937,10 @@ struct activity filesystem_act = {
 	.f_raw_print	= raw_print_filesystem_stats,
 	.f_pcp_print	= pcp_print_filesystem_stats,
 	.f_count_new	= count_new_filesystem,
-	.item_list	= NULL,
 	.desc		= "Filesystems statistics",
 #endif
 	.name		= "A_FS",
+	.item_list	= NULL,
 	.item_list_sz	= 0,
 	.g_nr		= 4,
 	.nr_ini		= -1,
@@ -1767,10 +1948,15 @@ struct activity filesystem_act = {
 	.nr_max		= MAX_NR_FS,
 	.nr		= {-1, -1, -1},
 	.nr_allocated	= 0,
+	.xnr		= STATS_FILESYSTEM_XNR,
+	.xdev_list	= NULL,
 	.fsize		= STATS_FILESYSTEM_SIZE,
 	.msize		= STATS_FILESYSTEM_SIZE,
 	.opt_flags	= 0,
 	.buf		= {NULL, NULL, NULL},
+	.spmin		= NULL,
+	.spmax		= NULL,
+	.nr_spalloc	= 0,
 	.bitmap		= NULL
 };
 
@@ -1802,10 +1988,10 @@ struct activity fchost_act = {
 	.f_raw_print	= raw_print_fchost_stats,
 	.f_pcp_print	= pcp_print_fchost_stats,
 	.f_count_new	= count_new_fchost,
-	.item_list	= NULL,
 	.desc		= "Fibre Channel HBA statistics",
 #endif
 	.name		= "A_NET_FC",
+	.item_list	= NULL,
 	.item_list_sz	= 0,
 	.g_nr		= 2,
 	.nr_ini		= -1,
@@ -1813,10 +1999,15 @@ struct activity fchost_act = {
 	.nr_max		= MAX_NR_FCHOSTS,
 	.nr		= {-1, -1, -1},
 	.nr_allocated	= 0,
+	.xnr		= STATS_FCHOST_XNR,
+	.xdev_list	= NULL,
 	.fsize		= STATS_FCHOST_SIZE,
 	.msize		= STATS_FCHOST_SIZE,
 	.opt_flags	= 0,
 	.buf		= {NULL, NULL, NULL},
+	.spmin		= NULL,
+	.spmax		= NULL,
+	.nr_spalloc	= 0,
 	.bitmap		= NULL
 };
 
@@ -1849,10 +2040,10 @@ struct activity softnet_act = {
 	.f_raw_print	= raw_print_softnet_stats,
 	.f_pcp_print	= pcp_print_softnet_stats,
 	.f_count_new	= NULL,
-	.item_list	= NULL,
 	.desc		= "Software-based network processing statistics",
 #endif
 	.name		= "A_NET_SOFT",
+	.item_list	= NULL,
 	.item_list_sz	= 0,
 	.g_nr		= 3,
 	.nr_ini		= -1,
@@ -1860,10 +2051,15 @@ struct activity softnet_act = {
 	.nr_max		= NR_CPUS + 1,
 	.nr		= {-1, -1, -1},
 	.nr_allocated	= 0,
+	.xnr		= STATS_SOFTNET_XNR,
+	.xdev_list	= NULL,
 	.fsize		= STATS_SOFTNET_SIZE,
 	.msize		= STATS_SOFTNET_SIZE,
 	.opt_flags	= 0,
 	.buf		= {NULL, NULL, NULL},
+	.spmin		= NULL,
+	.spmax		= NULL,
+	.nr_spalloc	= 0,
 	.bitmap		= &cpu_bitmap
 };
 
@@ -1895,10 +2091,10 @@ struct activity psi_cpu_act = {
 	.f_raw_print	= raw_print_psicpu_stats,
 	.f_pcp_print	= pcp_print_psicpu_stats,
 	.f_count_new	= NULL,
-	.item_list	= NULL,
 	.desc		= "Pressure-stall CPU statistics",
 #endif
 	.name		= "A_PSI_CPU",
+	.item_list	= NULL,
 	.item_list_sz	= 0,
 	.g_nr		= 2,
 	.nr_ini		= 1,
@@ -1906,10 +2102,15 @@ struct activity psi_cpu_act = {
 	.nr_max		= 1,
 	.nr		= {1, 1, 1},
 	.nr_allocated	= 0,
+	.xnr		= STATS_PSI_CPU_XNR,
+	.xdev_list	= NULL,
 	.fsize		= STATS_PSI_CPU_SIZE,
 	.msize		= STATS_PSI_CPU_SIZE,
 	.opt_flags	= 0,
 	.buf		= {NULL, NULL, NULL},
+	.spmin		= NULL,
+	.spmax		= NULL,
+	.nr_spalloc	= 0,
 	.bitmap		= NULL
 };
 
@@ -1941,10 +2142,10 @@ struct activity psi_io_act = {
 	.f_raw_print	= raw_print_psiio_stats,
 	.f_pcp_print	= pcp_print_psiio_stats,
 	.f_count_new	= NULL,
-	.item_list	= NULL,
 	.desc		= "Pressure-stall I/O statistics",
 #endif
 	.name		= "A_PSI_IO",
+	.item_list	= NULL,
 	.item_list_sz	= 0,
 	.g_nr		= 4,
 	.nr_ini		= 1,
@@ -1952,10 +2153,15 @@ struct activity psi_io_act = {
 	.nr_max		= 1,
 	.nr		= {1, 1, 1},
 	.nr_allocated	= 0,
+	.xnr		= STATS_PSI_IO_XNR,
+	.xdev_list	= NULL,
 	.fsize		= STATS_PSI_IO_SIZE,
 	.msize		= STATS_PSI_IO_SIZE,
 	.opt_flags	= 0,
 	.buf		= {NULL, NULL, NULL},
+	.spmin		= NULL,
+	.spmax		= NULL,
+	.nr_spalloc	= 0,
 	.bitmap		= NULL
 };
 
@@ -1987,10 +2193,10 @@ struct activity psi_mem_act = {
 	.f_raw_print	= raw_print_psimem_stats,
 	.f_pcp_print	= pcp_print_psimem_stats,
 	.f_count_new	= NULL,
-	.item_list	= NULL,
 	.desc		= "Pressure-stall memory statistics",
 #endif
 	.name		= "A_PSI_MEM",
+	.item_list	= NULL,
 	.item_list_sz	= 0,
 	.g_nr		= 4,
 	.nr_ini		= 1,
@@ -1998,13 +2204,69 @@ struct activity psi_mem_act = {
 	.nr_max		= 1,
 	.nr		= {1, 1, 1},
 	.nr_allocated	= 0,
+	.xnr		= STATS_PSI_MEM_XNR,
+	.xdev_list	= NULL,
 	.fsize		= STATS_PSI_MEM_SIZE,
 	.msize		= STATS_PSI_MEM_SIZE,
 	.opt_flags	= 0,
 	.buf		= {NULL, NULL, NULL},
+	.spmin		= NULL,
+	.spmax		= NULL,
+	.nr_spalloc	= 0,
 	.bitmap		= NULL
 };
-/* wrap_detect_psi */
+
+/* Battery capacity */
+struct activity pwr_bat_act = {
+	.id		= A_PWR_BAT,
+	.options	= AO_COUNTED + AO_GRAPH_PER_ITEM,
+	.magic		= ACTIVITY_MAGIC_BASE,
+	.group		= G_POWER,
+#ifdef SOURCE_SADC
+	.f_count_index	= 13,	/* wrap_get_bat_nr() */
+	.f_count2_index	= -1,
+	.f_read		= wrap_read_bat,
+#endif
+#ifdef SOURCE_SAR
+	.f_print	= print_pwr_bat_stats,
+	.f_print_avg	= print_avg_pwr_bat_stats,
+#endif
+#if defined(SOURCE_SAR) || defined(SOURCE_SADF)
+	.hdr_line	= "BAT;%cap;cap/min;status",
+#endif
+	.gtypes_nr	= {STATS_PWR_BAT_ULL, STATS_PWR_BAT_UL, STATS_PWR_BAT_U},
+	.ftypes_nr	= {0, 0, 0},
+#ifdef SOURCE_SADF
+	.f_render	= render_pwr_bat_stats,
+	.f_xml_print	= xml_print_pwr_bat_stats,
+	.f_json_print	= json_print_pwr_bat_stats,
+	.f_svg_print	= svg_print_pwr_bat_stats,
+	.f_raw_print	= raw_print_pwr_bat_stats,
+	.f_pcp_print	= pcp_print_pwr_bat_stats,
+	.f_count_new	= count_new_bat,
+	.desc		= "Batteries capacity",
+#endif
+	.name		= "A_PWR_BAT",
+	.item_list	= NULL,
+	.item_list_sz	= 0,
+	.g_nr		= 1,
+	.nr_ini		= -1,
+	.nr2		= 1,
+	.nr_max		= MAX_NR_BATS,
+	.nr		= {-1, -1, -1},
+	.nr_allocated	= 0,
+	.xnr		= STATS_PWR_BAT_XNR,
+	.xdev_list	= NULL,
+	.fsize		= STATS_PWR_BAT_SIZE,
+	.msize		= STATS_PWR_BAT_SIZE,
+	.opt_flags	= 0,
+	.buf		= {NULL, NULL, NULL},
+	.spmin		= NULL,
+	.spmax		= NULL,
+	.nr_spalloc	= 0,
+	.bitmap		= NULL
+};
+
 #ifdef SOURCE_SADC
 /*
  * Array of functions used to count number of items.
@@ -2022,7 +2284,8 @@ __nr_t (*f_count[NR_F_COUNT]) (struct activity *) = {
 	wrap_get_filesystem_nr,	/* 9 */
 	wrap_get_fchost_nr,	/* 10 */
 	wrap_detect_psi,	/* 11 */
-	wrap_get_freq_nr	/* 12 */
+	wrap_get_freq_nr,	/* 12 */
+	wrap_get_bat_nr		/* 13 */
 };
 #endif
 
@@ -2071,6 +2334,7 @@ struct activity *act[NR_ACT] = {
 	&pwr_temp_act,
 	&pwr_in_act,
 	&pwr_wghfreq_act,
+	&pwr_bat_act,
 	&pwr_usb_act,	/* AO_CLOSE_MARKUP */
 	/* </power-management> */
 	&filesystem_act,

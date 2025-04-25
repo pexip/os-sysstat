@@ -65,6 +65,7 @@ char *sccsid(void) { return (SCCSID); }
 
 #ifdef TEST
 void int_handler(int n) { return; }
+extern int __env;
 #endif
 
 int cpu_nr = 0;		/* Nb of processors on the machine */
@@ -211,12 +212,14 @@ int get_max_tape_drives(void)
  */
 void tape_check_tapes_and_realloc(void)
 {
-	int new_max_tape_drives, i;
+	int new_max_tape_drives;
 
 	/* Count again number of tapes */
 	new_max_tape_drives = get_max_tape_drives();
 
 	if (new_max_tape_drives > max_tape_drives && new_max_tape_drives > 0) {
+		int i;
+
 		/* New tapes found: Realloc structures */
 		struct tape_stats *tape_old_stats_t = (struct tape_stats *)
 			realloc(tape_old_stats,	sizeof(struct tape_stats) * new_max_tape_drives);
@@ -464,7 +467,7 @@ void tape_write_stats(struct calc_stats *tape, int i)
 					: tape->kbytes_read_per_second / divisor,
 		    DISPLAY_UNIT(flags) ? tape->kbytes_written_per_second
 					: tape->kbytes_written_per_second / divisor);
-	cprintf_pc(DISPLAY_UNIT(flags), 3, 4, 0,
+	cprintf_xpc(DISPLAY_UNIT(flags), XHIGH, 3, 4, 0,
 		   (double) tape->read_pct_wait,
 		   (double) tape->write_pct_wait,
 		   (double) tape->all_pct_wait);
@@ -484,7 +487,6 @@ void tape_write_stats(struct calc_stats *tape, int i)
  */
 void write_stats(struct tm *rectime)
 {
-	int i;
 	struct calc_stats tape;
 	struct tape_stats *tmp;
 
@@ -510,6 +512,7 @@ void write_stats(struct tm *rectime)
 	 * zero omit is true then we print nothing.
 	 */
 	if (max_tape_drives > 0) {
+		int i;
 
 		for (i = 0; i < max_tape_drives; i++) {
 			if ((tape_new_stats[i].valid == TAPE_STATS_VALID) &&
@@ -569,7 +572,7 @@ void rw_tape_stat_loop(long int count, struct tm *rectime)
 		}
 
 		/* Get time */
-		get_localtime(rectime, 0);
+		get_xtime(rectime, 0, LOCAL_TIME);
 
 		/* Check whether we should skip first report */
 		if (!skip) {
@@ -624,6 +627,13 @@ int main(int argc, char **argv)
 			opt++;
 		}
 
+#ifdef TEST
+		else if (!strncmp(argv[opt], "--getenv", 8)) {
+			__env = TRUE;
+			opt++;
+		}
+#endif
+
 		else if (!strncmp(argv[opt], "-", 1)) {
 			for (i = 1; *(argv[opt] + i); i++) {
 
@@ -661,9 +671,15 @@ int main(int argc, char **argv)
 					break;
 
 				case 'V':
-					/* Print version number and exit */
-					print_version();
-					break;
+					{
+						char *tapestat_env[] = {ENV_COLORS,
+									ENV_COLORS_SGR,
+									ENV_TIME_FMT};
+#define TAPESTAT_ENV_NR	3
+						/* Print environment contents, version number and exit */
+						print_version(tapestat_env, TAPESTAT_ENV_NR);
+						break;
+					}
 
 				default:
 					usage(argv[0]);
@@ -699,7 +715,7 @@ int main(int argc, char **argv)
 
 	tape_initialise();
 
-	get_localtime(&rectime, 0);
+	get_xtime(&rectime, 0, LOCAL_TIME);
 
 	/*
 	 * Don't buffer data if redirected to a pipe.

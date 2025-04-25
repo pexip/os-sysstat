@@ -1,7 +1,7 @@
 /*
  * count.h: Include file used to count items for which
  * statistics will be collected.
- * (C) 1999-2022 by Sebastien Godard (sysstat <at> orange.fr)
+ * (C) 1999-2023 by Sebastien Godard (sysstat <at> orange.fr)
  */
 
 #ifndef _COUNT_H
@@ -34,6 +34,8 @@ __nr_t get_usb_nr
 __nr_t get_filesystem_nr
 	(void);
 __nr_t get_fchost_nr
+	(void);
+__nr_t get_bat_nr
 	(void);
 
 #endif /* _COUNT_H */

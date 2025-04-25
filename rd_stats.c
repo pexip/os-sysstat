@@ -1,6 +1,6 @@
 /*
  * rd_stats.c: Read system statistics
- * (C) 1999-2022 by Sebastien GODARD (sysstat <at> orange.fr)
+ * (C) 1999-2023 by Sebastien GODARD (sysstat <at> orange.fr)
  *
  ***************************************************************************
  * This program is free software; you can redistribute it and/or modify it *
@@ -448,16 +448,18 @@ void read_uptime(unsigned long long *uptime)
 void compute_ext_disk_stats(struct stats_disk *sdc, struct stats_disk *sdp,
 			    unsigned long long itv, struct ext_disk_stats *xds)
 {
-	xds->util  = S_VALUE(sdp->tot_ticks, sdc->tot_ticks, itv);
+	xds->util  = sdc->tot_ticks < sdp->tot_ticks ?
+		     0.0 :
+		     S_VALUE(sdp->tot_ticks, sdc->tot_ticks, itv);
 	/*
 	 * Kernel gives ticks already in milliseconds for all platforms
 	 * => no need for further scaling.
 	 * Origin (unmerged) flush operations are counted as writes.
 	 */
-	xds->await = (sdc->nr_ios - sdp->nr_ios) ?
+	xds->await = (sdc->nr_ios > sdp->nr_ios) ?
 		((sdc->rd_ticks - sdp->rd_ticks) + (sdc->wr_ticks - sdp->wr_ticks) + (sdc->dc_ticks - sdp->dc_ticks)) /
 		((double) (sdc->nr_ios - sdp->nr_ios)) : 0.0;
-	xds->arqsz = (sdc->nr_ios - sdp->nr_ios) ?
+	xds->arqsz = (sdc->nr_ios > sdp->nr_ios) ?
 		((sdc->rd_sect - sdp->rd_sect) + (sdc->wr_sect - sdp->wr_sect) + (sdc->dc_sect - sdp->dc_sect)) /
 		((double) (sdc->nr_ios - sdp->nr_ios)) : 0.0;
 }
@@ -756,6 +758,7 @@ __nr_t read_vmstat_paging(struct stats_paging *st_paging)
 
 	st_paging->pgsteal = 0;
 	st_paging->pgscan_kswapd = st_paging->pgscan_direct = 0;
+	st_paging->pgdemote = 0;
 
 	while (fgets(line, sizeof(line), fp) != NULL) {
 
@@ -794,6 +797,14 @@ __nr_t read_vmstat_paging(struct stats_paging *st_paging)
 			sscanf(strchr(line, ' '), "%lu", &pgtmp);
 			st_paging->pgscan_direct += pgtmp;
 		}
+		else if (!strncmp(line, "pgpromote_success ", 18)) {
+			/* Read number of successful page promotions */
+			sscanf(line + 18, "%lu", &st_paging->pgpromote);
+		}
+		else if (!strncmp(line, "pgdemote_", 9)) {
+			sscanf(strchr(line, ' '), "%lu", &pgtmp);
+			st_paging->pgdemote += pgtmp;
+		}	
 	}
 
 	fclose(fp);
@@ -832,7 +843,7 @@ __nr_t read_diskstats_io(struct stats_io *st_io)
 		dc_ios = dc_sec = 0;
 
 		if (sscanf(line,
-			   "%u %u %s "
+			   "%u %u %127s "
 			   "%lu %*u %lu %*u "
 			   "%lu %*u %lu %*u "
 			   "%*u %*u %*u "
@@ -903,7 +914,7 @@ __nr_t read_diskstats_disk(struct stats_disk *st_disk, __nr_t nr_alloc,
 		dc_ios = dc_sec = dc_ticks = 0;
 
 		if (sscanf(line,
-			   "%u %u %s "
+			   "%u %u %127s "
 			   "%lu %*u %lu %u "
 			   "%lu %*u %lu %u "
 			   "%*u %u %u "
@@ -1039,7 +1050,7 @@ __nr_t read_kernel_tables(struct stats_ktables *st_ktables)
 {
 	FILE *fp;
 	unsigned long long parm;
-	int rc = 0;
+	int rc;
 
 	/* Open /proc/sys/fs/dentry-state file */
 	if ((fp = fopen(FDENTRY_STATE, "r")) != NULL) {
@@ -1139,7 +1150,7 @@ __nr_t read_net_dev(struct stats_net_dev *st_net_dev, __nr_t nr_alloc)
 			st_net_dev_i = st_net_dev + dev_read++;
 			strncpy(iface, line, MINIMUM(pos, sizeof(iface) - 1));
 			iface[MINIMUM(pos, sizeof(iface) - 1)] = '\0';
-			sscanf(iface, "%s", st_net_dev_i->interface); /* Skip heading spaces */
+			sscanf(iface, "%15s", st_net_dev_i->interface); /* Skip heading spaces */
 			sscanf(line + pos + 1, "%llu %llu %*u %*u %*u %*u %llu %llu %llu %llu "
 			       "%*u %*u %*u %*u %*u %llu",
 			       &st_net_dev_i->rx_bytes,
@@ -1262,7 +1273,7 @@ __nr_t read_net_edev(struct stats_net_edev *st_net_edev, __nr_t nr_alloc)
 			st_net_edev_i = st_net_edev + dev_read++;
 			strncpy(iface, line, MINIMUM(pos, sizeof(iface) - 1));
 			iface[MINIMUM(pos, sizeof(iface) - 1)] = '\0';
-			sscanf(iface, "%s", st_net_edev_i->interface); /* Skip heading spaces */
+			sscanf(iface, "%15s", st_net_edev_i->interface); /* Skip heading spaces */
 			sscanf(line + pos + 1, "%*u %*u %llu %llu %llu %llu %*u %*u %*u %*u "
 			       "%llu %llu %llu %llu %llu",
 			       &st_net_edev_i->rx_errors,
@@ -2592,7 +2603,7 @@ __nr_t read_filesystem(struct stats_filesystem *st_filesystem, __nr_t nr_alloc)
 {
 	FILE *fp;
 	char line[512], fs_name[MAX_FS_LEN], mountp[256], type[128];
-	int skip = 0, skip_next = 0, fs;
+	int skip, skip_next = 0, fs;
 	char *pos = 0, *pos2 = 0;
 	__nr_t fs_read = 0;
 	struct stats_filesystem *st_filesystem_i;
@@ -2803,12 +2814,13 @@ __nr_t read_fchost(struct stats_fchost *st_fc, __nr_t nr_alloc)
  ***************************************************************************
  */
 int read_softnet(struct stats_softnet *st_softnet, __nr_t nr_alloc,
-		 unsigned char online_cpu_bitmap[])
+		 const unsigned char online_cpu_bitmap[])
 {
 	FILE *fp;
 	struct stats_softnet *st_softnet_i, st_softnet_read;
 	char line[1024];
-	int cpu = 1, rc = 1, i, cpu_id;
+	int rc = 1, i;
+	unsigned int cpu = 1, cpu_id;
 
 	/* Open /proc/net/softnet_stat file */
 	if ((fp = fopen(NET_SOFTNET, "r")) == NULL)
@@ -3010,6 +3022,99 @@ __nr_t read_psimem(struct stats_psi_mem *st_psi_mem)
 	st_psi_mem->full_mem_total = st_psi.total;
 
 	return 1;
+}
+
+/*
+ * **************************************************************************
+ * Read batteries statistics.
+ *
+ * IN:
+ * @st_bat	Structure where stats will be saved.
+ * @nr_alloc	Total number of structures allocated. Value is >= 0.
+ *
+ * OUT:
+ * @st_bat	Structure with statistics.
+ *
+ * RETURNS:
+ * Number of batteries read, or -1 if the buffer was too small and needs to
+ * be reallocated.
+ ***************************************************************************
+ */
+__nr_t read_bat(struct stats_pwr_bat *st_bat, __nr_t nr_alloc)
+{
+	DIR *dir;
+	FILE *fp;
+	struct dirent *drd;
+	struct stats_pwr_bat *st_bat_i;
+	__nr_t bat_read = 0;
+	unsigned int capacity, bat_id;
+	char bat_filename[MAX_PF_NAME];
+	char line[256], status[64];
+
+	/* Each battery, if present, will have its own BATx entry within SYSFS_PWR_SUPPLY */
+	if ((dir = __opendir(SYSFS_PWR_SUPPLY)) == NULL)
+		return 0; /* No batteries */
+
+	/*
+	 * Read each of the counters via sysfs, where they are
+	 * returned as hex values (e.g. 0x72400).
+	 */
+	while ((drd = __readdir(dir)) != NULL) {
+		capacity = 0;
+		status[0] = '\0';
+
+		if (!strncmp(drd->d_name, "BAT", 3) && isdigit(drd->d_name[3])) {
+
+			if (bat_read + 1 > nr_alloc) {
+				bat_read = -1;
+				break;
+			}
+
+			/* Get battery id number */
+			sscanf(drd->d_name + 3, "%u", &bat_id);
+
+			/* Read battery capcity */
+			snprintf(bat_filename, MAX_PF_NAME, BAT_CAPACITY,
+				 SYSFS_PWR_SUPPLY, drd->d_name);
+			if ((fp = fopen(bat_filename, "r"))) {
+				if (fgets(line, sizeof(line), fp)) {
+					sscanf(line, "%u", &capacity);
+				}
+				fclose(fp);
+			}
+
+			/* Read battery status */
+			snprintf(bat_filename, MAX_PF_NAME, BAT_STATUS,
+				 SYSFS_PWR_SUPPLY, drd->d_name);
+			if ((fp = fopen(bat_filename, "r"))) {
+				fgets(status, sizeof(status), fp);
+				fclose(fp);
+			}
+
+			st_bat_i = st_bat + bat_read++;
+			st_bat_i->bat_id = (char) bat_id;
+			st_bat_i->capacity = (char) capacity;
+
+			if (!strncmp(status, "Charging", 8)) {
+				st_bat_i->status = BAT_STS_CHARGING;
+			}
+			else if (!strncmp(status, "Discharging", 11)) {
+				st_bat_i->status = BAT_STS_DISCHARGING;
+			}
+			else if (!strncmp(status, "Not charging", 12)) {
+				st_bat_i->status = BAT_STS_NOTCHARGING;
+			}
+			else if (!strncmp(status, "Full", 4)) {
+				st_bat_i->status = BAT_STS_FULL;
+			}
+			else {
+				st_bat_i->status = BAT_STS_UNKNOWN;
+			}
+		}
+	}
+
+	__closedir(dir);
+	return bat_read;
 }
 
 /*------------------ END: FUNCTIONS USED BY SADC ONLY ---------------------*/

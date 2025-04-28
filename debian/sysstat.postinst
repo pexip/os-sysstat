@@ -123,8 +123,8 @@ if [ "$1" = "configure" ] && [ -n "$ENABLED" ]; then
 
     # execute sa1 in a subshell not to clobber the postinst script with potentially
     # unsafe values from "$DEFAULT"
-    if [ "$ENABLED" = "true" ] && [ -x /usr/lib/sysstat/sa1 ] ; then
-        ( set +e ; /usr/lib/sysstat/sa1 1 1 )&
+    if [ "$ENABLED" = "true" ] && [ -x /usr/libexec/sysstat/sa1 ] ; then
+        ( set +e ; /usr/libexec/sysstat/sa1 1 1 )&
     fi
 fi
 

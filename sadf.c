@@ -1,6 +1,6 @@
 /*
  * sadf: system activity data formatter
- * (C) 1999-2022 by Sebastien GODARD (sysstat <at> orange.fr)
+ * (C) 1999-2023 by Sebastien GODARD (sysstat <at> orange.fr)
  *
  ***************************************************************************
  * This program is free software; you can redistribute it and/or modify it *
@@ -54,6 +54,8 @@ extern int __env;
 void int_handler(int n) { return; }
 #endif
 
+extern char *tzname[2];
+
 long interval = -1, count = 0;
 
 /* TRUE if data read from file don't match current machine's endianness */
@@ -85,11 +87,23 @@ unsigned int id_seq[NR_ACT];
 struct record_header record_hdr[3];
 
 /* Contain the date specified by -s and -e options */
-struct tstamp tm_start, tm_end;
+struct tstamp_ext tm_start, tm_end;
 char *args[MAX_ARGV_NR];
+
+/* Current timezone */
+char my_tzname[TZNAME_LEN];
 
 extern struct activity *act[];
 extern struct report_format *fmt[];
+
+/* Battery status */
+char bat_status[][16] = {
+	"Unknown",
+	"Charging",
+	"Discharging",
+	"NotCharging",
+	"Full"
+};
 
 /*
  ***************************************************************************
@@ -109,7 +123,7 @@ void usage(char *progname)
 			  "[ -C ] [ -c | -d | -g | -j | -l | -p | -r | -x ] [ -H ] [ -h ] [ -T | -t | -U ] [ -V ]\n"
 			  "[ -O <opts> [,...] ] [ -P { <cpu> [,...] | ALL } ]\n"
 			  "[ --dev=<dev_list> ] [ --fs=<fs_list> ] [ --iface=<iface_list> ] [ --int=<int_list> ]\n"
-			  "[ -s [ <hh:mm[:ss]> ] ] [ -e [ <hh:mm[:ss]> ] ]\n"
+			  "[ -s [ <start_time> ] ] [ -e [ <end_time> ] ]\n"
 			  "[ -- <sar_options> ]\n"));
 	exit(1);
 }
@@ -236,7 +250,7 @@ void check_format_options(void)
  */
 int read_next_sample(int ifd, int action, int curr, char *file, int *rtype, int tab,
 		     struct file_magic *file_magic, struct file_activity *file_actlst,
-		     struct tm *rectime, int oneof)
+		     struct tstamp_ext *rectime, enum on_eof oneof)
 {
 	int rc;
 	char rec_hdr_tmp[MAX_RECORD_HEADER_SIZE];
@@ -273,7 +287,7 @@ int read_next_sample(int ifd, int action, int curr, char *file, int *rtype, int 
 		else {
 			/* Display COMMENT record */
 			print_special_record(&record_hdr[curr], flags, &tm_start, &tm_end,
-					     *rtype, ifd, rectime, file, tab,
+					     *rtype, ifd, rectime, file, tab, my_tzname,
 					     file_magic, &file_hdr, act, fmt[f_position],
 					     endian_mismatch, arch_64);
 		}
@@ -287,7 +301,8 @@ int read_next_sample(int ifd, int action, int curr, char *file, int *rtype, int 
 			 */
 			if (!(action & DONT_READ_CPU_NR)) {
 				file_hdr.sa_cpu_nr = read_nr_value(ifd, file, file_magic,
-								   endian_mismatch, arch_64, TRUE);
+								   endian_mismatch, arch_64, TRUE,
+								   NR_CPUS + 1);
 
 				/* Ignore unknown extra structures if present */
 				if (record_hdr[curr].extra_next && (skip_extra_struct(ifd, endian_mismatch, arch_64) < 0))
@@ -301,7 +316,7 @@ int read_next_sample(int ifd, int action, int curr, char *file, int *rtype, int 
 		else {
 			/* Display RESTART record */
 			print_special_record(&record_hdr[curr], flags, &tm_start, &tm_end,
-					     *rtype, ifd, rectime, file, tab,
+					     *rtype, ifd, rectime, file, tab, my_tzname,
 					     file_magic, &file_hdr, act, fmt[f_position],
 					     endian_mismatch, arch_64);
 		}
@@ -312,7 +327,8 @@ int read_next_sample(int ifd, int action, int curr, char *file, int *rtype, int 
 		 * So read now the extra fields.
 		 */
 		if (read_file_stat_bunch(act, curr, ifd, file_hdr.sa_act_nr, file_actlst,
-					 endian_mismatch, arch_64, file, file_magic, oneof) > 0)
+					 endian_mismatch, arch_64, file, file_magic, oneof,
+					 flags) > 0)
 			return 2;
 		if (sa_get_record_timestamp_struct(flags, &record_hdr[curr], rectime))
 			return 2;
@@ -471,7 +487,7 @@ void seek_file_position(int ifd, int action)
  ***************************************************************************
  */
 int count_file_items(int ifd, char *file, struct file_magic *file_magic,
-		      struct file_activity *file_actlst, struct tm *rectime)
+		      struct file_activity *file_actlst, struct tstamp_ext *rectime)
 {
 	int i, eosaf, rtype;
 
@@ -494,8 +510,8 @@ int count_file_items(int ifd, char *file, struct file_magic *file_magic,
 			/* No record to display */
 			return 0;
 	}
-	while ((tm_start.use && (datecmp(rectime, &tm_start, FALSE) < 0)) ||
-	       (tm_end.use && (datecmp(rectime, &tm_end, FALSE) >= 0)));
+	while ((datecmp(rectime, &tm_start, FALSE) < 0) ||
+	       (datecmp(rectime, &tm_end, FALSE) > 0));
 
 	/*
 	 * Read all the file and determine the maximum number
@@ -517,14 +533,13 @@ int count_file_items(int ifd, char *file, struct file_magic *file_magic,
 			eosaf = read_next_sample(ifd, IGNORE_RESTART | IGNORE_COMMENT | SET_TIMESTAMPS,
 						 0, file, &rtype, 0, file_magic, file_actlst,
 						 rectime, UEOF_CONT);
-			if (eosaf ||
-			    (tm_end.use && (datecmp(rectime, &tm_end, FALSE) >= 0)))
+			if (eosaf || (datecmp(rectime, &tm_end, FALSE) > 0))
 				/* End of data file or end time exceeded */
 				break;
 		}
 		while ((rtype == R_RESTART) || (rtype == R_COMMENT));
 	}
-	while (!eosaf && !(tm_end.use && (datecmp(rectime, &tm_end, FALSE) >= 0)));
+	while (!eosaf && !(datecmp(rectime, &tm_end, FALSE) > 0));
 
 	/* Rewind file */
 	seek_file_position(ifd, DO_RESTORE);
@@ -564,7 +579,7 @@ int count_file_items(int ifd, char *file, struct file_magic *file_magic,
  ***************************************************************************
  */
 int get_svg_graph_nr(int ifd, char *file, struct file_magic *file_magic,
-		     struct file_activity *file_actlst, struct tm *rectime,
+		     struct file_activity *file_actlst, struct tstamp_ext *rectime,
 		     int *views_per_row, int *nr_act_dispd)
 {
 	int i, n, p, tot_g_nr = 0;
@@ -630,8 +645,8 @@ int get_svg_graph_nr(int ifd, char *file, struct file_magic *file_magic,
  *
  * IN:
  * @curr		Index in array for current sample statistics.
- * @use_tm_start	Set to TRUE if option -s has been used.
- * @use_tm_end		Set to TRUE if option -e has been used.
+ * @use_tm_start	Set to non-zero if option -s has been used.
+ * @use_tm_end		Set to non-zero if option -e has been used.
  * @reset		Set to TRUE if last_uptime should be reinitialized
  *			(used in next_slice() function).
  * @parm		Pointer on parameters depending on output format
@@ -652,8 +667,8 @@ int get_svg_graph_nr(int ifd, char *file, struct file_magic *file_magic,
  * 1 if stats have been successfully displayed.
  ***************************************************************************
  */
-int generic_write_stats(int curr, int use_tm_start, int use_tm_end, int reset,
-			long *cnt, void *parm, struct tm *rectime,
+int generic_write_stats(int curr, enum time_mode use_tm_start, enum time_mode use_tm_end,
+			int reset, long *cnt, void *parm, struct tstamp_ext *rectime,
 			int reset_cd, unsigned int act_id)
 {
 	int i;
@@ -706,12 +721,12 @@ int generic_write_stats(int curr, int use_tm_start, int use_tm_end, int reset,
 	}
 
 	/* Set date and time strings for current record */
-	set_record_timestamp_string(flags, &record_hdr[curr],
-				    cur_date, cur_time, TIMESTAMP_LEN, rectime);
+	set_record_timestamp_string(flags, cur_date, cur_time, TIMESTAMP_LEN, rectime);
 
 	if (*fmt[f_position]->f_timestamp) {
-		pre = (char *) (*fmt[f_position]->f_timestamp)(parm, F_BEGIN, cur_date, cur_time, dt,
-							       &record_hdr[curr], &file_hdr, flags);
+		pre = (char *) (*fmt[f_position]->f_timestamp)(parm, F_BEGIN, cur_date, cur_time,
+							       my_tzname, dt, &record_hdr[curr],
+							       &file_hdr, flags);
 	}
 
 	/* Display statistics */
@@ -731,7 +746,7 @@ int generic_write_stats(int curr, int use_tm_start, int use_tm_end, int reset,
 				if (IS_SELECTED(act[i]->options) && (act[i]->nr[curr] > 0)) {
 
 					if (*fmt[f_position]->f_timestamp) {
-						(*fmt[f_position]->f_timestamp)(tab, F_MAIN, cur_date, cur_time,
+						(*fmt[f_position]->f_timestamp)(tab, F_MAIN, cur_date, cur_time, NULL,
 										dt, &record_hdr[curr],
 										&file_hdr, flags);
 					}
@@ -785,7 +800,7 @@ int generic_write_stats(int curr, int use_tm_start, int use_tm_end, int reset,
 	}
 
 	if (*fmt[f_position]->f_timestamp) {
-		(*fmt[f_position]->f_timestamp)(parm, F_END, cur_date, cur_time, dt,
+		(*fmt[f_position]->f_timestamp)(parm, F_END, cur_date, cur_time, NULL, dt,
 						&record_hdr[curr], &file_hdr, flags);
 	}
 
@@ -819,7 +834,7 @@ int generic_write_stats(int curr, int use_tm_start, int use_tm_end, int reset,
  */
 void rw_curr_act_stats(int ifd, int *curr, long *cnt, int *eosaf,
 		       unsigned int act_id, int *reset, struct file_activity *file_actlst,
-		       struct tm *rectime, char *file,
+		       struct tstamp_ext *rectime, char *file,
 		       struct file_magic *file_magic)
 {
 	int rtype;
@@ -904,8 +919,8 @@ void rw_curr_act_stats(int ifd, int *curr, long *cnt, int *eosaf,
  */
 void display_curr_act_graphs(int ifd, int *curr, long *cnt, int *eosaf,
 			     int p, int *reset, struct file_activity *file_actlst,
-			     struct tm *rectime, char *file, struct file_magic *file_magic,
-			     int *g_nr, int nr_act_dispd)
+			     struct tstamp_ext *rectime, char *file,
+			     struct file_magic *file_magic, int *g_nr, int nr_act_dispd)
 {
 	struct svg_parm parm;
 	int rtype;
@@ -927,6 +942,10 @@ void display_curr_act_graphs(int ifd, int *curr, long *cnt, int *eosaf,
 	parm.restart = TRUE;
 	parm.file_hdr = &file_hdr;
 	parm.nr_act_dispd = nr_act_dispd;
+	parm.hour = record_hdr[2].hour;
+	parm.minute = record_hdr[2].minute;
+	parm.second = record_hdr[2].second;
+	strcpy(parm.my_tzname, my_tzname);
 
 	*cnt  = count;
 	reset_cd = 1;
@@ -1018,7 +1037,7 @@ void display_curr_act_graphs(int ifd, int *curr, long *cnt, int *eosaf,
  ***************************************************************************
  */
 void logic1_display_loop(int ifd, char *file, struct file_activity *file_actlst,
-			 struct file_magic *file_magic, struct tm *rectime, void *dparm)
+			 struct file_magic *file_magic, struct tstamp_ext *rectime, void *dparm)
 {
 	int curr, rtype, tab = 0;
 	int eosaf, next, reset = FALSE;
@@ -1037,7 +1056,7 @@ void logic1_display_loop(int ifd, char *file, struct file_activity *file_actlst,
 
 	/* Print header (eg. XML file header) */
 	if (*fmt[f_position]->f_header) {
-		(*fmt[f_position]->f_header)(&tab, F_BEGIN, pcparchive, file_magic,
+		(*fmt[f_position]->f_header)(&tab, F_BEGIN, pcparchive, my_tzname, file_magic,
 					     &file_hdr, act, id_seq, file_actlst);
 	}
 
@@ -1046,11 +1065,11 @@ void logic1_display_loop(int ifd, char *file, struct file_activity *file_actlst,
 
 		/* RESTART and COMMENTS records will be immediately processed */
 		if (*fmt[f_position]->f_restart) {
-			(*fmt[f_position]->f_restart)(&tab, F_BEGIN, NULL, NULL, FALSE,
+			(*fmt[f_position]->f_restart)(&tab, F_BEGIN, NULL, NULL, NULL,
 						      &file_hdr, NULL);
 		}
 		if (DISPLAY_COMMENT(flags) && (*fmt[f_position]->f_comment)) {
-			(*fmt[f_position]->f_comment)(&tab, F_BEGIN, NULL, NULL, 0, NULL,
+			(*fmt[f_position]->f_comment)(&tab, F_BEGIN, NULL, NULL, NULL, NULL,
 						      &file_hdr, NULL);
 		}
 	}
@@ -1071,8 +1090,8 @@ void logic1_display_loop(int ifd, char *file, struct file_activity *file_actlst,
 						 rectime, UEOF_STOP);
 		}
 		while (!eosaf && ((rtype == R_RESTART) || (rtype == R_COMMENT) ||
-			(tm_start.use && (datecmp(rectime, &tm_start, FALSE) < 0)) ||
-			(tm_end.use && (datecmp(rectime, &tm_end, FALSE) >= 0))));
+			(datecmp(rectime, &tm_start, FALSE) < 0) ||
+			(datecmp(rectime, &tm_end, FALSE) > 0)));
 
 		curr = 1;
 		cnt = count;
@@ -1132,11 +1151,11 @@ void logic1_display_loop(int ifd, char *file, struct file_activity *file_actlst,
 		 * Display possible trailing data then terminate.
 		 */
 		if (*fmt[f_position]->f_restart) {
-			(*fmt[f_position]->f_restart)(&tab, F_END, NULL, NULL,
-						      FALSE, &file_hdr, NULL);
+			(*fmt[f_position]->f_restart)(&tab, F_END, NULL, NULL, NULL,
+						      &file_hdr, NULL);
 		}
 		if (DISPLAY_COMMENT(flags) && (*fmt[f_position]->f_comment)) {
-			(*fmt[f_position]->f_comment)(&tab, F_END, NULL, NULL, 0, NULL,
+			(*fmt[f_position]->f_comment)(&tab, F_END, NULL, NULL, NULL, NULL,
 						      &file_hdr, NULL);
 		}
 		goto terminate;
@@ -1147,8 +1166,7 @@ void logic1_display_loop(int ifd, char *file, struct file_activity *file_actlst,
 
 	/* Process now RESTART entries to display restart messages */
 	if (*fmt[f_position]->f_restart) {
-		(*fmt[f_position]->f_restart)(&tab, F_BEGIN, NULL, NULL, FALSE,
-					      &file_hdr, NULL);
+		(*fmt[f_position]->f_restart)(&tab, F_BEGIN, NULL, NULL, NULL, &file_hdr, NULL);
 	}
 
 	do {
@@ -1159,7 +1177,7 @@ void logic1_display_loop(int ifd, char *file, struct file_activity *file_actlst,
 	while (!eosaf);
 
 	if (*fmt[f_position]->f_restart) {
-		(*fmt[f_position]->f_restart)(&tab, F_END, NULL, NULL, FALSE, &file_hdr, NULL);
+		(*fmt[f_position]->f_restart)(&tab, F_END, NULL, NULL, NULL, &file_hdr, NULL);
 	}
 
 	/* Rewind file */
@@ -1168,7 +1186,7 @@ void logic1_display_loop(int ifd, char *file, struct file_activity *file_actlst,
 	/* Last, process COMMENT entries to display comments */
 	if (DISPLAY_COMMENT(flags)) {
 		if (*fmt[f_position]->f_comment) {
-			(*fmt[f_position]->f_comment)(&tab, F_BEGIN, NULL, NULL, 0, NULL,
+			(*fmt[f_position]->f_comment)(&tab, F_BEGIN, NULL, NULL, NULL, NULL,
 						      &file_hdr, NULL);
 		}
 		do {
@@ -1179,7 +1197,7 @@ void logic1_display_loop(int ifd, char *file, struct file_activity *file_actlst,
 		while (!eosaf);
 
 		if (*fmt[f_position]->f_comment) {
-			(*fmt[f_position]->f_comment)(&tab, F_END, NULL, NULL, 0, NULL,
+			(*fmt[f_position]->f_comment)(&tab, F_END, NULL, NULL, NULL, NULL,
 						      &file_hdr, NULL);
 		}
 	}
@@ -1187,7 +1205,7 @@ void logic1_display_loop(int ifd, char *file, struct file_activity *file_actlst,
 terminate:
 	/* Print header trailer */
 	if (*fmt[f_position]->f_header) {
-		(*fmt[f_position]->f_header)(&tab, F_END, pcparchive, file_magic,
+		(*fmt[f_position]->f_header)(&tab, F_END, pcparchive, my_tzname, file_magic,
 					     &file_hdr, act, id_seq, file_actlst);
 	}
 }
@@ -1220,11 +1238,11 @@ terminate:
  ***************************************************************************
  */
 void logic2_display_loop(int ifd, char *file, struct file_activity *file_actlst,
-			 struct file_magic *file_magic, struct tm *rectime, void *dparm)
+			 struct file_magic *file_magic, struct tstamp_ext *rectime, void *dparm)
 {
 	int i, p;
 	int curr = 1, rtype;
-	int eosaf = TRUE, reset = FALSE;
+	int eosaf = TRUE, reset;
 	long cnt = 1;
 
 	/* Read system statistics from file */
@@ -1241,8 +1259,8 @@ void logic2_display_loop(int ifd, char *file, struct file_activity *file_actlst,
 				return;
 		}
 		while ((rtype == R_RESTART) || (rtype == R_COMMENT) ||
-		       (tm_start.use && (datecmp(rectime, &tm_start, FALSE) < 0)) ||
-		       (tm_end.use && (datecmp(rectime, &tm_end, FALSE) >= 0)));
+		       (datecmp(rectime, &tm_start, FALSE) < 0) ||
+		       (datecmp(rectime, &tm_end, FALSE) > 0));
 
 		/* Save the first stats collected. Used for example in next_slice() function */
 		copy_structures(act, id_seq, record_hdr, 2, 0);
@@ -1317,7 +1335,7 @@ void logic2_display_loop(int ifd, char *file, struct file_activity *file_actlst,
 		 */
 		if (!eosaf && (record_hdr[curr].record_type == R_RESTART)) {
 			print_special_record(&record_hdr[curr], flags, &tm_start, &tm_end,
-					     R_RESTART, ifd, rectime, file, 0,
+					     R_RESTART, ifd, rectime, file, 0, my_tzname,
 					     file_magic, &file_hdr, act, fmt[f_position],
 					     endian_mismatch, arch_64);
 		}
@@ -1341,7 +1359,7 @@ void logic2_display_loop(int ifd, char *file, struct file_activity *file_actlst,
  ***************************************************************************
  */
 void svg_display_loop(int ifd, char *file, struct file_activity *file_actlst,
-		      struct file_magic *file_magic, struct tm *rectime, void *dparm)
+		      struct file_magic *file_magic, struct tstamp_ext *rectime, void *dparm)
 {
 	struct svg_hdr_parm parm;
 	int i, p;
@@ -1375,7 +1393,7 @@ void svg_display_loop(int ifd, char *file, struct file_activity *file_actlst,
 
 	/* Print SVG header */
 	if (*fmt[f_position]->f_header) {
-		(*fmt[f_position]->f_header)(&parm, F_BEGIN + F_MAIN, file, file_magic,
+		(*fmt[f_position]->f_header)(&parm, F_BEGIN + F_MAIN, file, NULL, file_magic,
 					     &file_hdr, act, id_seq, file_actlst);
 	}
 
@@ -1394,8 +1412,8 @@ void svg_display_loop(int ifd, char *file, struct file_activity *file_actlst,
 		}
 	}
 	while ((rtype == R_RESTART) || (rtype == R_COMMENT) ||
-	       (tm_start.use && (datecmp(rectime, &tm_start, FALSE) < 0)) ||
-	       (tm_end.use && (datecmp(rectime, &tm_end, FALSE) >= 0)));
+	       (datecmp(rectime, &tm_start, FALSE) < 0) ||
+	       (datecmp(rectime, &tm_end, FALSE) > 0));
 
 	/* Save the first stats collected. Used for example in next_slice() function */
 	copy_structures(act, id_seq, record_hdr, 2, 0);
@@ -1443,7 +1461,7 @@ void svg_display_loop(int ifd, char *file, struct file_activity *file_actlst,
 close_svg:
 	/* Print SVG trailer */
 	if (*fmt[f_position]->f_header) {
-		(*fmt[f_position]->f_header)(&parm, F_END, file, file_magic,
+		(*fmt[f_position]->f_header)(&parm, F_END, file, NULL, file_magic,
 					     &file_hdr, act, id_seq, file_actlst);
 	}
 }
@@ -1463,7 +1481,7 @@ void read_stats_from_file(char dfile[], char pcparchive[])
 {
 	struct file_magic file_magic;
 	struct file_activity *file_actlst = NULL;
-	struct tm rectime;
+	struct tstamp_ext rectime;
 	int ifd, tab = 0;
 
 	/* Prepare file for reading and read its headers */
@@ -1476,14 +1494,15 @@ void read_stats_from_file(char dfile[], char pcparchive[])
 				dfile = pcparchive;
 			}
 			/* Display only data file header then exit */
-			(*fmt[f_position]->f_header)(&tab, F_BEGIN + F_END, dfile, &file_magic,
-						     &file_hdr, act, id_seq, file_actlst);
+			(*fmt[f_position]->f_header)(&tab, F_BEGIN + F_END, dfile, my_tzname,
+						     &file_magic, &file_hdr, act, id_seq,
+						     file_actlst);
 		}
 		exit(0);
 	}
 
 	/* Perform required allocations */
-	allocate_structures(act);
+	allocate_structures(act, flags);
 
 	if (SET_LC_NUMERIC_C(fmt[f_position]->options)) {
 		/* Use a decimal point */
@@ -1525,7 +1544,7 @@ int main(int argc, char **argv)
 	init_nls();
 #endif
 
-	tm_start.use = tm_end.use = FALSE;
+	tm_start.use = tm_end.use = NO_TIME;
 
 	/* Allocate and init activity bitmaps */
 	allocate_bitmaps(act);
@@ -1572,14 +1591,14 @@ int main(int argc, char **argv)
 
 		else if (!strcmp(argv[opt], "-s")) {
 			/* Get time start */
-			if (parse_timestamp(argv, &opt, &tm_start, DEF_TMSTART)) {
+			if (parse_timestamp(argv, &opt, &tm_start, DEF_TMSTART, flags)) {
 				usage(argv[0]);
 			}
 		}
 
 		else if (!strcmp(argv[opt], "-e")) {
 			/* Get time end */
-			if (parse_timestamp(argv, &opt, &tm_end, DEF_TMEND)) {
+			if (parse_timestamp(argv, &opt, &tm_end, DEF_TMEND, flags)) {
 				usage(argv[0]);
 			}
 		}
@@ -1742,6 +1761,7 @@ int main(int argc, char **argv)
 							usage(argv[0]);
 						}
 						format = F_SVG_OUTPUT;
+						flags |= S_F_MINMAX;
 						break;
 
 					case 'h':
@@ -1800,8 +1820,13 @@ int main(int argc, char **argv)
 						break;
 
 					case 'V':
-						print_version();
-						break;
+						{
+							char *sadf_env[] = {ENV_COLORS_PALETTE,
+									    ENV_TIME_DEFTM};
+#define SADF_ENV_NR	2
+								print_version(sadf_env, SADF_ENV_NR);
+							break;
+						}
 
 					default:
 						usage(argv[0]);
@@ -1879,8 +1904,8 @@ int main(int argc, char **argv)
 	}
 #endif
 
-	if (tm_start.use && tm_end.use && (tm_end.tm_hour < tm_start.tm_hour)) {
-		tm_end.tm_hour += 24;
+	if (check_time_limits(&tm_start, &tm_end)) {
+		usage(argv[0]);
 	}
 
 	if (DISPLAY_PRETTY(flags)) {
@@ -1891,6 +1916,13 @@ int main(int argc, char **argv)
 	if ((PRINT_LOCAL_TIME(flags) + PRINT_TRUE_TIME(flags) +
 	    PRINT_SEC_EPOCH(flags)) > 1) {
 		usage(argv[0]);
+	}
+
+	/* Get timezone */
+	if (PRINT_LOCAL_TIME(flags)) {
+		tzset();
+		strncpy(my_tzname, tzname[0], TZNAME_LEN);
+		my_tzname[TZNAME_LEN - 1] = '\0';
 	}
 
 	/*

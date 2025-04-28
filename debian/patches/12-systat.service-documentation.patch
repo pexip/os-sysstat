@@ -7,7 +7,7 @@ Subject: Provide documentation key for systat.service file
  1 file changed, 1 insertion(+), 1 deletion(-)
 
 diff --git a/sysstat.service.in b/sysstat.service.in
-index bf9d9c6..361a93b 100644
+index 1f3192e..7031fe7 100644
 --- a/sysstat.service.in
 +++ b/sysstat.service.in
 @@ -7,6 +7,7 @@
@@ -18,8 +18,8 @@ index bf9d9c6..361a93b 100644
  
  [Service]
  Type=oneshot
-@@ -18,4 +19,3 @@ ExecStart=@SA_LIB_DIR@/sa1 --boot
- WantedBy=multi-user.target
+@@ -19,4 +20,3 @@ WantedBy=multi-user.target
  Also=sysstat-collect.timer
  Also=sysstat-summary.timer
+ Also=sysstat-rotate.timer
 -

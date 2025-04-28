@@ -13,7 +13,7 @@
 ### END INIT INFO
 
 PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
-DAEMON=/usr/lib/sysstat/debian-sa1
+DAEMON=/usr/libexec/sysstat/debian-sa1
 NAME=sadc
 DESC="the system activity data collector"
 

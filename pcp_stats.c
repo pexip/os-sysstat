@@ -1,6 +1,6 @@
 /*
  * pcp_stats.c: Functions used by sadf to create PCP archive files.
- * (C) 2019-2022 by Sebastien GODARD (sysstat <at> orange.fr)
+ * (C) 2019-2023 by Sebastien GODARD (sysstat <at> orange.fr)
  *
  ***************************************************************************
  * This program is free software; you can redistribute it and/or modify it *
@@ -20,7 +20,6 @@
  */
 
 #include "sa.h"
-#include "pcp_stats.h"
 
 #ifdef USE_NLS
 #include <locale.h>
@@ -31,6 +30,7 @@
 #endif
 
 extern uint64_t flags;
+extern char bat_status[][16];
 
 #ifdef HAVE_PCP
 #include <pcp/pmapi.h>
@@ -326,6 +326,12 @@ __print_funct_t pcp_print_paging_stats(struct activity *a, int curr)
 
 	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) spc->pgsteal);
 	pmiPutValue("mem.vmstat.pgsteal_total", NULL, buf);
+
+	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) spc->pgpromote);
+	pmiPutValue("mem.vmstat.pgpromote_success", NULL, buf);
+
+	snprintf(buf, sizeof(buf), "%llu", (unsigned long long) spc->pgdemote);
+	pmiPutValue("mem.vmstat.pgdemote_total", NULL, buf);
 #endif	/* HAVE_PCP */
 }
 
@@ -369,6 +375,96 @@ __print_funct_t pcp_print_io_stats(struct activity *a, int curr)
 }
 
 /*
+ * **************************************************************************
+ * Display RAM memory utilization in PCP format.
+ *
+ * IN:
+ * @smc		Structure with statistics.
+ * @dispall	TRUE if all memory fields should be displayed.
+ ***************************************************************************
+ */
+void pcp_print_ram_memory_stats(struct stats_memory *smc, int dispall)
+{
+#ifdef HAVE_PCP
+	char buf[64];
+
+	snprintf(buf, sizeof(buf), "%lu", (unsigned long) (smc->tlmkb >> 10));
+	pmiPutValue("hinv.physmem", NULL, buf);
+
+	snprintf(buf, sizeof(buf), "%llu", smc->tlmkb);
+	pmiPutValue("mem.physmem", NULL, buf);
+
+	snprintf(buf, sizeof(buf), "%llu", smc->frmkb);
+	pmiPutValue("mem.util.free", NULL, buf);
+
+	snprintf(buf, sizeof(buf), "%llu", smc->availablekb);
+	pmiPutValue("mem.util.available", NULL, buf);
+
+	snprintf(buf, sizeof(buf), "%llu", smc->tlmkb - smc->frmkb);
+	pmiPutValue("mem.util.used", NULL, buf);
+
+	snprintf(buf, sizeof(buf), "%llu", smc->bufkb);
+	pmiPutValue("mem.util.bufmem", NULL, buf);
+
+	snprintf(buf, sizeof(buf), "%llu", smc->camkb);
+	pmiPutValue("mem.util.cached", NULL, buf);
+
+	snprintf(buf, sizeof(buf), "%llu", smc->comkb);
+	pmiPutValue("mem.util.committed_AS", NULL, buf);
+
+	snprintf(buf, sizeof(buf), "%llu", smc->activekb);
+	pmiPutValue("mem.util.active", NULL, buf);
+
+	snprintf(buf, sizeof(buf), "%llu", smc->inactkb);
+	pmiPutValue("mem.util.inactive", NULL, buf);
+
+	snprintf(buf, sizeof(buf), "%llu", smc->dirtykb);
+	pmiPutValue("mem.util.dirty", NULL, buf);
+
+	if (dispall) {
+		snprintf(buf, sizeof(buf), "%llu", smc->anonpgkb);
+		pmiPutValue("mem.util.anonpages", NULL, buf);
+
+		snprintf(buf, sizeof(buf), "%llu", smc->slabkb);
+		pmiPutValue("mem.util.slab", NULL, buf);
+
+		snprintf(buf, sizeof(buf), "%llu", smc->kstackkb);
+		pmiPutValue("mem.util.kernelStack", NULL, buf);
+
+		snprintf(buf, sizeof(buf), "%llu", smc->pgtblkb);
+		pmiPutValue("mem.util.pageTables", NULL, buf);
+
+		snprintf(buf, sizeof(buf), "%llu", smc->vmusedkb);
+		pmiPutValue("mem.util.vmallocUsed", NULL, buf);
+	}
+#endif	/* HAVE_PCP */
+}
+
+/*
+ * **************************************************************************
+ * Display swap memory utilization in PCP format.
+ *
+ * IN:
+ * @smc		Structure with statistics.
+ ***************************************************************************
+ */
+void pcp_print_swap_memory_stats(struct stats_memory *smc)
+{
+#ifdef HAVE_PCP
+	char buf[64];
+
+	snprintf(buf, sizeof(buf), "%llu", smc->frskb);
+	pmiPutValue("mem.util.swapFree", NULL, buf);
+
+	snprintf(buf, sizeof(buf), "%llu", smc->tlskb);
+	pmiPutValue("mem.util.swapTotal", NULL, buf);
+
+	snprintf(buf, sizeof(buf), "%llu", smc->caskb);
+	pmiPutValue("mem.util.swapCached", NULL, buf);
+#endif	/* HAVE_PCP */
+}
+
+/*
  ***************************************************************************
  * Display memory statistics in PCP format.
  *
@@ -380,74 +476,15 @@ __print_funct_t pcp_print_io_stats(struct activity *a, int curr)
 __print_funct_t pcp_print_memory_stats(struct activity *a, int curr)
 {
 #ifdef HAVE_PCP
-	char buf[64];
 	struct stats_memory
 		*smc = (struct stats_memory *) a->buf[curr];
 
 	if (DISPLAY_MEMORY(a->opt_flags)) {
-
-		snprintf(buf, sizeof(buf), "%lu", (unsigned long) (smc->tlmkb >> 10));
-		pmiPutValue("hinv.physmem", NULL, buf);
-
-		snprintf(buf, sizeof(buf), "%llu", smc->tlmkb);
-		pmiPutValue("mem.physmem", NULL, buf);
-
-		snprintf(buf, sizeof(buf), "%llu", smc->frmkb);
-		pmiPutValue("mem.util.free", NULL, buf);
-
-		snprintf(buf, sizeof(buf), "%llu", smc->availablekb);
-		pmiPutValue("mem.util.available", NULL, buf);
-
-		snprintf(buf, sizeof(buf), "%llu", smc->tlmkb - smc->frmkb);
-		pmiPutValue("mem.util.used", NULL, buf);
-
-		snprintf(buf, sizeof(buf), "%llu", smc->bufkb);
-		pmiPutValue("mem.util.bufmem", NULL, buf);
-
-		snprintf(buf, sizeof(buf), "%llu", smc->camkb);
-		pmiPutValue("mem.util.cached", NULL, buf);
-
-		snprintf(buf, sizeof(buf), "%llu", smc->comkb);
-		pmiPutValue("mem.util.committed_AS", NULL, buf);
-
-		snprintf(buf, sizeof(buf), "%llu", smc->activekb);
-		pmiPutValue("mem.util.active", NULL, buf);
-
-		snprintf(buf, sizeof(buf), "%llu", smc->inactkb);
-		pmiPutValue("mem.util.inactive", NULL, buf);
-
-		snprintf(buf, sizeof(buf), "%llu", smc->dirtykb);
-		pmiPutValue("mem.util.dirty", NULL, buf);
-
-		if (DISPLAY_MEM_ALL(a->opt_flags)) {
-
-			snprintf(buf, sizeof(buf), "%llu", smc->anonpgkb);
-			pmiPutValue("mem.util.anonpages", NULL, buf);
-
-			snprintf(buf, sizeof(buf), "%llu", smc->slabkb);
-			pmiPutValue("mem.util.slab", NULL, buf);
-
-			snprintf(buf, sizeof(buf), "%llu", smc->kstackkb);
-			pmiPutValue("mem.util.kernelStack", NULL, buf);
-
-			snprintf(buf, sizeof(buf), "%llu", smc->pgtblkb);
-			pmiPutValue("mem.util.pageTables", NULL, buf);
-
-			snprintf(buf, sizeof(buf), "%llu", smc->vmusedkb);
-			pmiPutValue("mem.util.vmallocUsed", NULL, buf);
-		}
+		pcp_print_ram_memory_stats(smc, DISPLAY_MEM_ALL(a->opt_flags));
 	}
 
 	if (DISPLAY_SWAP(a->opt_flags)) {
-
-		snprintf(buf, sizeof(buf), "%llu", smc->frskb);
-		pmiPutValue("mem.util.swapFree", NULL, buf);
-
-		snprintf(buf, sizeof(buf), "%llu", smc->tlskb);
-		pmiPutValue("mem.util.swapTotal", NULL, buf);
-
-		snprintf(buf, sizeof(buf), "%llu", smc->caskb);
-		pmiPutValue("mem.util.swapCached", NULL, buf);
+		pcp_print_swap_memory_stats(smc);
 	}
 #endif	/* HAVE_PCP */
 }
@@ -1595,6 +1632,42 @@ __print_funct_t pcp_print_pwr_in_stats(struct activity *a, int curr)
 }
 
 /*
+ * **************************************************************************
+ * Display batteries statistics in PCP format.
+ *
+ * IN:
+ * @a		Activity structure with statistics.
+ * @curr	Index in array for current sample statistics.
+ ***************************************************************************
+ */
+__print_funct_t pcp_print_pwr_bat_stats(struct activity *a, int curr)
+{
+#ifdef HAVE_PCP
+	int i;
+	struct stats_pwr_bat *spbc;
+	char buf[64], bat_name[16];
+
+	for (i = 0; i < a->nr[curr]; i++) {
+
+		spbc = (struct stats_pwr_bat *) ((char *) a->buf[curr] + i * a->msize);
+
+		snprintf(bat_name, sizeof(bat_name), "BAT%d", (int) spbc->bat_id);
+
+		snprintf(buf, sizeof(buf), "%u", (unsigned int) spbc->capacity);
+		pmiPutValue("power.bat.capacity", bat_name, buf);
+
+		/* Battery status code should not be greater than or equal to BAT_STS_NR */
+		if (spbc->status >= BAT_STS_NR) {
+			spbc->status = 0;
+		}
+
+		snprintf(buf, sizeof(buf), "%s", bat_status[(unsigned int) spbc->status]);
+		pmiPutValue("power.bat.status", bat_name, buf);
+	}
+#endif	/* HAVE_PCP */
+}
+
+/*
  ***************************************************************************
  * Display huge pages statistics in PCP format.
  *
@@ -1647,7 +1720,7 @@ __print_funct_t pcp_print_pwr_usb_stats(struct activity *a, int curr)
 		suc = (struct stats_pwr_usb *) ((char *) a->buf[curr] + i * a->msize);
 		sprintf(instance, "usb%d", i);
 
-		snprintf(buf, sizeof(buf), "%d", suc->bus_nr);
+		snprintf(buf, sizeof(buf), "%u", suc->bus_nr);
 		pmiPutValue("power.usb.bus", instance, buf);
 
 		snprintf(buf, sizeof(buf), "%x", suc->vendor_id);
@@ -1897,7 +1970,7 @@ __print_funct_t pcp_print_psiio_stats(struct activity *a, int curr)
 	snprintf(buf, sizeof(buf), "%f", (double) psic->full_aio_300 / 100);
 	pmiPutValue("kernel.all.pressure.io.full.avg", "5 minute", buf);
 
-	snprintf(buf, sizeof(buf), "%f", (double) psic->full_io_total);
+	snprintf(buf, sizeof(buf), "%llu", psic->full_io_total);
 	pmiPutValue("kernel.all.pressure.io.full.total", NULL, buf);
 #endif	/* HAVE_PCP */
 }
@@ -1939,7 +2012,7 @@ __print_funct_t pcp_print_psimem_stats(struct activity *a, int curr)
 	snprintf(buf, sizeof(buf), "%f", (double) psic->full_amem_300 / 100);
 	pmiPutValue("kernel.all.pressure.memory.full.avg", "5 minute", buf);
 
-	snprintf(buf, sizeof(buf), "%f", (double) psic->full_mem_total);
+	snprintf(buf, sizeof(buf), "%llu", psic->full_mem_total);
 	pmiPutValue("kernel.all.pressure.memory.full.total", NULL, buf);
 #endif	/* HAVE_PCP */
 }

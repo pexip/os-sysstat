@@ -1,6 +1,6 @@
 /*
  * rd_stats.h: Include file used to read system statistics
- * (C) 1999-2022 by Sebastien Godard (sysstat <at> orange.fr)
+ * (C) 1999-2023 by Sebastien Godard (sysstat <at> orange.fr)
  */
 
 #ifndef _RD_STATS_H
@@ -49,33 +49,44 @@
  */
 
 /* Files */
-#define SERIAL		PRE "/proc/tty/driver/serial"
-#define FDENTRY_STATE	PRE "/proc/sys/fs/dentry-state"
-#define FFILE_NR	PRE "/proc/sys/fs/file-nr"
-#define FINODE_STATE	PRE "/proc/sys/fs/inode-state"
-#define PTY_NR		PRE "/proc/sys/kernel/pty/nr"
-#define NET_DEV		PRE "/proc/net/dev"
-#define NET_SOCKSTAT	PRE "/proc/net/sockstat"
-#define NET_SOCKSTAT6	PRE "/proc/net/sockstat6"
-#define NET_RPC_NFS	PRE "/proc/net/rpc/nfs"
-#define NET_RPC_NFSD	PRE "/proc/net/rpc/nfsd"
-#define NET_SOFTNET	PRE "/proc/net/softnet_stat"
-#define LOADAVG		PRE "/proc/loadavg"
-#define PRESSURE	PRE "/proc/pressure"
-#define PSI_CPU		PRESSURE "/cpu"
-#define PSI_IO		PRESSURE "/io"
-#define PSI_MEM		PRESSURE "/memory"
-#define VMSTAT		PRE "/proc/vmstat"
-#define NET_SNMP	PRE "/proc/net/snmp"
-#define NET_SNMP6	PRE "/proc/net/snmp6"
-#define CPUINFO		PRE "/proc/cpuinfo"
-#define MTAB		PRE "/etc/mtab"
-#define IF_DUPLEX	PRE "/sys/class/net/%s/duplex"
-#define IF_SPEED	PRE "/sys/class/net/%s/speed"
-#define FC_RX_FRAMES	"%s/%s/statistics/rx_frames"
-#define FC_TX_FRAMES	"%s/%s/statistics/tx_frames"
-#define FC_RX_WORDS	"%s/%s/statistics/rx_words"
-#define FC_TX_WORDS	"%s/%s/statistics/tx_words"
+#define SERIAL			PRE "/proc/tty/driver/serial"
+#define FDENTRY_STATE		PRE "/proc/sys/fs/dentry-state"
+#define FFILE_NR		PRE "/proc/sys/fs/file-nr"
+#define FINODE_STATE		PRE "/proc/sys/fs/inode-state"
+#define PTY_NR			PRE "/proc/sys/kernel/pty/nr"
+#define NET_DEV			PRE "/proc/net/dev"
+#define NET_SOCKSTAT		PRE "/proc/net/sockstat"
+#define NET_SOCKSTAT6		PRE "/proc/net/sockstat6"
+#define NET_RPC_NFS		PRE "/proc/net/rpc/nfs"
+#define NET_RPC_NFSD		PRE "/proc/net/rpc/nfsd"
+#define NET_SOFTNET		PRE "/proc/net/softnet_stat"
+#define LOADAVG			PRE "/proc/loadavg"
+#define PRESSURE		PRE "/proc/pressure"
+#define PSI_CPU			PRESSURE "/cpu"
+#define PSI_IO			PRESSURE "/io"
+#define PSI_MEM			PRESSURE "/memory"
+#define VMSTAT			PRE "/proc/vmstat"
+#define NET_SNMP		PRE "/proc/net/snmp"
+#define NET_SNMP6		PRE "/proc/net/snmp6"
+#define CPUINFO			PRE "/proc/cpuinfo"
+#define MTAB			PRE "/etc/mtab"
+#define IF_DUPLEX		PRE "/sys/class/net/%s/duplex"
+#define IF_SPEED		PRE "/sys/class/net/%s/speed"
+#define FC_RX_FRAMES		"%s/%s/statistics/rx_frames"
+#define FC_TX_FRAMES		"%s/%s/statistics/tx_frames"
+#define FC_RX_WORDS		"%s/%s/statistics/rx_words"
+#define FC_TX_WORDS		"%s/%s/statistics/tx_words"
+#define SYSFS_USBDEV		PRE "/sys/bus/usb/devices"
+#define SYSFS_TIME_IN_STATE	"cpufreq/stats/time_in_state"
+#define SYSFS_IDVENDOR		"idVendor"
+#define SYSFS_IDPRODUCT		"idProduct"
+#define SYSFS_BMAXPOWER		"bMaxPower"
+#define SYSFS_MANUFACTURER	"manufacturer"
+#define SYSFS_PRODUCT		"product"
+#define SYSFS_FCHOST		PRE "/sys/class/fc_host"
+#define SYSFS_PWR_SUPPLY	PRE "/sys/class/power_supply"
+#define BAT_CAPACITY		"%s/%s/capacity"
+#define BAT_STATUS		"%s/%s/status"
 
 /*
  ***************************************************************************
@@ -117,6 +128,7 @@ struct stats_cpu {
 #define STATS_CPU_ULL	10
 #define STATS_CPU_UL	0
 #define STATS_CPU_U	0
+#define STATS_CPU_XNR	10
 
 /*
  * Structure for task creation and context switch statistics.
@@ -132,6 +144,7 @@ struct stats_pcsw {
 #define STATS_PCSW_ULL	1
 #define STATS_PCSW_UL	1
 #define STATS_PCSW_U	0
+#define STATS_PCSW_XNR	2
 
 /*
  * Structure for interrupts statistics.
@@ -150,6 +163,7 @@ struct stats_irq {
 #define STATS_IRQ_ULL	0
 #define STATS_IRQ_UL	0
 #define STATS_IRQ_U	1
+#define STATS_IRQ_XNR	1
 
 /* Structure for swapping statistics */
 struct stats_swap {
@@ -161,6 +175,7 @@ struct stats_swap {
 #define STATS_SWAP_ULL	0
 #define STATS_SWAP_UL	2
 #define STATS_SWAP_U	0
+#define STATS_SWAP_XNR	2
 
 /* Structure for paging statistics */
 struct stats_paging {
@@ -172,12 +187,15 @@ struct stats_paging {
 	unsigned long pgscan_kswapd	__attribute__ ((aligned (8)));
 	unsigned long pgscan_direct	__attribute__ ((aligned (8)));
 	unsigned long pgsteal		__attribute__ ((aligned (8)));
+	unsigned long pgpromote		__attribute__ ((aligned (8)));
+	unsigned long pgdemote 		__attribute__ ((aligned (8)));
 };
 
 #define STATS_PAGING_SIZE	(sizeof(struct stats_paging))
 #define STATS_PAGING_ULL	0
-#define STATS_PAGING_UL		8
+#define STATS_PAGING_UL		10
 #define STATS_PAGING_U		0
+#define STATS_PAGING_XNR	10
 
 /* Structure for I/O and transfer rate statistics */
 struct stats_io {
@@ -194,6 +212,7 @@ struct stats_io {
 #define STATS_IO_ULL	7
 #define STATS_IO_UL	0
 #define STATS_IO_U	0
+#define STATS_IO_XNR	7
 
 /*
  * Structure for memory and swap space utilization statistics.
@@ -224,6 +243,7 @@ struct stats_memory {
 #define STATS_MEMORY_ULL	17
 #define STATS_MEMORY_UL		0
 #define STATS_MEMORY_U		0
+#define STATS_MEMORY_XNR	21
 
 /* Structure for kernel tables statistics */
 struct stats_ktables {
@@ -237,6 +257,7 @@ struct stats_ktables {
 #define STATS_KTABLES_ULL	4
 #define STATS_KTABLES_UL	0
 #define STATS_KTABLES_U		0
+#define STATS_KTABLES_XNR	4
 
 /* Structure for queue and load statistics */
 struct stats_queue {
@@ -252,6 +273,7 @@ struct stats_queue {
 #define STATS_QUEUE_ULL		3
 #define STATS_QUEUE_UL		0
 #define STATS_QUEUE_U		3
+#define STATS_QUEUE_XNR		6
 
 /* Structure for serial statistics */
 struct stats_serial {
@@ -268,6 +290,7 @@ struct stats_serial {
 #define STATS_SERIAL_ULL	0
 #define STATS_SERIAL_UL		0
 #define STATS_SERIAL_U		7
+#define STATS_SERIAL_XNR	6
 
 /*
  * Structure for block devices statistics.
@@ -294,6 +317,7 @@ struct stats_disk {
 #define STATS_DISK_ULL	3
 #define STATS_DISK_UL	3
 #define STATS_DISK_U	8
+#define STATS_DISK_XNR	8
 
 /* Structure for network interfaces statistics */
 struct stats_net_dev {
@@ -314,6 +338,7 @@ struct stats_net_dev {
 #define STATS_NET_DEV_ULL	7
 #define STATS_NET_DEV_UL	0
 #define STATS_NET_DEV_U		1
+#define STATS_NET_DEV_XNR	8
 
 /* Structure for network interface errors statistics */
 struct stats_net_edev {
@@ -334,6 +359,7 @@ struct stats_net_edev {
 #define STATS_NET_EDEV_ULL	9
 #define STATS_NET_EDEV_UL	0
 #define STATS_NET_EDEV_U	0
+#define STATS_NET_EDEV_XNR	9
 
 /* Structure for NFS client statistics */
 struct stats_net_nfs {
@@ -349,6 +375,7 @@ struct stats_net_nfs {
 #define STATS_NET_NFS_ULL	0
 #define STATS_NET_NFS_UL	0
 #define STATS_NET_NFS_U		6
+#define STATS_NET_NFS_XNR	6
 
 /* Structure for NFS server statistics */
 struct stats_net_nfsd {
@@ -369,6 +396,7 @@ struct stats_net_nfsd {
 #define STATS_NET_NFSD_ULL	0
 #define STATS_NET_NFSD_UL	0
 #define STATS_NET_NFSD_U	11
+#define STATS_NET_NFSD_XNR	11
 
 /* Structure for IPv4 sockets statistics */
 struct stats_net_sock {
@@ -384,6 +412,7 @@ struct stats_net_sock {
 #define STATS_NET_SOCK_ULL	0
 #define STATS_NET_SOCK_UL	0
 #define STATS_NET_SOCK_U	6
+#define STATS_NET_SOCK_XNR	6
 
 /* Structure for IP statistics */
 struct stats_net_ip {
@@ -401,6 +430,7 @@ struct stats_net_ip {
 #define STATS_NET_IP_ULL	8
 #define STATS_NET_IP_UL		0
 #define STATS_NET_IP_U		0
+#define STATS_NET_IP_XNR	8
 
 /* Structure for IP errors statistics */
 struct stats_net_eip {
@@ -418,6 +448,7 @@ struct stats_net_eip {
 #define STATS_NET_EIP_ULL	8
 #define STATS_NET_EIP_UL	0
 #define STATS_NET_EIP_U		0
+#define STATS_NET_EIP_XNR	8
 
 /* Structure for ICMP statistics */
 struct stats_net_icmp {
@@ -441,6 +472,7 @@ struct stats_net_icmp {
 #define STATS_NET_ICMP_ULL	0
 #define STATS_NET_ICMP_UL	14
 #define STATS_NET_ICMP_U	0
+#define STATS_NET_ICMP_XNR	14
 
 /* Structure for ICMP error message statistics */
 struct stats_net_eicmp {
@@ -462,6 +494,7 @@ struct stats_net_eicmp {
 #define STATS_NET_EICMP_ULL	0
 #define STATS_NET_EICMP_UL	12
 #define STATS_NET_EICMP_U	0
+#define STATS_NET_EICMP_XNR	12
 
 /* Structure for TCP statistics */
 struct stats_net_tcp {
@@ -475,6 +508,7 @@ struct stats_net_tcp {
 #define STATS_NET_TCP_ULL	0
 #define STATS_NET_TCP_UL	4
 #define STATS_NET_TCP_U		0
+#define STATS_NET_TCP_XNR	4
 
 /* Structure for TCP errors statistics */
 struct stats_net_etcp {
@@ -489,6 +523,7 @@ struct stats_net_etcp {
 #define STATS_NET_ETCP_ULL	0
 #define STATS_NET_ETCP_UL	5
 #define STATS_NET_ETCP_U	0
+#define STATS_NET_ETCP_XNR	5
 
 /* Structure for UDP statistics */
 struct stats_net_udp {
@@ -502,6 +537,7 @@ struct stats_net_udp {
 #define STATS_NET_UDP_ULL	0
 #define STATS_NET_UDP_UL	4
 #define STATS_NET_UDP_U		0
+#define STATS_NET_UDP_XNR	4
 
 /* Structure for IPv6 sockets statistics */
 struct stats_net_sock6 {
@@ -515,6 +551,7 @@ struct stats_net_sock6 {
 #define STATS_NET_SOCK6_ULL	0
 #define STATS_NET_SOCK6_UL	0
 #define STATS_NET_SOCK6_U	4
+#define STATS_NET_SOCK6_XNR	4
 
 /* Structure for IPv6 statistics */
 struct stats_net_ip6 {
@@ -534,6 +571,7 @@ struct stats_net_ip6 {
 #define STATS_NET_IP6_ULL	10
 #define STATS_NET_IP6_UL	0
 #define STATS_NET_IP6_U		0
+#define STATS_NET_IP6_XNR	10
 
 /* Structure for IPv6 errors statistics */
 struct stats_net_eip6 {
@@ -554,6 +592,7 @@ struct stats_net_eip6 {
 #define STATS_NET_EIP6_ULL	11
 #define STATS_NET_EIP6_UL	0
 #define STATS_NET_EIP6_U	0
+#define STATS_NET_EIP6_XNR	11
 
 /* Structure for ICMPv6 statistics */
 struct stats_net_icmp6 {
@@ -580,6 +619,7 @@ struct stats_net_icmp6 {
 #define STATS_NET_ICMP6_ULL	0
 #define STATS_NET_ICMP6_UL	17
 #define STATS_NET_ICMP6_U	0
+#define STATS_NET_ICMP6_XNR	17
 
 /* Structure for ICMPv6 error message statistics */
 struct stats_net_eicmp6 {
@@ -600,6 +640,7 @@ struct stats_net_eicmp6 {
 #define STATS_NET_EICMP6_ULL	0
 #define STATS_NET_EICMP6_UL	11
 #define STATS_NET_EICMP6_U	0
+#define STATS_NET_EICMP6_XNR	11
 
 /* Structure for UDPv6 statistics */
 struct stats_net_udp6 {
@@ -613,6 +654,7 @@ struct stats_net_udp6 {
 #define STATS_NET_UDP6_ULL	0
 #define STATS_NET_UDP6_UL	4
 #define STATS_NET_UDP6_U	0
+#define STATS_NET_UDP6_XNR	4
 
 /*
  * Structure for CPU frequency statistics.
@@ -627,6 +669,7 @@ struct stats_pwr_cpufreq {
 #define STATS_PWR_CPUFREQ_ULL	0
 #define STATS_PWR_CPUFREQ_UL	1
 #define STATS_PWR_CPUFREQ_U	0
+#define STATS_PWR_CPUFREQ_XNR	1
 
 /* Structure for hugepages statistics */
 struct stats_huge {
@@ -640,6 +683,7 @@ struct stats_huge {
 #define STATS_HUGE_ULL	4
 #define STATS_HUGE_UL	0
 #define STATS_HUGE_U	0
+#define STATS_HUGE_XNR	5
 
 /*
  * Structure for weighted CPU frequency statistics.
@@ -655,6 +699,7 @@ struct stats_pwr_wghfreq {
 #define STATS_PWR_WGHFREQ_ULL	1
 #define STATS_PWR_WGHFREQ_UL	1
 #define STATS_PWR_WGHFREQ_U	0
+#define STATS_PWR_WGHFREQ_XNR	1
 
 /*
  * Structure for USB devices plugged into the system.
@@ -672,6 +717,7 @@ struct stats_pwr_usb {
 #define STATS_PWR_USB_ULL	0
 #define STATS_PWR_USB_UL	0
 #define STATS_PWR_USB_U		4
+#define STATS_PWR_USB_XNR	0
 
 /* Structure for filesystems statistics */
 struct stats_filesystem {
@@ -689,6 +735,7 @@ struct stats_filesystem {
 #define STATS_FILESYSTEM_ULL		5
 #define STATS_FILESYSTEM_UL		0
 #define STATS_FILESYSTEM_U		0
+#define STATS_FILESYSTEM_XNR		7
 
 /* Structure for Fibre Channel HBA statistics */
 struct stats_fchost {
@@ -703,6 +750,7 @@ struct stats_fchost {
 #define STATS_FCHOST_ULL	0
 #define STATS_FCHOST_UL		4
 #define STATS_FCHOST_U		0
+#define STATS_FCHOST_XNR	4
 
 /* Structure for softnet statistics */
 struct stats_softnet {
@@ -718,6 +766,7 @@ struct stats_softnet {
 #define STATS_SOFTNET_ULL	0
 #define STATS_SOFTNET_UL	0
 #define STATS_SOFTNET_U		6
+#define STATS_SOFTNET_XNR	6
 
 /* Structure for pressure-stall CPU statistics */
 struct stats_psi_cpu {
@@ -731,6 +780,7 @@ struct stats_psi_cpu {
 #define STATS_PSI_CPU_ULL	1
 #define STATS_PSI_CPU_UL	3
 #define STATS_PSI_CPU_U		0
+#define STATS_PSI_CPU_XNR	4
 
 /* Structure for pressure-stall I/O statistics */
 struct stats_psi_io {
@@ -748,6 +798,7 @@ struct stats_psi_io {
 #define STATS_PSI_IO_ULL	2
 #define STATS_PSI_IO_UL		6
 #define STATS_PSI_IO_U		0
+#define STATS_PSI_IO_XNR	8
 
 /* Structure for pressure-stall memory statistics */
 struct stats_psi_mem {
@@ -765,6 +816,20 @@ struct stats_psi_mem {
 #define STATS_PSI_MEM_ULL	2
 #define STATS_PSI_MEM_UL	6
 #define STATS_PSI_MEM_U		0
+#define STATS_PSI_MEM_XNR	8
+
+/* Structure for batteries statistics */
+struct stats_pwr_bat {
+	char	bat_id;
+	char	capacity;
+	char	status;
+};
+
+#define STATS_PWR_BAT_SIZE	(sizeof(struct stats_pwr_bat))
+#define STATS_PWR_BAT_ULL	0
+#define STATS_PWR_BAT_UL	0
+#define STATS_PWR_BAT_U		0
+#define STATS_PWR_BAT_XNR	2
 
 /*
  ***************************************************************************
@@ -855,13 +920,15 @@ __nr_t read_filesystem
 __nr_t read_fchost
 	(struct stats_fchost *, __nr_t);
 int read_softnet
-	(struct stats_softnet *, __nr_t, unsigned char []);
+	(struct stats_softnet *, __nr_t, const unsigned char []);
 __nr_t read_psicpu
 	(struct stats_psi_cpu *);
 __nr_t read_psiio
 	(struct stats_psi_io *);
 __nr_t read_psimem
 	(struct stats_psi_mem *);
+__nr_t read_bat
+	(struct stats_pwr_bat *, __nr_t);
 
 #endif /* SOURCE_SADC */
 

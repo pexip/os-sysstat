@@ -1,12 +1,9 @@
 #!/bin/sh
-# $Id: fix.sh 1459 2009-08-18 04:28:45Z robert $
 
 set -e 
 
 if [ "X$1" = "Xsysstat" ] ; then
-	FFILES="usr/lib/sysstat/sa[12]
-		usr/share/man/man*/*
-		usr/share/doc/sysstat/FAQ
+	FFILES="usr/share/doc/sysstat/*.md
 		usr/share/doc/sysstat/examples/*"
 elif [ "X$1" = "Xisag" ] ; then
 	FFILES="usr/share/man/man*/*" 
@@ -34,9 +31,9 @@ for file in `echo $FFILES`; do
  if [ -n "$man_re" ] || grep -q 'l[oi][gb]/sa' "$file" >/dev/null 2>&1 ; then
 	echo  " + processing file: $dir/$file"
 	mv "$file" _tmp_
-	sed -e 's|usr/lib/sa|usr/lib/sysstat|g' \
-	    -e 's|var/log/sa|var/log/sysstat|g' \
+	sed -e 's|usr/lib/sa|usr/libexec/sysstat|g' \
 	    -e 's|usr/local/lib/sa|usr/local/lib/sysstat|g' \
+	    -e 's|var/log/sa|var/log/sysstat|g' \
 	    -e 's|^\.IX|.\\"&|' \
 	    -e "$man_re" \
 		< _tmp_ > "$file"

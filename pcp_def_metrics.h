@@ -1,6 +1,6 @@
 /*
  * pcp_def_metrics.h: Include file used to define PCP metrics.
- * (C) 2019-2022 by Sebastien Godard (sysstat <at> orange.fr)
+ * (C) 2019-2023 by Sebastien Godard (sysstat <at> orange.fr)
  */
 
 #ifndef _PCP_DEF_METRICS_H
@@ -44,6 +44,7 @@ void pcp_def_huge_metrics(void);
 void pcp_def_pwr_fan_metrics(struct activity *);
 void pcp_def_pwr_temp_metrics(struct activity *);
 void pcp_def_pwr_in_metrics(struct activity *);
+void pcp_def_pwr_bat_metrics(struct activity *);
 void pcp_def_pwr_usb_metrics(struct activity *);
 void pcp_def_filesystem_metrics(struct activity *);
 void pcp_def_fchost_metrics(struct activity *);

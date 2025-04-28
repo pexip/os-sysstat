@@ -7,18 +7,17 @@ Build-Depends: debhelper-compat (= 13),
                gettext,
                libsensors-dev,
                pkg-config,
-               systemd
-Standards-Version: 4.6.1
+               systemd-dev
+Standards-Version: 4.6.2
 Rules-Requires-Root: no
-Homepage: http://sebastien.godard.pagesperso-orange.fr/
+Homepage: https://sysstat.github.io/
 Vcs-Git: https://salsa.debian.org/debian/sysstat.git
 Vcs-Browser: https://salsa.debian.org/debian/sysstat
 XS-Pexip-Upstream: http://deb.debian.org/debian/ trixie
 
 Package: sysstat
 Architecture: linux-any
-Depends: lsb-base (>= 3.0-6),
-         ucf (>= 2.003),
+Depends: ucf (>= 2.003),
          xz-utils,
          ${misc:Depends},
          ${shlibs:Depends}

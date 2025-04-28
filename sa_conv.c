@@ -1,6 +1,6 @@
 /*
  * sa_conv.c: Convert an old format sa file to the up-to-date format.
- * (C) 1999-2022 by Sebastien GODARD (sysstat <at> orange.fr)
+ * (C) 1999-2023 by Sebastien GODARD (sysstat <at> orange.fr)
  *
  ***************************************************************************
  * This program is free software; you can redistribute it and/or modify it *
@@ -405,7 +405,8 @@ int upgrade_header_section(char dfile[], int fd, int stdfd, struct activity *act
 
 invalid_header:
 
-	fprintf(stderr, _("\nInvalid data found. Aborting...\n"));
+	fprintf(stderr, _("\n%s: Invalid data found. Aborting...\n"),
+		__FUNCTION__);
 
 	return -1;
 
@@ -436,16 +437,15 @@ invalid_header:
 unsigned long long moveto_long_long(void *buffer, int endian_mismatch, int arch_64)
 {
 	unsigned int *u_int;
-	unsigned long long *ull_int, ull_i;
 
 	if (arch_64) {
-		ull_int = (unsigned long long *) buffer;
+		unsigned long long *ull_int = (unsigned long long *) buffer;
 		return *ull_int;
 	}
 
 	u_int = (unsigned int *) buffer;
 	if (endian_mismatch) {
-		ull_i = (unsigned long long) *u_int;
+		unsigned long long ull_i = (unsigned long long) *u_int;
 		return (ull_i >> 32) | (ull_i << 32);
 	}
 	else {
@@ -1600,12 +1600,14 @@ int upgrade_restart_record(int fd, int stdfd, struct activity *act[],
 			   int endian_mismatch, int arch_64, unsigned int vol_act_nr)
 {
 
-	int i, p;
+	int p;
 	struct old_file_activity ofile_act;
 	/* Number of cpu read in the activity list. See upgrade_header_section() */
 	__nr_t cpu_nr = file_hdr->sa_cpu_nr;
 
 	if (previous_format == FORMAT_MAGIC_2173) {
+		int i;
+
 		/*
 		 * For versions from 10.3.1 to 11.6.x,
 		 * the restart record is followed by a list
@@ -1621,15 +1623,23 @@ int upgrade_restart_record(int fd, int stdfd, struct activity *act[],
 
 			if (ofile_act.id && (ofile_act.nr > 0)) {
 				p = get_activity_position(act, ofile_act.id, EXIT_IF_NOT_FOUND);
+				/* Check upper bounds */
+				if (ofile_act.nr > act[p]->nr_max) {
+					fprintf(stderr, _("\n%s: Invalid data found. Aborting...\n"),
+						__FUNCTION__);
+					return -1;
+				}
 				act[p]->nr_ini = ofile_act.nr;
 
+				/* Reallocate structures if needed */
+				if (act[p]->nr_ini > act[p]->nr_allocated) {
+					allocate_buffers(act[p], (size_t) act[p]->nr_ini, 0);
+				}
 				if (ofile_act.id == A_CPU) {
 					cpu_nr = ofile_act.nr;
 				}
 			}
 		}
-		/* Reallocate structures */
-		allocate_structures(act);
 	}
 
 	/* Restore endianness before writing */
@@ -2058,7 +2068,7 @@ void convert_file(char dfile[], struct activity *act[])
 	}
 
 	/* Perform required allocations */
-	allocate_structures(act);
+	allocate_structures(act, 0);
 
 	/* Upgrade statistics records */
 	if (upgrade_stat_records(fd, stdfd, act, &file_hdr, ofile_actlst, file_actlst,

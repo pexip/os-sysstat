@@ -1,6 +1,6 @@
 /*
  * xml_stats.c: Functions used by sadf to display statistics in XML.
- * (C) 1999-2022 by Sebastien GODARD (sysstat <at> orange.fr)
+ * (C) 1999-2023 by Sebastien GODARD (sysstat <at> orange.fr)
  *
  ***************************************************************************
  * This program is free software; you can redistribute it and/or modify it *
@@ -25,7 +25,6 @@
 
 #include "sa.h"
 #include "ioconf.h"
-#include "xml_stats.h"
 
 #ifdef USE_NLS
 #include <locale.h>
@@ -36,6 +35,7 @@
 #endif
 
 extern uint64_t flags;
+extern char bat_status[][16];
 
 /*
  ***************************************************************************
@@ -46,7 +46,7 @@ extern uint64_t flags;
  * @action	Open or close action.
  ***************************************************************************
  */
-void xml_markup_network(int tab, int action)
+void xml_markup_network(int tab, enum xml_action action)
 {
 	static int markup_state = CLOSE_XML_MARKUP;
 
@@ -73,7 +73,7 @@ void xml_markup_network(int tab, int action)
  * @action	Open or close action.
  ***************************************************************************
  */
-void xml_markup_power_management(int tab, int action)
+void xml_markup_power_management(int tab, enum xml_action action)
 {
 	static int markup_state = CLOSE_XML_MARKUP;
 
@@ -100,7 +100,7 @@ void xml_markup_power_management(int tab, int action)
  * @action	Open or close action.
  ***************************************************************************
  */
-void xml_markup_psi(int tab, int action)
+void xml_markup_psi(int tab, enum xml_action action)
 {
 	static int markup_state = CLOSE_XML_MARKUP;
 
@@ -429,7 +429,8 @@ __print_funct_t xml_print_paging_stats(struct activity *a, int curr, int tab,
 		"pgscank=\"%.2f\" "
 		"pgscand=\"%.2f\" "
 		"pgsteal=\"%.2f\" "
-		"vmeff-percent=\"%.2f\"/>",
+		"pgprom=\"%.2f\" "
+		"pgdem=\"%.2f\"/>",
 		S_VALUE(spp->pgpgin,        spc->pgpgin,        itv),
 		S_VALUE(spp->pgpgout,       spc->pgpgout,       itv),
 		S_VALUE(spp->pgfault,       spc->pgfault,       itv),
@@ -438,11 +439,8 @@ __print_funct_t xml_print_paging_stats(struct activity *a, int curr, int tab,
 		S_VALUE(spp->pgscan_kswapd, spc->pgscan_kswapd, itv),
 		S_VALUE(spp->pgscan_direct, spc->pgscan_direct, itv),
 		S_VALUE(spp->pgsteal,       spc->pgsteal,       itv),
-		(spc->pgscan_kswapd + spc->pgscan_direct -
-		 spp->pgscan_kswapd - spp->pgscan_direct) ?
-		SP_VALUE(spp->pgsteal, spc->pgsteal,
-			 spc->pgscan_kswapd + spc->pgscan_direct -
-			 spp->pgscan_kswapd - spp->pgscan_direct) : 0.0);
+		S_VALUE(spp->pgpromote,     spc->pgpromote,     itv),
+		S_VALUE(spp->pgdemote,      spc->pgdemote,      itv));
 }
 
 /*
@@ -497,6 +495,90 @@ __print_funct_t xml_print_io_stats(struct activity *a, int curr, int tab,
 }
 
 /*
+ * **************************************************************************
+ * Display RAM memory utilization in XML.
+ *
+ * IN:
+ * @smc		Structure with statistics.
+ * @dispall	TRUE if all memory fields should be displayed.
+ * @tab		Indentation in XML output.
+ ***************************************************************************
+ */
+void xml_print_ram_memory_stats(struct stats_memory *smc, int dispall, int *tab)
+{
+	unsigned long long nousedmem;
+
+	nousedmem = smc->frmkb + smc->bufkb + smc->camkb + smc->slabkb;
+	if (nousedmem > smc->tlmkb) {
+		nousedmem = smc->tlmkb;
+	}
+
+	xprintf(++(*tab), "<memfree>%llu</memfree>", smc->frmkb);
+
+	xprintf(*tab, "<avail>%llu</avail>", smc->availablekb);
+
+	xprintf(*tab, "<memused>%llu</memused>", smc->tlmkb - nousedmem);
+
+	xprintf(*tab, "<memused-percent>%.2f</memused-percent>",
+		smc->tlmkb ? SP_VALUE(nousedmem, smc->tlmkb, smc->tlmkb)
+			   : 0.0);
+
+	xprintf(*tab, "<buffers>%llu</buffers>", smc->bufkb);
+
+	xprintf(*tab, "<cached>%llu</cached>", smc->camkb);
+
+	xprintf(*tab, "<commit>%llu</commit>", smc->comkb);
+
+	xprintf(*tab, "<commit-percent>%.2f</commit-percent>",
+		(smc->tlmkb + smc->tlskb) ? SP_VALUE(0, smc->comkb, smc->tlmkb + smc->tlskb)
+					  : 0.0);
+
+	xprintf(*tab, "<active>%llu</active>", smc->activekb);
+
+	xprintf(*tab, "<inactive>%llu</inactive>", smc->inactkb);
+
+	xprintf((*tab)--, "<dirty>%llu</dirty>", smc->dirtykb);
+
+	if (dispall) {
+		xprintf(++(*tab), "<anonpg>%llu</anonpg>", smc->anonpgkb);
+
+		xprintf(*tab, "<slab>%llu</slab>", smc->slabkb);
+
+		xprintf(*tab, "<kstack>%llu</kstack>", smc->kstackkb);
+
+		xprintf(*tab, "<pgtbl>%llu</pgtbl>", smc->pgtblkb);
+
+		xprintf((*tab)--, "<vmused>%llu</vmused>", smc->vmusedkb);
+	}
+}
+
+/*
+ * **************************************************************************
+ * Display swap memory utilization in XML.
+ *
+ * IN:
+ * @smc		Structure with statistics.
+ * @tab		Indentation in XML output.
+ ***************************************************************************
+ */
+void xml_print_swap_memory_stats(struct stats_memory *smc, int *tab)
+{
+	xprintf(++(*tab), "<swpfree>%llu</swpfree>", smc->frskb);
+
+	xprintf(*tab, "<swpused>%llu</swpused>", smc->tlskb - smc->frskb);
+
+	xprintf(*tab, "<swpused-percent>%.2f</swpused-percent>",
+		smc->tlskb ? SP_VALUE(smc->frskb, smc->tlskb, smc->tlskb)
+			   : 0.0);
+
+	xprintf(*tab, "<swpcad>%llu</swpcad>", smc->caskb);
+
+	xprintf((*tab)--, "<swpcad-percent>%.2f</swpcad-percent>",
+		(smc->tlskb - smc->frskb) ? SP_VALUE(0, smc->caskb, smc->tlskb - smc->frskb)
+					  : 0.0);
+}
+
+/*
  ***************************************************************************
  * Display memory statistics in XML.
  *
@@ -512,92 +594,15 @@ __print_funct_t xml_print_memory_stats(struct activity *a, int curr, int tab,
 {
 	struct stats_memory
 		*smc = (struct stats_memory *) a->buf[curr];
-	unsigned long long nousedmem;
 
 	xprintf(tab, "<memory unit=\"kB\">");
 
 	if (DISPLAY_MEMORY(a->opt_flags)) {
-
-		nousedmem = smc->frmkb + smc->bufkb + smc->camkb + smc->slabkb;
-		if (nousedmem > smc->tlmkb) {
-			nousedmem = smc->tlmkb;
-		}
-
-		xprintf(++tab, "<memfree>%llu</memfree>",
-			smc->frmkb);
-
-		xprintf(tab, "<avail>%llu</avail>",
-			smc->availablekb);
-
-		xprintf(tab, "<memused>%llu</memused>",
-			smc->tlmkb - nousedmem);
-
-		xprintf(tab, "<memused-percent>%.2f</memused-percent>",
-			smc->tlmkb ?
-			SP_VALUE(nousedmem, smc->tlmkb, smc->tlmkb) :
-			0.0);
-
-		xprintf(tab, "<buffers>%llu</buffers>",
-			smc->bufkb);
-
-		xprintf(tab, "<cached>%llu</cached>",
-			smc->camkb);
-
-		xprintf(tab, "<commit>%llu</commit>",
-			smc->comkb);
-
-		xprintf(tab, "<commit-percent>%.2f</commit-percent>",
-			(smc->tlmkb + smc->tlskb) ?
-			SP_VALUE(0, smc->comkb, smc->tlmkb + smc->tlskb) :
-			0.0);
-
-		xprintf(tab, "<active>%llu</active>",
-			smc->activekb);
-
-		xprintf(tab, "<inactive>%llu</inactive>",
-			smc->inactkb);
-
-		xprintf(tab--, "<dirty>%llu</dirty>",
-			smc->dirtykb);
-
-		if (DISPLAY_MEM_ALL(a->opt_flags)) {
-			xprintf(++tab, "<anonpg>%llu</anonpg>",
-				smc->anonpgkb);
-
-			xprintf(tab, "<slab>%llu</slab>",
-				smc->slabkb);
-
-			xprintf(tab, "<kstack>%llu</kstack>",
-				smc->kstackkb);
-
-			xprintf(tab, "<pgtbl>%llu</pgtbl>",
-				smc->pgtblkb);
-
-			xprintf(tab--, "<vmused>%llu</vmused>",
-				smc->vmusedkb);
-		}
+		xml_print_ram_memory_stats(smc, DISPLAY_MEM_ALL(a->opt_flags), &tab);
 	}
 
 	if (DISPLAY_SWAP(a->opt_flags)) {
-
-		xprintf(++tab, "<swpfree>%llu</swpfree>",
-			smc->frskb);
-
-		xprintf(tab, "<swpused>%llu</swpused>",
-			smc->tlskb - smc->frskb);
-
-		xprintf(tab, "<swpused-percent>%.2f</swpused-percent>",
-			smc->tlskb ?
-			SP_VALUE(smc->frskb, smc->tlskb, smc->tlskb) :
-			0.0);
-
-		xprintf(tab, "<swpcad>%llu</swpcad>",
-			smc->caskb);
-
-		xprintf(tab--, "<swpcad-percent>%.2f</swpcad-percent>",
-			(smc->tlskb - smc->frskb) ?
-			SP_VALUE(0, smc->caskb, smc->tlskb - smc->frskb) :
-			0.0);
+		xml_print_swap_memory_stats(smc, &tab);
 	}
 
 	xprintf(tab, "</memory>");
@@ -2470,5 +2475,58 @@ __print_funct_t xml_print_psimem_stats(struct activity *a, int curr, int tab,
 close_xml_markup:
 	if (CLOSE_MARKUP(a->options)) {
 		xml_markup_psi(tab, CLOSE_XML_MARKUP);
+	}
+}
+
+/*
+ * **************************************************************************
+ * Display battery statistics in XML.
+ *
+ * IN:
+ * @a		Activity structure with statistics.
+ * @curr	Index in array for current sample statistics.
+ * @tab		Indentation in XML output.
+ * @itv		Interval of time in 1/100th of a second.
+ ***************************************************************************
+ */
+__print_funct_t xml_print_pwr_bat_stats(struct activity *a, int curr, int tab,
+					unsigned long long itv)
+{
+	int i;
+	struct stats_pwr_bat *spbc, *spbp;
+
+	if (!IS_SELECTED(a->options) || (a->nr[curr] <= 0))
+		goto close_xml_markup;
+
+	xml_markup_power_management(tab, OPEN_XML_MARKUP);
+	tab++;
+
+	xprintf(tab++, "<battery unit=\"minute\">");
+
+	for (i = 0; i < a->nr[curr]; i++) {
+
+		spbc = (struct stats_pwr_bat *) ((char *) a->buf[curr] + i * a->msize);
+		spbp = (struct stats_pwr_bat *) ((char *) a->buf[!curr] + i * a->msize);
+
+		/* Battery status code should not be greater than or equal to BAT_STS_NR */
+		if (spbc->status >= BAT_STS_NR) {
+			spbc->status = 0;
+		}
+		xprintf(tab, "<bat number=\"%d\" "
+			     "percent-capacity=\"%u\" "
+			     "variation=\"%.2f\" "
+			     "status=\"%s\"/>",
+			spbc->bat_id,
+			(unsigned int) spbc->capacity,
+			(double) (spbc->capacity - spbp->capacity) * 6000 / itv,
+			bat_status[(unsigned int) spbc->status]);
+	}
+
+	xprintf(--tab, "</battery>");
+	tab--;
+
+close_xml_markup:
+	if (CLOSE_MARKUP(a->options)) {
+		xml_markup_power_management(tab, CLOSE_XML_MARKUP);
 	}
 }

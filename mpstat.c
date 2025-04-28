@@ -1,6 +1,7 @@
 /*
  * mpstat: per-processor statistics
- * (C) 2000-2022 by Sebastien GODARD (sysstat <at> orange.fr)
+ * (C) 2000-2023 by Sebastien GODARD (sysstat <at> orange.fr)
+ * Copyright (C) 2022 Oracle and/or its affiliates.
  *
  ***************************************************************************
  * This program is free software; you can redistribute it and/or modify it *
@@ -46,28 +47,32 @@
 char *sccsid(void) { return (SCCSID); }
 #endif
 
+#ifdef TEST
+extern int __env;
+#endif
+
 unsigned long long uptime_cs[3] = {0, 0, 0};
 
 /* NOTE: Use array of _char_ for bitmaps to avoid endianness problems...*/
-unsigned char *cpu_bitmap;	/* Bit 0: Global; Bit 1: 1st proc; etc. */
-unsigned char *node_bitmap;	/* Bit 0: Global; Bit 1: 1st NUMA node; etc. */
+unsigned char *cpu_bitmap = NULL;	/* Bit 0: Global; Bit 1: 1st proc; etc. */
+unsigned char *node_bitmap = NULL;	/* Bit 0: Global; Bit 1: 1st NUMA node; etc. */
 
 /* Structures used to save CPU and NUMA nodes CPU stats */
-struct stats_cpu *st_cpu[3];
-struct stats_cpu *st_node[3];
+struct stats_cpu *st_cpu[3] = {NULL, NULL, NULL};
+struct stats_cpu *st_node[3] = {NULL, NULL, NULL};
 
 /*
  * Structure used to save total number of interrupts received
  * among all CPU and for each CPU.
  */
-struct stats_global_irq *st_irq[3];
+struct stats_global_irq *st_irq[3] = {NULL, NULL, NULL};
 
 /*
  * Structures used to save, for each interrupt, the number
  * received by each CPU.
  */
-struct stats_irqcpu *st_irqcpu[3];
-struct stats_irqcpu *st_softirqcpu[3];
+struct stats_irqcpu *st_irqcpu[3] = {NULL, NULL, NULL};
+struct stats_irqcpu *st_softirqcpu[3] = {NULL, NULL, NULL};
 
 /*
  * Number of CPU per node, e.g.:
@@ -75,16 +80,16 @@ struct stats_irqcpu *st_softirqcpu[3];
  * cpu_per_node[1]: nr of CPU for node 0
  * etc.
  */
-int *cpu_per_node;
+int *cpu_per_node = NULL;
 
 /*
  * Node number the CPU belongs to, e.g.:
  * cpu2node[0]: node nr for CPU 0
  */
-int *cpu2node;
+int *cpu2node = NULL;
 
 /* CPU topology */
-struct cpu_topology *st_cpu_topology;
+struct cpu_topology *st_cpu_topology = NULL;
 
 struct tm mp_tstamp[3];
 
@@ -134,7 +139,7 @@ void usage(char *progname)
 		progname);
 
 	fprintf(stderr, _("Options are:\n"
-			  "[ -A ] [ -n ] [ -T ] [ -u ] [ -V ]\n"
+			  "[ -A ] [ -H ] [ -n ] [ -T ] [ -u ] [ -V ]\n"
 			  "[ -I { SUM | CPU | SCPU | ALL } ] [ -N { <node_list> | ALL } ]\n"
 			  "[ --dec={ 0 | 1 | 2 } ] [ -o JSON ] [ -P { <cpu_list> | ALL } ]\n"));
 	exit(1);
@@ -175,75 +180,45 @@ void int_handler(int sig)
  * IN:
  * @nr_cpus	Number of CPUs. This is the real number of available CPUs + 1
  * 		because we also have to allocate a structure for CPU 'all'.
+ * @pos		Indicate which structures should be initialized. When @pos is
+ *		non zero, it means that only the additional, newly allocated
+ *		structures should be initialized.
  ***************************************************************************
  */
-void salloc_mp_struct(int nr_cpus)
+void salloc_mp_struct(int nr_cpus, int pos)
 {
 	int i;
 
 	for (i = 0; i < 3; i++) {
-
-		if ((st_cpu[i] = (struct stats_cpu *) malloc(STATS_CPU_SIZE * nr_cpus))
-		    == NULL) {
-			perror("malloc");
-			exit(4);
-		}
-		memset(st_cpu[i], 0, STATS_CPU_SIZE * nr_cpus);
-
-		if ((st_node[i] = (struct stats_cpu *) malloc(STATS_CPU_SIZE * nr_cpus))
-		    == NULL) {
-			perror("malloc");
-			exit(4);
-		}
-		memset(st_node[i], 0, STATS_CPU_SIZE * nr_cpus);
-
-		if ((st_irq[i] = (struct stats_global_irq *) malloc(STATS_GLOBAL_IRQ_SIZE * nr_cpus))
-		    == NULL) {
-			perror("malloc");
-			exit(4);
-		}
-		memset(st_irq[i], 0, STATS_GLOBAL_IRQ_SIZE * nr_cpus);
-
-		if ((st_irqcpu[i] = (struct stats_irqcpu *) malloc(STATS_IRQCPU_SIZE * nr_cpus * irqcpu_nr))
-		    == NULL) {
-			perror("malloc");
-			exit(4);
-		}
-		memset(st_irqcpu[i], 0, STATS_IRQCPU_SIZE * nr_cpus * irqcpu_nr);
-
-		if ((st_softirqcpu[i] = (struct stats_irqcpu *) malloc(STATS_IRQCPU_SIZE * nr_cpus * softirqcpu_nr))
-		     == NULL) {
-			perror("malloc");
-			exit(4);
-		}
-		memset(st_softirqcpu[i], 0, STATS_IRQCPU_SIZE * nr_cpus * softirqcpu_nr);
+		SREALLOC(st_cpu[i], struct stats_cpu, STATS_CPU_SIZE * nr_cpus);
+		SREALLOC(st_node[i], struct stats_cpu, STATS_CPU_SIZE * nr_cpus);
+		SREALLOC(st_irq[i], struct stats_global_irq, STATS_GLOBAL_IRQ_SIZE * nr_cpus);
+		SREALLOC(st_irqcpu[i], struct stats_irqcpu,
+			 STATS_IRQCPU_SIZE * nr_cpus * irqcpu_nr);
+		SREALLOC(st_softirqcpu[i], struct stats_irqcpu,
+			 STATS_IRQCPU_SIZE * nr_cpus * softirqcpu_nr);
 	}
 
-	if ((cpu_bitmap = (unsigned char *) malloc((nr_cpus >> 3) + 1)) == NULL) {
-		perror("malloc");
-		exit(4);
-	}
-	memset(cpu_bitmap, 0, (nr_cpus >> 3) + 1);
+	SREALLOC(cpu_bitmap, unsigned char, (nr_cpus >> 3) + 1);
+	SREALLOC(node_bitmap, unsigned char, (nr_cpus >> 3) + 1);
 
-	if ((node_bitmap = (unsigned char *) malloc((nr_cpus >> 3) + 1)) == NULL) {
-		perror("malloc");
-		exit(4);
-	}
-	memset(node_bitmap, 0, (nr_cpus >> 3) + 1);
+	SREALLOC(cpu_per_node, int, sizeof(int) * nr_cpus);
+	SREALLOC(cpu2node, int, sizeof(int) * nr_cpus);
+	SREALLOC(st_cpu_topology, struct cpu_topology, sizeof(struct cpu_topology) * nr_cpus);
 
-	if ((cpu_per_node = (int *) malloc(sizeof(int) * nr_cpus)) == NULL) {
-		perror("malloc");
-		exit(4);
+	if (pos) {
+		/* Init already done in SREALLOC macro if @pos == 0 */
+		for (i = 0; i < 3; i++) {
+			memset(st_cpu[i] + pos, 0, STATS_CPU_SIZE * (nr_cpus - pos));
+			memset(st_node[i] + pos, 0, STATS_CPU_SIZE * (nr_cpus - pos));
+			memset(st_irq[i] + pos, 0, STATS_GLOBAL_IRQ_SIZE * (nr_cpus - pos));
+			memset(st_irqcpu[i] + pos, 0, STATS_IRQCPU_SIZE * (nr_cpus - pos) * irqcpu_nr);
+			memset(st_softirqcpu[i] + pos, 0, STATS_IRQCPU_SIZE * (nr_cpus - pos) * softirqcpu_nr);
+		}
 	}
-
-	if ((cpu2node = (int *) malloc(sizeof(int) * nr_cpus)) == NULL) {
-		perror("malloc");
-		exit(4);
-	}
-
-	if ((st_cpu_topology = (struct cpu_topology *) malloc(sizeof(struct cpu_topology) * nr_cpus)) == NULL) {
-		perror("malloc");
-		exit(4);
+	else {
+		memset(cpu_bitmap, 0, (nr_cpus >> 3) + 1);
+		memset(node_bitmap, 0, (nr_cpus >> 3) + 1);
 	}
 }
 
@@ -650,7 +625,8 @@ unsigned long long get_global_cpu_mpstats(int prev, int curr,
  ***************************************************************************
  */
 void write_plain_cpu_stats(int dis, unsigned long long deltot_jiffies, int prev, int curr,
-			   char *prev_string, char *curr_string, unsigned char offline_cpu_bitmap[])
+			   char *prev_string, char *curr_string,
+			   const unsigned char offline_cpu_bitmap[])
 {
 	int i;
 	struct stats_cpu *scc, *scp;
@@ -707,7 +683,7 @@ void write_plain_cpu_stats(int dis, unsigned long long deltot_jiffies, int prev,
 				 * If the CPU is tickless then there is no change in CPU values
 				 * but the sum of values is not zero.
 				 */
-				cprintf_pc(NO_UNIT, 10, 7, 2,
+				cprintf_xpc(NO_UNIT, FALSE, 10, 7, 2,
 					   0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 100.0);
 				printf("\n");
 
@@ -715,7 +691,7 @@ void write_plain_cpu_stats(int dis, unsigned long long deltot_jiffies, int prev,
 			}
 		}
 
-		cprintf_pc(NO_UNIT, 10, 7, 2,
+		cprintf_xpc(NO_UNIT, XHIGH, 9, 7, 2,
 			   (scc->cpu_user - scc->cpu_guest) < (scp->cpu_user - scp->cpu_guest) ?
 			   0.0 :
 			   ll_sp_value(scp->cpu_user - scp->cpu_guest,
@@ -737,11 +713,12 @@ void write_plain_cpu_stats(int dis, unsigned long long deltot_jiffies, int prev,
 			   ll_sp_value(scp->cpu_guest,
 				       scc->cpu_guest, deltot_jiffies),
 			   ll_sp_value(scp->cpu_guest_nice,
-				       scc->cpu_guest_nice, deltot_jiffies),
-			   (scc->cpu_idle < scp->cpu_idle) ?
-			   0.0 :
-			   ll_sp_value(scp->cpu_idle,
-				       scc->cpu_idle, deltot_jiffies));
+				       scc->cpu_guest_nice, deltot_jiffies));
+		cprintf_xpc(NO_UNIT, XLOW, 1, 7, 2,
+			    (scc->cpu_idle < scp->cpu_idle) ?
+			    0.0 :
+			    ll_sp_value(scp->cpu_idle,
+					scc->cpu_idle, deltot_jiffies));
 		printf("\n");
 	}
 }
@@ -763,7 +740,7 @@ void write_plain_cpu_stats(int dis, unsigned long long deltot_jiffies, int prev,
  ***************************************************************************
  */
 void write_json_cpu_stats(int tab, unsigned long long deltot_jiffies, int prev, int curr,
-			  unsigned char offline_cpu_bitmap[])
+			  const unsigned char offline_cpu_bitmap[])
 {
 	int i, next = FALSE;
 	char cpu_name[16], topology[1024] = "";
@@ -985,7 +962,7 @@ void write_plain_node_stats(int dis, unsigned long long deltot_jiffies,
 
 			if (!deltot_jiffies) {
 				/* All CPU in node are tickless and/or offline */
-				cprintf_pc(NO_UNIT, 10, 7, 2,
+				cprintf_xpc(NO_UNIT, FALSE, 10, 7, 2,
 					   0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 100.0);
 				printf("\n");
 
@@ -993,7 +970,7 @@ void write_plain_node_stats(int dis, unsigned long long deltot_jiffies,
 			}
 		}
 
-		cprintf_pc(NO_UNIT, 10, 7, 2,
+		cprintf_xpc(NO_UNIT, XHIGH, 9, 7, 2,
 			   (snc->cpu_user - snc->cpu_guest) < (snp->cpu_user - snp->cpu_guest) ?
 			   0.0 :
 			   ll_sp_value(snp->cpu_user - snp->cpu_guest,
@@ -1015,11 +992,12 @@ void write_plain_node_stats(int dis, unsigned long long deltot_jiffies,
 			   ll_sp_value(snp->cpu_guest,
 				       snc->cpu_guest, deltot_jiffies),
 			   ll_sp_value(snp->cpu_guest_nice,
-				       snc->cpu_guest_nice, deltot_jiffies),
-			   (snc->cpu_idle < snp->cpu_idle) ?
-			   0.0 :
-			   ll_sp_value(snp->cpu_idle,
-				       snc->cpu_idle, deltot_jiffies));
+				       snc->cpu_guest_nice, deltot_jiffies));
+		cprintf_xpc(NO_UNIT, XLOW, 1, 7, 2,
+			    (snc->cpu_idle < snp->cpu_idle) ?
+			    0.0 :
+			    ll_sp_value(snp->cpu_idle,
+					snc->cpu_idle, deltot_jiffies));
 		printf("\n");
 	}
 }
@@ -1199,7 +1177,8 @@ void write_node_stats(int dis, unsigned long long deltot_jiffies, int prev, int 
  ***************************************************************************
  */
 void write_plain_isumcpu_stats(int dis, unsigned long long itv, int prev, int curr,
-			       char *prev_string, char *curr_string, unsigned char offline_cpu_bitmap[])
+			       char *prev_string, char *curr_string,
+			       const unsigned char offline_cpu_bitmap[])
 {
 	struct stats_cpu *scc, *scp;
 	struct stats_global_irq *sic, *sip;
@@ -1214,7 +1193,7 @@ void write_plain_isumcpu_stats(int dis, unsigned long long itv, int prev, int cu
 		printf("%-11s", curr_string);
 		cprintf_in(IS_STR, " %s", " all", 0);
 		/* Print total number of interrupts among all cpu */
-		cprintf_f(NO_UNIT, 1, 9, 2,
+		cprintf_f(NO_UNIT, FALSE, 1, 9, 2,
 			  S_VALUE(st_irq[prev]->irq_nr, st_irq[curr]->irq_nr, itv));
 		printf("\n");
 	}
@@ -1240,12 +1219,12 @@ void write_plain_isumcpu_stats(int dis, unsigned long long itv, int prev, int cu
 
 		if (!pc_itv) {
 			/* This is a tickless CPU: Value displayed is 0.00 */
-			cprintf_f(NO_UNIT, 1, 9, 2, 0.0);
+			cprintf_f(NO_UNIT, FALSE, 1, 9, 2, 0.0);
 			printf("\n");
 		}
 		else {
 			/* Display total number of interrupts for current CPU */
-			cprintf_f(NO_UNIT, 1, 9, 2,
+			cprintf_f(NO_UNIT, FALSE, 1, 9, 2,
 				  S_VALUE(sip->irq_nr, sic->irq_nr, itv));
 			printf("\n");
 		}
@@ -1268,7 +1247,7 @@ void write_plain_isumcpu_stats(int dis, unsigned long long itv, int prev, int cu
  ***************************************************************************
  */
 void write_json_isumcpu_stats(int tab, unsigned long long itv, int prev, int curr,
-			      unsigned char offline_cpu_bitmap[])
+			      const unsigned char offline_cpu_bitmap[])
 {
 	struct stats_cpu *scc, *scp;
 	struct stats_global_irq *sic, *sip;
@@ -1388,7 +1367,8 @@ void write_isumcpu_stats(int dis, unsigned long long itv, int prev, int curr,
  */
 void write_plain_irqcpu_stats(struct stats_irqcpu *st_ic[], int ic_nr, int dis,
 			      unsigned long long itv, int prev, int curr,
-			      char *prev_string, char *curr_string, unsigned char offline_cpu_bitmap[])
+			      char *prev_string, char *curr_string,
+			      const unsigned char offline_cpu_bitmap[])
 {
 	int j = ic_nr, offset, cpu, colwidth[NR_IRQS];
 	struct stats_irqcpu *p, *q, *p0, *q0;
@@ -1491,7 +1471,7 @@ void write_plain_irqcpu_stats(struct stats_irqcpu *st_ic[], int ic_nr, int dis,
 
 			if (!strcmp(p0->irq_name, q0->irq_name) || !interval) {
 				q = st_ic[prev] + (cpu - 1) * ic_nr + offset;
-				cprintf_f(NO_UNIT, 1, colwidth[j], 2,
+				cprintf_f(NO_UNIT, FALSE, 1, colwidth[j], 2,
 					  S_VALUE(q->interrupt, p->interrupt, itv));
 			}
 			else {
@@ -1499,7 +1479,7 @@ void write_plain_irqcpu_stats(struct stats_irqcpu *st_ic[], int ic_nr, int dis,
 				 * Instead of printing "N/A", assume that previous value
 				 * for this new interrupt was zero.
 				 */
-				cprintf_f(NO_UNIT, 1, colwidth[j], 2,
+				cprintf_f(NO_UNIT, FALSE, 1, colwidth[j], 2,
 					  S_VALUE(0, p->interrupt, itv));
 			}
 		}
@@ -1527,7 +1507,7 @@ void write_plain_irqcpu_stats(struct stats_irqcpu *st_ic[], int ic_nr, int dis,
  */
 void write_json_irqcpu_stats(int tab, struct stats_irqcpu *st_ic[], int ic_nr,
 			     unsigned long long itv, int prev, int curr, int type,
-			     unsigned char offline_cpu_bitmap[])
+			     const unsigned char offline_cpu_bitmap[])
 {
 	int j = ic_nr, offset, cpu;
 	struct stats_irqcpu *p, *q, *p0, *q0;
@@ -1956,7 +1936,7 @@ void read_interrupts_stat(char *file, struct stats_irqcpu *st_ic[], int ic_nr, i
 void rw_mpstat_loop(int dis_hdr, int rows)
 {
 	struct stats_cpu *scc;
-	int i;
+	int new_cpu_nr;
 	int curr = 1, dis = 1;
 	unsigned long lines = rows;
 
@@ -1970,6 +1950,8 @@ void rw_mpstat_loop(int dis_hdr, int rows)
 	 * read from /proc/stat for global CPU stats.
 	 */
 	if (cpu_nr > 1) {
+		int i;
+
 		memset(st_cpu[0], 0, STATS_CPU_SIZE);
 
 		for (i = 1; i <= cpu_nr; i++) {
@@ -2069,7 +2051,7 @@ void rw_mpstat_loop(int dis_hdr, int rows)
 		memset(st_cpu[curr], 0, STATS_CPU_SIZE * (cpu_nr + 1));
 
 		/* Get time */
-		get_localtime(&(mp_tstamp[curr]), 0);
+		get_xtime(&(mp_tstamp[curr]), 0, LOCAL_TIME);
 
 		/* Read uptime and CPU stats */
 		read_uptime(&(uptime_cs[curr]));
@@ -2125,6 +2107,29 @@ void rw_mpstat_loop(int dis_hdr, int rows)
 				curr ^= 1;
 			}
 		}
+
+		if (count && USE_OPTION_H(flags)) {
+			/* Check if a vCPU has been physically hotplugged */
+			new_cpu_nr = get_cpu_nr(~0, TRUE);
+			if (new_cpu_nr > cpu_nr) {
+
+				/* Recalculate number of interrupts per processor */
+				irqcpu_nr = get_irqcpu_nr(INTERRUPTS, NR_IRQS, new_cpu_nr) +
+				NR_IRQCPU_PREALLOC;
+				/* Recalculate number of soft interrupts per processor */
+				softirqcpu_nr = get_irqcpu_nr(SOFTIRQS, NR_IRQS, new_cpu_nr) +
+				NR_IRQCPU_PREALLOC;
+
+				/* Reallocate cpu stats structures */
+				salloc_mp_struct(new_cpu_nr + 1, cpu_nr + 1);
+
+				/* Get NUMA node placement */
+				node_nr = get_node_placement(new_cpu_nr, cpu_per_node, cpu2node);
+
+				/* Update the highest processor number */
+				cpu_nr = new_cpu_nr;
+			}
+		}
 	}
 	while (count);
 
@@ -2175,7 +2180,7 @@ int main(int argc, char **argv)
 	 * cpu_nr: a value of 2 means there are 2 processors (0 and 1).
 	 * In this case, we have to allocate 3 structures: global, proc0 and proc1.
 	 */
-	salloc_mp_struct(cpu_nr + 1);
+	salloc_mp_struct(cpu_nr + 1, 0);
 
 	/* Get NUMA node placement */
 	node_nr = get_node_placement(cpu_nr, cpu_per_node, cpu2node);
@@ -2183,6 +2188,11 @@ int main(int argc, char **argv)
 	while (++opt < argc) {
 
 		if (!strncmp(argv[opt], "--dec=", 6) && (strlen(argv[opt]) == 7)) {
+			/* Check that the argument is a digit */
+			if (!isdigit(argv[opt][6])) {
+				usage(argv[0]);
+			}
+
 			/* Get number of decimal places */
 			dplaces_nr = atoi(argv[opt] + 6);
 			if ((dplaces_nr < 0) || (dplaces_nr > 2)) {
@@ -2256,6 +2266,12 @@ int main(int argc, char **argv)
 			}
 		}
 
+#ifdef TEST
+		else if (!strncmp(argv[opt], "--getenv", 8)) {
+			__env = TRUE;
+		}
+#endif
+
 		else if (!strncmp(argv[opt], "-", 1)) {
 			for (i = 1; *(argv[opt] + i); i++) {
 
@@ -2268,6 +2284,11 @@ int main(int argc, char **argv)
 						actflags |= M_D_NODE;
 					}
 					actset = TRUE;
+					break;
+
+				case 'H':
+					/* Display physically hotplugged vCPU */
+					flags |= F_OPTION_H;
 					break;
 
 				case 'n':
@@ -2289,9 +2310,15 @@ int main(int argc, char **argv)
 					break;
 
 				case 'V':
-					/* Print version number */
-					print_version();
-					break;
+					{
+						char *mpstat_env[] = {ENV_COLORS,
+								      ENV_COLORS_SGR,
+								      ENV_TIME_FMT};
+#define MPSTAT_ENV_NR	3
+						/* Print environment contents, version number and exit */
+						print_version(mpstat_env, MPSTAT_ENV_NR);
+						break;
+					}
 
 				default:
 					usage(argv[0]);
@@ -2379,7 +2406,7 @@ int main(int argc, char **argv)
 	}
 
 	/* Get time */
-	get_localtime(&(mp_tstamp[0]), 0);
+	get_xtime(&(mp_tstamp[0]), 0, LOCAL_TIME);
 
 	/*
 	 * Don't buffer data if redirected to a pipe.

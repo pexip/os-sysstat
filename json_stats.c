@@ -1,6 +1,6 @@
 /*
  * json_stats.c: Functions used by sadf to display statistics in JSON format.
- * (C) 1999-2022 by Sebastien GODARD (sysstat <at> orange.fr)
+ * (C) 1999-2023 by Sebastien GODARD (sysstat <at> orange.fr)
  *
  ***************************************************************************
  * This program is free software; you can redistribute it and/or modify it *
@@ -25,7 +25,6 @@
 
 #include "sa.h"
 #include "ioconf.h"
-#include "json_stats.h"
 
 #ifdef USE_NLS
 #include <locale.h>
@@ -36,6 +35,7 @@
 #endif
 
 extern uint64_t flags;
+extern char bat_status[][16];
 
 /*
  ***************************************************************************
@@ -46,7 +46,7 @@ extern uint64_t flags;
  * @action	Open or close action.
  ***************************************************************************
  */
-void json_markup_network(int tab, int action)
+void json_markup_network(int tab, enum json_action action)
 {
 	static int markup_state = CLOSE_JSON_MARKUP;
 
@@ -74,7 +74,7 @@ void json_markup_network(int tab, int action)
  * @action	Open or close action.
  ***************************************************************************
  */
-void json_markup_power_management(int tab, int action)
+void json_markup_power_management(int tab, enum json_action action)
 {
 	static int markup_state = CLOSE_JSON_MARKUP;
 
@@ -102,7 +102,7 @@ void json_markup_power_management(int tab, int action)
  * @action	Open or close action.
  ***************************************************************************
  */
-void json_markup_psi(int tab, int action)
+void json_markup_psi(int tab, enum json_action action)
 {
 	static int markup_state = CLOSE_JSON_MARKUP;
 
@@ -450,7 +450,8 @@ __print_funct_t json_print_paging_stats(struct activity *a, int curr, int tab,
 		 "\"pgscank\": %.2f, "
 		 "\"pgscand\": %.2f, "
 		 "\"pgsteal\": %.2f, "
-		 "\"vmeff-percent\": %.2f}",
+		 "\"pgprom\": %.2f, "
+		 "\"pgdem\": %.2f}",
 		 S_VALUE(spp->pgpgin,        spc->pgpgin,        itv),
 		 S_VALUE(spp->pgpgout,       spc->pgpgout,       itv),
 		 S_VALUE(spp->pgfault,       spc->pgfault,       itv),
@@ -459,11 +460,8 @@ __print_funct_t json_print_paging_stats(struct activity *a, int curr, int tab,
 		 S_VALUE(spp->pgscan_kswapd, spc->pgscan_kswapd, itv),
 		 S_VALUE(spp->pgscan_direct, spc->pgscan_direct, itv),
 		 S_VALUE(spp->pgsteal,       spc->pgsteal,       itv),
-		 (spc->pgscan_kswapd + spc->pgscan_direct -
-		  spp->pgscan_kswapd - spp->pgscan_direct) ?
-		 SP_VALUE(spp->pgsteal, spc->pgsteal,
-			  spc->pgscan_kswapd + spc->pgscan_direct -
-			  spp->pgscan_kswapd - spp->pgscan_direct) : 0.0);
+		 S_VALUE(spp->pgpromote,     spc->pgpromote,     itv),
+		 S_VALUE(spp->pgdemote,      spc->pgdemote,      itv));
 }
 
 /*
@@ -518,6 +516,88 @@ __print_funct_t json_print_io_stats(struct activity *a, int curr, int tab,
 }
 
 /*
+ * **************************************************************************
+ * Display RAM memory utilization in JSON.
+ *
+ * IN:
+ * @smc		Structure with statistics.
+ * @dispall	TRUE if all memory fields should be displayed.
+ ***************************************************************************
+ */
+void json_print_ram_memory_stats(struct stats_memory *smc, int dispall)
+{
+	unsigned long long nousedmem;
+
+	nousedmem = smc->frmkb + smc->bufkb + smc->camkb + smc->slabkb;
+	if (nousedmem > smc->tlmkb) {
+		nousedmem = smc->tlmkb;
+	}
+
+	printf("\"memfree\": %llu, "
+	       "\"avail\": %llu, "
+	       "\"memused\": %llu, "
+	       "\"memused-percent\": %.2f, "
+	       "\"buffers\": %llu, "
+	       "\"cached\": %llu, "
+	       "\"commit\": %llu, "
+	       "\"commit-percent\": %.2f, "
+	       "\"active\": %llu, "
+	       "\"inactive\": %llu, "
+	       "\"dirty\": %llu",
+	       smc->frmkb,
+	       smc->availablekb,
+	       smc->tlmkb - nousedmem,
+	       smc->tlmkb ? SP_VALUE(nousedmem, smc->tlmkb, smc->tlmkb)
+			  : 0.0,
+	       smc->bufkb,
+	       smc->camkb,
+	       smc->comkb,
+	       (smc->tlmkb + smc->tlskb) ? SP_VALUE(0, smc->comkb, smc->tlmkb + smc->tlskb)
+					 : 0.0,
+	       smc->activekb,
+	       smc->inactkb,
+	       smc->dirtykb);
+
+	if (dispall) {
+		/* Display extended memory stats */
+		printf(", \"anonpg\": %llu, "
+		       "\"slab\": %llu, "
+		       "\"kstack\": %llu, "
+		       "\"pgtbl\": %llu, "
+		       "\"vmused\": %llu",
+		       smc->anonpgkb,
+		       smc->slabkb,
+		       smc->kstackkb,
+		       smc->pgtblkb,
+		       smc->vmusedkb);
+	}
+}
+
+/*
+ * **************************************************************************
+ * Display swap memory utilization in JSON.
+ *
+ * IN:
+ * @smc		Structure with statistics.
+ ***************************************************************************
+ */
+void json_print_swap_memory_stats(struct stats_memory *smc)
+{
+	printf("\"swpfree\": %llu, "
+	       "\"swpused\": %llu, "
+	       "\"swpused-percent\": %.2f, "
+	       "\"swpcad\": %llu, "
+	       "\"swpcad-percent\": %.2f",
+	       smc->frskb,
+	       smc->tlskb - smc->frskb,
+	       smc->tlskb ? SP_VALUE(smc->frskb, smc->tlskb, smc->tlskb)
+			  : 0.0,
+	       smc->caskb,
+	       (smc->tlskb - smc->frskb) ? SP_VALUE(0, smc->caskb, smc->tlskb - smc->frskb)
+					 : 0.0);
+}
+
+/*
  ***************************************************************************
  * Display memory statistics in JSON.
  *
@@ -534,82 +614,19 @@ __print_funct_t json_print_memory_stats(struct activity *a, int curr, int tab,
 	struct stats_memory
 		*smc = (struct stats_memory *) a->buf[curr];
 	int sep = FALSE;
-	unsigned long long nousedmem;
 
 	xprintf0(tab, "\"memory\": {");
 
 	if (DISPLAY_MEMORY(a->opt_flags)) {
-
 		sep = TRUE;
-
-		nousedmem = smc->frmkb + smc->bufkb + smc->camkb + smc->slabkb;
-		if (nousedmem > smc->tlmkb) {
-			nousedmem = smc->tlmkb;
-		}
-
-		printf("\"memfree\": %llu, "
-		       "\"avail\": %llu, "
-		       "\"memused\": %llu, "
-		       "\"memused-percent\": %.2f, "
-		       "\"buffers\": %llu, "
-		       "\"cached\": %llu, "
-		       "\"commit\": %llu, "
-		       "\"commit-percent\": %.2f, "
-		       "\"active\": %llu, "
-		       "\"inactive\": %llu, "
-		       "\"dirty\": %llu",
-		       smc->frmkb,
-		       smc->availablekb,
-		       smc->tlmkb - nousedmem,
-		       smc->tlmkb ?
-		       SP_VALUE(nousedmem, smc->tlmkb, smc->tlmkb) :
-		       0.0,
-		       smc->bufkb,
-		       smc->camkb,
-		       smc->comkb,
-		       (smc->tlmkb + smc->tlskb) ?
-		       SP_VALUE(0, smc->comkb, smc->tlmkb + smc->tlskb) :
-		       0.0,
-		       smc->activekb,
-		       smc->inactkb,
-		       smc->dirtykb);
-
-		if (DISPLAY_MEM_ALL(a->opt_flags)) {
-			/* Display extended memory stats */
-			printf(", \"anonpg\": %llu, "
-			       "\"slab\": %llu, "
-			       "\"kstack\": %llu, "
-			       "\"pgtbl\": %llu, "
-			       "\"vmused\": %llu",
-			       smc->anonpgkb,
-			       smc->slabkb,
-			       smc->kstackkb,
-			       smc->pgtblkb,
-			       smc->vmusedkb);
-		}
+		json_print_ram_memory_stats(smc, DISPLAY_MEM_ALL(a->opt_flags));
 	}
 
 	if (DISPLAY_SWAP(a->opt_flags)) {
-
 		if (sep) {
 			printf(", ");
 		}
-		sep = TRUE;
-
-		printf("\"swpfree\": %llu, "
-		       "\"swpused\": %llu, "
-		       "\"swpused-percent\": %.2f, "
-		       "\"swpcad\": %llu, "
-		       "\"swpcad-percent\": %.2f",
-		       smc->frskb,
-		       smc->tlskb - smc->frskb,
-		       smc->tlskb ?
-		       SP_VALUE(smc->frskb, smc->tlskb, smc->tlskb) :
-		       0.0,
-		       smc->caskb,
-		       (smc->tlskb - smc->frskb) ?
-		       SP_VALUE(0, smc->caskb, smc->tlskb - smc->frskb) :
-		       0.0);
+		json_print_swap_memory_stats(smc);
 	}
 
 	printf("}");
@@ -2608,5 +2625,65 @@ __print_funct_t json_print_psimem_stats(struct activity *a, int curr, int tab,
 close_json_markup:
 	if (CLOSE_MARKUP(a->options)) {
 		json_markup_psi(tab, CLOSE_JSON_MARKUP);
+	}
+}
+
+/*
+ * **************************************************************************
+ * Display battery statistics in JSON.
+ *
+ * IN:
+ * @a		Activity structure with statistics.
+ * @curr	Index in array for current sample statistics.
+ * @tab		Indentation in output.
+ * @itv		Interval of time in 1/100th of a second.
+ ***************************************************************************
+ */
+__print_funct_t json_print_pwr_bat_stats(struct activity *a, int curr, int tab,
+					 unsigned long long itv)
+{
+	int i;
+	struct stats_pwr_bat *spbc, *spbp;
+	int sep = FALSE;
+
+	if (!IS_SELECTED(a->options) || (a->nr[curr] <= 0))
+		goto close_json_markup;
+
+	json_markup_power_management(tab, OPEN_JSON_MARKUP);
+	tab++;
+
+	xprintf(tab++, "\"battery\": [");
+
+	for (i = 0; i < a->nr[curr]; i++) {
+		spbc = (struct stats_pwr_bat *) ((char *) a->buf[curr] + i * a->msize);
+		spbp = (struct stats_pwr_bat *) ((char *) a->buf[!curr] + i * a->msize);
+
+		if (sep) {
+			printf(",\n");
+		}
+		sep = TRUE;
+
+		/* Battery status code should not be greater than or equal to BAT_STS_NR */
+		if (spbc->status >= BAT_STS_NR) {
+			spbc->status = 0;
+		}
+
+		xprintf0(tab, "{\"number\": %d, "
+			      "\"percent-capacity\": %u, "
+			      "\"variation\": %.2f, "
+			      "\"status\": \"%s\"}",
+		spbc->bat_id,
+		(unsigned int) spbc->capacity,
+		(double) (spbc->capacity - spbp->capacity) * 6000 / itv,
+		bat_status[(unsigned int) spbc->status]);
+	}
+
+	printf("\n");
+	xprintf0(--tab, "]");
+	tab--;
+
+	close_json_markup:
+	if (CLOSE_MARKUP(a->options)) {
+		json_markup_power_management(tab, CLOSE_JSON_MARKUP);
 	}
 }

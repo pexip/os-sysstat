@@ -19,6 +19,8 @@ endif
 
 DFLAGS :=
 
+export deb_systemdsystemunitdir=$(shell pkgconf --variable=systemdsystemunitdir systemd | sed s,^/,,)
+
 %:
 	dh ${@}
 
@@ -34,7 +36,7 @@ override_dh_auto_configure:
 		    --enable-install-cron               \
 		    --disable-use-crond                 \
 		    --enable-lto                        \
-	            sa_lib_dir=/usr/lib/sysstat         \
+	            sa_lib_dir=/usr/libexec/sysstat     \
 	            sa_dir=/var/log/sysstat             \
 	            conf_dir=/etc/sysstat
 

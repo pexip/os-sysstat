@@ -12,12 +12,12 @@ Forwarded: not-needed
  2 files changed, 11 insertions(+), 1 deletion(-)
 
 diff --git a/man/sa1.in b/man/sa1.in
-index 7ce07a3..0cdc500 100644
+index 37f29f6..c22dd4b 100644
 --- a/man/sa1.in
 +++ b/man/sa1.in
 @@ -71,6 +71,12 @@ place the following entry in your root crontab file:
  
- .B 0 0 * * * @SA_LIB_DIR@/sa1 --rotate
+ .B 0 0 * * * @SA_LIB_DIR@/sa1 \-\-rotate
  
 +.SS Debian note
 +The Debian sysstat package has already placed such an entry in your system crontab.
@@ -29,7 +29,7 @@ index 7ce07a3..0cdc500 100644
  .I @SA_DIR@/saDD
  .br
 diff --git a/man/sa2.in b/man/sa2.in
-index c4947ca..ea05625 100644
+index 24d910f..ee945f5 100644
 --- a/man/sa2.in
 +++ b/man/sa2.in
 @@ -36,7 +36,11 @@ This will generate by default a daily report called

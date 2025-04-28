@@ -1,6 +1,6 @@
 /*
  * iostat: report CPU and I/O statistics
- * (C) 1999-2022 by Sebastien Godard (sysstat <at> orange.fr)
+ * (C) 1999-2023 by Sebastien Godard (sysstat <at> orange.fr)
  */
 
 #ifndef _IOSTAT_H
@@ -57,10 +57,12 @@
 #define USE_ALL_DIR(m)			(((m) & I_D_ALL_DIR)          == I_D_ALL_DIR)
 #define DISPLAY_COMPACT(m)		(((m) & I_D_COMPACT)          == I_D_COMPACT)
 
-#define T_PART		0
-#define T_DEV		1
-#define T_PART_DEV	2
-#define T_GROUP		3
+enum {
+	T_PART		= 0,
+	T_DEV		= 1,
+	T_PART_DEV	= 2,
+	T_GROUP		= 3
+};
 
 #define UKWN_MAJ_NR	0
 

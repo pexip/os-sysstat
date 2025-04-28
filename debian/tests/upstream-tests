@@ -29,6 +29,8 @@ tar cf -  \
 
 cd "$tmpdir"
 
+ignore_arg=""
+
 if [ "$test_type" = "pristine-source" ] ; then
   dpkg-source --after-build --unapply-patches .
 elif [ "$test_type" = "with-debian-patches" ] ; then
@@ -36,10 +38,11 @@ elif [ "$test_type" = "with-debian-patches" ] ; then
 
   # Revert change done by 04-configs.patch
   echo 'SADC_OPTIONS="@COLLECT_ALL@ @SADC_OPT@"' >> sysstat.sysconfig.in
+  ignore_arg="ignore"
 
-  export CFLAGS=$(dpkg-buildflags --get CFLAGS)
-  export DFLAGS=$(dpkg-buildflags --get CPPFLAGS)
-  export LFLAGS=$(dpkg-buildflags --get LDFLAGS)
+  export CFLAGS="$(dpkg-buildflags --get CFLAGS) $(getconf LFS_CFLAGS)"
+  export CPPFLAGS=$(dpkg-buildflags --get CPPFLAGS)
+  export LDFLAGS=$(dpkg-buildflags --get LDFLAGS)
 
   autoreconf -i -s
 else
@@ -48,14 +51,15 @@ else
 fi
 
 ln -svf sar sar.sysstat
-
 set -o pipefail
-! ./do_test 2>&1 | tee tests/do_test.log || exit 0
+
+! bash ./do_test all $ignore_arg 2>&1 | tee tests/do_test.log || exit 0
 
 cd "$tmpdir/tests"
+shopt -s nullglob
 
 [ ! -d "$AUTOPKGTEST_ARTIFACTS" ] || \
-  tar cvzf "$AUTOPKGTEST_ARTIFACTS/output-files-$test_type-$arch.tgz" do_test.log out.*.tmp || :
+  tar cvzf "$AUTOPKGTEST_ARTIFACTS/output-files-$test_type-$arch.tgz" do_test.log *.tmp || :
 
 for non_skippable_arch in "$@"; do
   [ "$arch" = "$non_skippable_arch" ] && exit 3

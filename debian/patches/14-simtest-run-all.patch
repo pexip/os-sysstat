@@ -3,17 +3,28 @@ Date: Mon, 1 Feb 2021 10:03:01 +0100
 Subject: Run all unit tests
 
 Instead of stopping at the first failed test,
-run all test, and exit with code 3 if any
+run all test, and exit with error code if any
 test fails.
+
+The change in Makefile.in was commented out
+after upstream migrated to using do_test directly.
+
+The changes in do_test assume that the program
+is called as "./do_test all ignore".
+
+Additionally update do_test not to cleanup
+after extra simulation tests, so that all
+the *.tmp files are possibly left intact.
 ---
- Makefile.in | 19 +++++++++++++++++--
- 1 file changed, 17 insertions(+), 2 deletions(-)
+ Makefile.in | 20 +++++++++++++++++---
+ do_test     | 18 ++++++++++++++----
+ 2 files changed, 31 insertions(+), 7 deletions(-)
 
 diff --git a/Makefile.in b/Makefile.in
-index e81af9f..72ce377 100644
+index be09a99..bdb67d3 100644
 --- a/Makefile.in
 +++ b/Makefile.in
-@@ -817,6 +817,8 @@ unit:
+@@ -827,6 +827,8 @@ unit:
  	@echo $(X) 2>&1
  	@cat $(TESTDIR)/$(X) | $(TESTRUN)
  
@@ -22,21 +33,21 @@ index e81af9f..72ce377 100644
  extraunit:
  	@echo $(X) 2>&1
  	@cat $(EXTRADIR)/$(X) | $(TESTRUN)
-@@ -825,21 +827,34 @@ extraunit:
+@@ -835,22 +837,34 @@ extraunit:
  simtest: DFLAGS += -DTEST
  
  simtest: all testcomp
--	@$(foreach x, $(TESTLIST), $(MAKE) X=$x unit || exit;)
-+	rm -f $(FAILED_TESTS)
-+	@$(foreach x, $(TESTLIST), $(MAKE) X=$x unit || echo $x >> $(FAILED_TESTS);)
- 	rm -f tests/root
- 	ln -s root1 tests/root
-+	@if [ -s $(FAILED_TESTS) ]; then \
-+		echo "Simulation tests: Failed test cases:"; \
-+		cat $(FAILED_TESTS); \
-+		exit 3; \
-+	fi
- 	@echo Simulation tests: Success!
+-#	@$(foreach x, $(TESTLIST), $(MAKE) X=$x unit || exit;)
+-#	rm -f tests/root
++#	rm -f $(FAILED_TESTS)
++#	@$(foreach x, $(TESTLIST), $(MAKE) X=$x unit || echo $x >> $(FAILED_TESTS);)
+ #	ln -s root1 tests/root
++#	@if [ -s $(FAILED_TESTS) ]; then \
++#		echo "Simulation tests: Failed test cases:"; \
++#		cat $(FAILED_TESTS); \
++#		exit 3; \
++#	fi
+ #	@echo Simulation tests: Success!
  
  extratest: DFLAGS += -DTEST
  
@@ -55,7 +66,56 @@ index e81af9f..72ce377 100644
  
  clean:
  	rm -f sadc sar sadf iostat tapestat mpstat pidstat cifsiostat *.o *.a core TAGS tests/*.tmp tests/extra/*.tmp
+ 	rm -f tests/LAST tests/SKIPPED
 +	rm -f $(FAILED_TESTS)
  	rm -f nfsiostat* man/nfsiostat*
  	rm -f tests/sa[0123]*
  	rm -f tests/root
+diff --git a/do_test b/do_test
+index 6fa76d9..ef99055 100755
+--- a/do_test
++++ b/do_test
+@@ -1,7 +1,8 @@
+-#!/bin/sh
++#!/bin/bash
+ # Script for sysstat simulation test environment
+ # (C) 2020-2023 Sebastien GODARD (sysstat <at> orange.fr)
+ 
++FAILURES=""
+ if [ "$1" = "conf" ]
+ then
+ 	# Configure sysstat in test mode
+@@ -58,21 +59,30 @@ else
+ 				echo Success! >> tests/results.tmp;
+ 			fi
+ 		else
++			FAILURES="$FAILURES $f"
+ 			echo Failed... >> tests/results.tmp;
+ 			echo $f > tests/LAST;
+ 			if [ "$1" != "ignore" -a "$2" != "ignore" ]
+ 			then
+-				exit
++				exit 3
+ 			fi
+ 		fi
+ 	done
+ 	rm -f tests/root
+ 	ln -s root1 tests/root
+ 	echo Run ${COUNT}/${TOTAL} test\(s\)
+-	echo Simulation tests: Success!
++	[ -n "$FAILURES" ] || echo Simulation tests: Success!
+ fi
+ 
+ if [ "$?" = "0" -a "$1" = "all" ]
+ then
+-	make extratest && make distclean && ./configure --disable-nls --disable-sensors --disable-pcp sa_lib_dir=. sar_dir=. conf_dir=. conf_file=sysstat.sysconfig sa_dir=tests --enable-debuginfo --disable-stripping && make TFLAGS="-DTEST" && echo "EXTRA TESTS: Success!"
++	# Debian: disable cleaning after the test. so *.tmp files are not removed
++	# make extratest && make distclean && ./configure --disable-nls --disable-sensors --disable-pcp sa_lib_dir=. sar_dir=. conf_dir=. conf_file=sysstat.sysconfig sa_dir=tests --enable-debuginfo --disable-stripping && make TFLAGS="-DTEST" && echo "EXTRA TESTS: Success!"
++	make extratest && echo "EXTRA TESTS: Success!" || FAILURES="${FAILURES}${FAILURES:+ and }EXTRA TESTS"
++fi
++
++if [ "$?" != "0" -o -n "$FAILURES" ]
++then
++	echo "Simulation tests failed${FAILURES:+ on }${FAILURES}."
++	exit 4
+ fi
